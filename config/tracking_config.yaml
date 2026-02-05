@@ -1,0 +1,175 @@
+# Robot Tracking System Configuration
+
+# Camera Settings
+cameras:
+  # Camera 0 - Primary (e.g., Logitech or other USB camera or DroidCam over HTTP)
+  # - id: 0
+  #   name: "primary_camera"
+  #   width: 1280
+  #   height: 720
+  #   fps: 30
+  #   autofocus: true
+  #   exposure: -1 # Auto
+
+  # IP Camera Example
+
+  # - type: "ip"
+  #   name: "ip_camera"
+  #   url: "http://192.168.8.88:4747/video"
+  #   width: 1280
+  #   height: 720
+  #   fps: 30
+  #   username: null  # optional, for HTTP auth
+  #   password: null  # optional, for HTTP auth
+
+  - type: "ip"
+    name: "ip_camera"
+    url: "http://192.168.8.183:4747/video"
+    fps: 30
+
+  # Camera 1 - Secondary (optional, for multi-camera setup)
+  # - id: 1
+  #   name: "secondary_camera"
+  #   width: 1280
+  #   height: 720
+  #   fps: 30
+
+# AprilTag Settings
+april_tags:
+  family: "tag36h11" # 587 unique IDs
+  nthreads: 4
+  quad_decimate: 2.0 # Detection speed vs accuracy
+  quad_sigma: 0.0 # Blur before decoding
+  refine_edges: 1
+  decode_sharpening: 0.25
+  min_tag_size: 0.02 # Minimum tag size relative to image dimension
+  max_hamming_distance: 2
+
+# YOLOv8 Detection Settings
+yolo:
+  model: "yolov8n.pt"
+  input_size: 640
+  conf_thres: 0.5
+  iou_thres: 0.45
+  classes: null # Detect all classes, or specify [0] for specific class
+  device: "" # Empty = auto (CUDA if available, else CPU)
+
+# ByteTrack Settings
+tracking:
+  track_thresh: 0.5
+  track_buffer: 30
+  match_thresh: 0.8
+  frame_rate: 30
+  mot20: False
+  min_box_area: 100
+  camera_fps: 30
+
+# Position Estimation Settings
+position:
+  ground_plane_z: 0.0 # Z coordinate of ground plane
+  smoothing: true
+  smoothing_alpha: 0.3 # Exponential moving average factor
+  outlier_threshold: 0.1 # Maximum velocity for filtering (meters/frame)
+
+# Output Settings
+output:
+  # Real-time UDP stream
+  udp:
+    enabled: false
+    host: "127.0.0.1"
+    port: 5005
+
+  # Log file
+  log:
+    enabled: true
+    path: "logs/trajectories.csv"
+    format: "csv"
+
+  # Display settings
+  display:
+    enabled: true
+    show_tracks: true
+    show_ids: true
+    show_trails: true
+    trail_length: 30
+    show_calibration: false
+
+# Calibration File Paths
+calibration:
+  default: "config/calibration_default.yaml"
+  camera_0: "config/calibration_camera0.yaml"
+
+# Multi-Camera Settings
+multi_camera:
+  enabled: false
+  sync_mode: "hardware" # "hardware" or "software"
+  handover_margin: 10 # Frames to keep track during handover
+
+# Controller Settings (Arduino Serial Communication)
+controller:
+  enabled: true # Set to true to enable robot control
+  serial:
+    port: "auto" # "auto" for auto-detect, or specify "COM3", "/dev/ttyUSB0"
+    baudrate: 9600
+    timeout: 0.1 # seconds
+  command_interval: 0.05 # seconds between commands (50ms)
+  heartbeat_timeout: 0.5 # seconds before sending STOP if no command received
+
+# Robot Definitions
+# Each robot is identified by its AprilTag ID (tag_id)
+# Run the program to see detected tag IDs, then configure here
+robots:
+  - tag_id: 1 # AprilTag ID for robot identification
+    name: "robot_0"
+    diameter: 0.18 # meters (for obstacle avoidance)
+    speed: 0.15 # m/s (max forward speed)
+    turn_rate: 1.0 # rad/s (max turn speed)
+
+  # Add more robots by their tag IDs:
+  # - tag_id: 5
+  #   name: "robot_5"
+  #   diameter: 0.35
+  #   speed: 0.20
+  #   turn_rate: 1.5
+
+# Path Planning Settings
+planning:
+  step_size: 0.05 # meters per step
+  replan_interval: 0.5 # seconds
+  max_path_length: 1000 # steps
+  avoidance:
+    enabled: true
+    dynamic_obstacles: true # use YOLOv8 detections
+    multi_robot_avoidance: "first_come_first_served"
+
+# Obstacle Configuration
+obstacles:
+  file: "config/obstacles.yaml"
+  display: true
+  collision_margin: 0.02 # extra clearance around obstacles
+
+# API Settings
+api:
+  enabled: false # Set to true to enable WebSocket API
+  host: "0.0.0.0"
+  port: 8000
+  websocket_path: "/ws"
+
+# Local Planning Settings
+local_planning:
+  enabled: true
+  safety_margin: 0.15
+  max_speed: 0.15
+  time_horizon: 2.0
+  min_obstacle_confidence: 0.5
+  obstacle_classes:
+    - "person"
+    - "cup"
+    - "bottle"
+  debug:
+    enabled: true
+    draw_velocity_vector: true
+    draw_collision_cone: true
+    draw_obstacle_radius: true
+    draw_pause_indicator: true
+    video_output_dir: "tests/videos"
