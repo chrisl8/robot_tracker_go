@@ -125,6 +125,7 @@ func (s *WebServer) setupRoutes() {
 }
 
 func (s *WebServer) handleIndex(c *gin.Context) {
+	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
