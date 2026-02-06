@@ -80,20 +80,26 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 	}
 
 	for _, detIdx := range unmatchedDetections {
-		t.createNewTrack(highConfDetections[detIdx], timestamp)
+		if detIdx < len(highConfDetections) {
+			t.createNewTrack(highConfDetections[detIdx], timestamp)
+		}
 	}
 
 	lowMatched, lowUnmatchedDetections, lowMatchedTrackIDs := t.matchTracksLowConf(lowConfDetections)
 
 	for i, detIdx := range lowMatched {
-		trackID := lowMatchedTrackIDs[i]
-		tt := t.tracks[trackID]
-		tt.track.Update(lowConfDetections[detIdx].Bbox, timestamp, lowConfDetections[detIdx].Confidence)
-		tt.timeSinceUpdate = 0
+		if detIdx < len(lowConfDetections) {
+			trackID := lowMatchedTrackIDs[i]
+			tt := t.tracks[trackID]
+			tt.track.Update(lowConfDetections[detIdx].Bbox, timestamp, lowConfDetections[detIdx].Confidence)
+			tt.timeSinceUpdate = 0
+		}
 	}
 
 	for _, detIdx := range lowUnmatchedDetections {
-		t.createNewTrack(lowConfDetections[detIdx], timestamp)
+		if detIdx < len(lowConfDetections) {
+			t.createNewTrack(lowConfDetections[detIdx], timestamp)
+		}
 	}
 
 	for trackID := range t.tracks {
