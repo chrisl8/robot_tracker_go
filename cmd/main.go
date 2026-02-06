@@ -187,7 +187,7 @@ func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedD
 	return detections
 }
 
-func (rs *RobotSystem) ProcessFrame(img image.Image) {
+func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	if img == nil {
 		return
 	}
@@ -206,7 +206,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image) {
 	}
 	imageBytes := rgbaImg.Pix
 
-	detectionResult := rs.detectionPipe.Detect(imageBytes, width, height, timestamp, rs.frameNum)
+	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
 	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
@@ -238,10 +238,19 @@ func decodeToImage(data []byte, width, height int) image.Image {
 	if len(data) == 0 {
 		return nil
 	}
-	rgba := &image.RGBA{
-		Pix:    data,
-		Stride: 4 * width,
-		Rect:   image.Rect(0, 0, width, height),
+	expectedLen := width * height * 3
+	if len(data) != expectedLen {
+		return nil
+	}
+	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
+	for i := 0; i < width*height; i++ {
+		b := data[i*3]
+		g := data[i*3+1]
+		r := data[i*3+2]
+		rgba.Pix[i*4] = r
+		rgba.Pix[i*4+1] = g
+		rgba.Pix[i*4+2] = b
+		rgba.Pix[i*4+3] = 255
 	}
 	return rgba
 }
@@ -410,7 +419,7 @@ func main() {
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
-				rs.ProcessFrame(img)
+				rs.ProcessFrame(img, frame.Data)
 				frameNum++
 				elapsed := time.Since(startTime)
 				if elapsed < 33*time.Millisecond {
@@ -420,13 +429,13 @@ func main() {
 		}
 	}
 
-	if *demoMode {
+	for *demoMode {
 		fmt.Println("Demo mode: Generating test pattern...")
 		rs.StartCamera()
 		frameNum := 0
 		for {
 			frame := generateTestPattern(640, 480, frameNum)
-			rs.ProcessFrame(frame)
+			rs.ProcessFrame(frame, nil)
 			frameNum++
 			time.Sleep(33 * time.Millisecond)
 		}
