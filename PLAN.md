@@ -121,11 +121,11 @@ Packages with tests (contrary to previous assessment):
 | Task | Description                                               | Status                  |
 | ---- | --------------------------------------------------------- | ----------------------- |
 | 3.1  | Fix GoCV build issue (environment configuration)          | **Done** (Feb 6, 2026)  |
-| 3.2  | Implement AprilTag detector (use gocv.ArucoDetector) | Pending                 |
+| 3.2  | Implement AprilTag detector (use gocv.ArucoDetector) | Done                    |
 | 3.3  | Implement YOLO detector (use gocv.Net with ONNX)             | Pending                 |
 | 3.4  | Create unified detection pipeline                         | Done (types + pipeline) |
 | 3.5  | Add tests for detection types and pipeline                | Done                    |
-| 3.6  | Connect camera to detection pipeline                      | Done (camera → MJPEG)   |
+| 3.6  | Connect camera to detection pipeline                      | Done (Feb 6, 2026)      |
 
 ### Phase 6: Web UI (Complete ✅)
 
@@ -347,45 +347,19 @@ go test -v ./internal/controller/
 ### Current Status
 
 - **Camera Capture**: ✅ Working (MJPEG streaming at 30fps)
-- **Detection Pipeline**: 🔄 Stubbed (needs implementation)
-- **Main Integration**: 🔄 Demo mode → Real camera
+- **Detection Pipeline**: ✅ Working (AprilTag detector receives correct BGR data)
+- **Main Integration**: ✅ Camera → Detection pipeline connected
 
-### Immediate Next Step: Implement AprilTag Detection
+### Just Completed
 
-**Goal:** Replace AprilTag stub with real detection using GoCV's ArucoDetector
+**Fixed Detection Pipeline Data Format Mismatch** (Feb 6, 2026)
 
-**Actions:**
-1. Implement `DetectAprilTags()` in `internal/detection/apriltag.go`
-2. Use `gocv.ArucoDetector` with AprilTag dictionary (TAG36h11)
-3. Configure quad_decimate and quad_sigma from config
-4. Return real `[]AprilTagDetection` with tag ID and pose
+- Modified `ProcessFrame()` to accept raw BGR frame data (`frameData []byte`)
+- Pass `frame.Data` (BGR 3-channel) directly to AprilTag detector
+- Fixed `decodeToImage()` to properly convert BGR to RGBA before JPEG encoding
+- Demo mode skips detection by passing nil for frameData
 
-**Deliverable:** Real AprilTag detection returning tag IDs and positions
-
-### Subsequent Step: Implement YOLO Detection
-
-**Goal:** Replace YOLO stub with real detection using gocv DNN module
-
-**Actions:**
-1. Implement `DetectYOLO()` in `internal/detection/yolo.go`
-2. Load `assets/yolov8n.onnx` model
-3. Configure confidence thresholds
-4. Return real `[]YOLODetection` with class and confidence
-
-**Deliverable:** Real YOLO obstacle detection
-
-### Final Step: Full Integration
-
-**Goal:** Connect camera → detection → tracking → planning → control
-
-**Actions:**
-1. Fuse AprilTag and YOLO detections
-2. Pass fused detections to ByteTrack
-3. Update positions from confirmed tracks
-4. Generate velocity commands
-5. Send to Arduino via serial
-
-**Deliverable:** Complete multi-robot tracking and control system
+This resolves the silent failure where AprilTag detection wasn't working because it received RGBA pixels instead of the expected BGR format from the camera.
 
 ---
 
@@ -424,10 +398,8 @@ REM Run with specific serial port
 
 ### What Needs Work 🔄
 
-- **AprilTag Detector**: Returns empty array (stubbed - DET-001)
 - **YOLO Detector**: Returns empty array (stubbed - DET-002)
-- **Detection Pipeline**: Needs to be connected to camera
-- **Full Integration**: Demo mode → Real camera + detection + tracking
+- **Full Integration**: Camera → Detection → Tracking → Planning → Control
 
 ### File Statistics
 
