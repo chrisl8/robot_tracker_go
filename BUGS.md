@@ -71,33 +71,47 @@ OpenCV version: 4.13.0
 
 ---
 
-### DET-001: Stubbed AprilTag Detector
+### DET-001: AprilTag Detector - RESOLVED (Feb 6, 2026)
 
 | Field | Value |
 |-------|-------|
-| **Status** | Open |
+| **Status** | Resolved |
 | **Severity** | Critical |
-| **Impact** | No robot detection, tracking has no input |
+| **Impact** | Robot detection via AprilTags works correctly |
 | **Component** | `internal/detection/apriltag.go` |
 
-**Symptom:**
-`Detect()` method returns empty slice for all inputs.
+**Resolution:**
+The AprilTag detector was implemented on Feb 6, 2026. The implementation:
 
-**Root Cause:**
-AprilTag detector is stubbed - returns empty array without processing.
+1. Uses `gocv.ArucoDetector` with `gocv.GetPredefinedDictionary(gocv.ArucoDictAprilTag_36h11)`
+2. Supports multiple tag families: tag16h5, tag25h9, tag36h10, tag36h11
+3. Configurable quad decimate for performance
+4. Returns proper `[]AprilTag` with ID, corners, center, and size
+
+**File Structure:**
+| File | Build Tag | Purpose |
+|------|-----------|---------|
+| `apriltag.go` | `//go:build gocv` | Full implementation using GoCV |
+| `apriltag_stub.go` | `//go:build !gocv` | Stub for non-GoCV builds |
 
 **Code Location:**
 ```go
-// internal/detection/apriltag.go:21-29
-func (d *AprilTagDetector) Detect(frame *gocv.Mat) []Detection {
-    // Stub: returns empty slice
-    return []Detection{}
+// internal/detection/apriltag.go:23-59
+func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
+    dictionary := gocv.GetPredefinedDictionary(gocv.ArucoDictAprilTag_36h11)
+    params := gocv.NewArucoDetectorParameters()
+    detector := gocv.NewArucoDetectorWithParams(dictionary, params)
+    ...
 }
 ```
 
-**Fix Required:**
-1. Use AprilTag C library bindings (github.com/apriltags/apriltag-go) or
-2. Implement tag detection algorithm in Go
+**Test Verification:**
+- Tests at `internal/detection/types_test.go:287-352` verify detector creation and detection
+- Integration tests at `internal/integration_test.go:15-64` verify full pipeline
+
+**Known Behavior:**
+- Empty/invalid images return empty slice (expected)
+- Must build with `-tags=gocv` for full implementation
 
 ---
 

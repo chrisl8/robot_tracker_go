@@ -58,10 +58,10 @@ func TestDetectionPipeline_Detect(t *testing.T) {
 		t.Errorf("FrameIdx = %d, want 1", result.FrameIdx)
 	}
 	if len(result.Tags) != 0 {
-		t.Errorf("Expected 0 tags (stub), got %d", len(result.Tags))
+		t.Errorf("Expected 0 tags (empty image input), got %d", len(result.Tags))
 	}
 	if len(result.YOLODetections) != 0 {
-		t.Errorf("Expected 0 YOLO detections (stub), got %d", len(result.YOLODetections))
+		t.Errorf("Expected 0 YOLO detections (YOLO disabled), got %d", len(result.YOLODetections))
 	}
 	if len(result.FusedDetections) != 0 {
 		t.Errorf("Expected 0 fused detections, got %d", len(result.FusedDetections))

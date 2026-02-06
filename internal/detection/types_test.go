@@ -347,7 +347,7 @@ func TestAprilTagDetector_Detect(t *testing.T) {
 	})
 	tags := detector.Detect([]byte{}, 640, 480)
 	if len(tags) != 0 {
-		t.Errorf("Expected empty tags slice (stub), got %d tags", len(tags))
+		t.Errorf("Expected empty tags slice (empty image input), got %d tags", len(tags))
 	}
 }
 

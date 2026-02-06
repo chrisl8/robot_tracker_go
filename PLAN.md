@@ -425,11 +425,12 @@ go test -v ./internal/position/
 - Web UI with MJPEG streaming and WebSocket overlay
 - GoCV + OpenCV 4.13.0 (environment configured)
 - Full integration: Camera → Detection → Tracking → Planning → Control
+- AprilTag detection via GoCV ArucoDetector (DET-001 resolved Feb 6, 2026)
+- Web-based calibration with persistence (Complete)
 
 ### What Needs Work 🔄
 
 - **YOLO Detector**: Returns empty array (stubbed - DET-002)
-- **Phase 8 Calibration**: Web-based calibration wizard (In Progress)
 
 ---
 
