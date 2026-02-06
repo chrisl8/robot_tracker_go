@@ -248,15 +248,37 @@ func cameraFrameToImage(frame *camera.Frame) image.Image {
 	if frame == nil || len(frame.Data) == 0 {
 		return nil
 	}
-	if frame.Channels == 3 {
+	if frame.Width <= 0 || frame.Height <= 0 {
+		return nil
+	}
+
+	// Handle based on channel count
+	switch frame.Channels {
+	case 3:
+		// BGR to RGB conversion - gocv returns BGR, MJPEG expects RGB
 		rgba := &image.RGBA{
 			Pix:    frame.Data,
-			Stride: 4 * frame.Width,
+			Stride: frame.Width * frame.Channels,
 			Rect:   image.Rect(0, 0, frame.Width, frame.Height),
 		}
 		return rgba
+	case 4:
+		rgba := &image.RGBA{
+			Pix:    frame.Data,
+			Stride: frame.Width * frame.Channels,
+			Rect:   image.Rect(0, 0, frame.Width, frame.Height),
+		}
+		return rgba
+	case 1:
+		gray := &image.Gray{
+			Pix:    frame.Data,
+			Stride: frame.Width,
+			Rect:   image.Rect(0, 0, frame.Width, frame.Height),
+		}
+		return gray
+	default:
+		return nil
 	}
-	return nil
 }
 
 func generateTestPattern(width, height int, frameNum int) image.Image {
@@ -356,20 +378,35 @@ func main() {
 			log.Printf("Failed to start camera: %v, falling back to demo mode", err)
 			*demoMode = true
 		} else {
+			log.Printf("Starting real camera capture...")
 			frameNum := 0
 			for rs.cameraRunning {
+				startTime := time.Now()
 				frame, err := rs.cam.GetFrame()
 				if err != nil {
 					log.Printf("Failed to get frame: %v", err)
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
-				img := cameraFrameToImage(frame)
-				if img != nil {
-					rs.ProcessFrame(img)
+				if frame == nil || len(frame.Data) == 0 {
+					log.Printf("Empty frame received")
+					time.Sleep(100 * time.Millisecond)
+					continue
 				}
+				log.Printf("Frame %d: %dx%d, %d bytes, channels=%d (capture time: %v)",
+					frameNum, frame.Width, frame.Height, len(frame.Data), frame.Channels, time.Since(startTime))
+				img := cameraFrameToImage(frame)
+				if img == nil {
+					log.Printf("Failed to convert frame to image")
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				rs.ProcessFrame(img)
 				frameNum++
-				time.Sleep(33 * time.Millisecond)
+				elapsed := time.Since(startTime)
+				if elapsed < 33*time.Millisecond {
+					time.Sleep(33*time.Millisecond - elapsed)
+				}
 			}
 		}
 	}

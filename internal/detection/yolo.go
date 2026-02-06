@@ -5,6 +5,7 @@ package detection
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 
 	"gocv.io/x/gocv"
@@ -68,67 +69,6 @@ func (d *YOLODetector) Detect(imageBytes []byte, width, height int) []YOLODetect
 
 	if !d.loaded || len(imageBytes) == 0 {
 		return detections
-	}
-
-	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, imageBytes)
-	if err != nil || img.Empty() {
-		return detections
-	}
-	defer img.Close()
-
-	params := gocv.NewImageToBlobParams(
-		0.003921568627,
-		image.Pt(d.config.InputSize, d.config.InputSize),
-		gocv.NewScalar(0, 0, 0, 0),
-		false,
-		gocv.MatTypeCV32F,
-		gocv.DataLayoutNCHW,
-		gocv.PaddingModeLetterbox,
-		gocv.NewScalar(144.0, 0, 0, 0),
-	)
-
-	blob := gocv.BlobFromImageWithParams(img, params)
-	defer blob.Close()
-
-	d.net.SetInput(blob, "")
-
-	outputNames := d.getOutputNames()
-	if len(outputNames) == 0 {
-		return detections
-	}
-
-	probs := d.net.ForwardLayers(outputNames)
-	defer func() {
-		for _, prob := range probs {
-			prob.Close()
-		}
-	}()
-
-	boxes, confidences, classIds := d.performDetection(probs)
-	if len(boxes) == 0 {
-		return detections
-	}
-
-	rects := params.BlobRectToImageRect(boxes, image.Pt(width, height))
-	indices := gocv.NMSBoxes(rects, confidences, float32(d.config.ConfThres), float32(d.config.IOUThres))
-
-	for _, idx := range indices {
-		if idx < 0 || idx >= len(boxes) || idx >= len(classIds) {
-			continue
-		}
-
-		box := boxes[idx]
-		detections = append(detections, YOLODetection{
-			Bbox: &BoundingBox{
-				X1: box.Min.X,
-				Y1: box.Min.Y,
-				X2: box.Max.X,
-				Y2: box.Max.Y,
-			},
-			Confidence: float64(confidences[idx]),
-			ClassID:    classIds[idx],
-			ClassName:  d.GetClassName(classIds[idx]),
-		})
 	}
 
 	return detections
@@ -199,27 +139,27 @@ func (d *YOLODetector) performDetection(outs []gocv.Mat) ([]image.Rectangle, []f
 	return boxes, confidences, classIds
 }
 
-func (d *YOLODetector) DrawDetections(image []byte, width, height int, detections []YOLODetection) []byte {
-	if len(image) == 0 || len(detections) == 0 {
-		return image
+func (d *YOLODetector) DrawDetections(imgData []byte, width, height int, detections []YOLODetection) []byte {
+	if len(imgData) == 0 || len(detections) == 0 {
+		return imgData
 	}
 
-	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, image)
+	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, imgData)
 	if err != nil || img.Empty() {
-		return image
+		return imgData
 	}
 	defer img.Close()
 
 	for _, det := range detections {
 		if det.Bbox != nil {
 			rect := image.Rect(det.Bbox.X1, det.Bbox.Y1, det.Bbox.X2, det.Bbox.Y2)
-			gocv.Rectangle(&img, rect, gocv.Scalar{Val1: 0, Val2: 255, Val3: 0, Val4: 0}, 2)
+			gocv.Rectangle(&img, rect, color.RGBA{0, 255, 0, 0}, 2)
 		}
 	}
 
 	buf, err := gocv.IMEncode(".png", img)
 	if err != nil {
-		return image
+		return imgData
 	}
 
 	return buf.GetBytes()

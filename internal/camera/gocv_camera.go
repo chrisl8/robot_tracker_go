@@ -9,8 +9,8 @@ import (
 )
 
 type GoCVCamera struct {
-	cap      gocv.VideoCaptureFile
-	device   gocv.VideoCaptureDevice
+	cap      *gocv.VideoCapture
+	device   *gocv.VideoCapture
 	width    int
 	height   int
 	fps      int
@@ -35,8 +35,8 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 		fps = DefaultFPS
 	}
 
-	cap := gocv.OpenVideoCaptureDevice(config.CameraID)
-	if !cap.IsOpened() {
+	cap, err := gocv.VideoCaptureDevice(config.CameraID)
+	if err != nil || cap == nil || !cap.IsOpened() {
 		return nil, fmt.Errorf("failed to open camera %d: %w", config.CameraID, &CameraError{Message: "camera not available"})
 	}
 
@@ -69,8 +69,8 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 		fps = DefaultFPS
 	}
 
-	cap := gocv.OpenVideoCaptureFile(url)
-	if !cap.IsOpened() {
+	cap, err := gocv.VideoCaptureFile(url)
+	if err != nil || cap == nil || !cap.IsOpened() {
 		return nil, fmt.Errorf("failed to open video file: %s: %w", url, &CameraError{Message: "file not accessible"})
 	}
 
@@ -125,13 +125,8 @@ func (c *GoCVCamera) GetFrame() (*Frame, error) {
 		return nil, &CameraError{Message: "empty frame"}
 	}
 
-	data, err := gocv.IMEncode(".png", img)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode frame: %v", err)
-	}
-
 	return &Frame{
-		Data:     data,
+		Data:     img.ToBytes(),
 		Width:    img.Cols(),
 		Height:   img.Rows(),
 		Channels: img.Channels(),

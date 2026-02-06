@@ -16,7 +16,7 @@ type IPCamera struct {
 	url       string
 }
 
-func NewIPCamera(url string, width, height, fps int) *IPCamera {
+func NewIPCamera(url string, width, height, fps int) (*IPCamera, error) {
 	if width == 0 {
 		width = DefaultWidth
 	}
@@ -40,7 +40,7 @@ func NewIPCamera(url string, width, height, fps int) *IPCamera {
 		fps:       fps,
 		connected: false,
 		running:   false,
-	}
+	}, nil
 }
 
 func (c *IPCamera) Start() error {
