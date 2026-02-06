@@ -82,20 +82,6 @@ func (rs *RobotSystem) Initialize() error {
 	rs.planner = planning.NewPlanner(plannerConfig)
 	log.Printf("Planner initialized")
 
-	calibrationPath := "config/calibration_default.yaml"
-	obstaclesPath := ""
-	if rs.cfg.Obstacles.Path != "" {
-		obstaclesPath = rs.cfg.Obstacles.Path
-	}
-	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
-	if err != nil {
-		log.Printf("Warning: Position estimator initialization failed: %v", err)
-		rs.positionEst = nil
-	} else {
-		rs.positionEst = posEst
-		log.Printf("Position estimator initialized")
-	}
-
 	if primaryCam := rs.cfg.GetPrimaryCamera(); primaryCam != nil {
 		camConfig := camera.CameraConfig{
 			Type:     primaryCam.Type,
@@ -118,6 +104,24 @@ func (rs *RobotSystem) Initialize() error {
 		log.Printf("No camera configured, using demo mode")
 	}
 
+	calibrationPath := "config/calibration_default.yaml"
+	if rs.cam != nil {
+		calibrationPath = ui.GetCalibrationFilename(rs.cam.GetName())
+		log.Printf("Using calibration file: %s", calibrationPath)
+	}
+	obstaclesPath := ""
+	if rs.cfg.Obstacles.Path != "" {
+		obstaclesPath = rs.cfg.Obstacles.Path
+	}
+	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
+	if err != nil {
+		log.Printf("Warning: Position estimator initialization failed: %v", err)
+		rs.positionEst = nil
+	} else {
+		rs.positionEst = posEst
+		log.Printf("Position estimator initialized")
+	}
+
 	rs.arduino = controller.NewArduinoController("auto", controller.BaudRate)
 	if err := rs.arduino.Connect(); err != nil {
 		log.Printf("Warning: Could not connect to Arduino: %v", err)
@@ -130,6 +134,13 @@ func (rs *RobotSystem) Initialize() error {
 	log.Printf("Command queue started")
 
 	rs.webServer = ui.NewWebServer(":8080")
+	if rs.cam != nil {
+		rs.webServer.SetCameraName(rs.cam.GetName())
+	}
+	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
+		rs.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
+		log.Printf("Calibration loaded from %s", calibrationPath)
+	}
 	rs.webServer.Start()
 	log.Printf("Web UI started at http://localhost:8080")
 
@@ -228,6 +239,16 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	}
 
 	rs.webServer.UpdateStats(len(detectionResult.Tags), len(detectionResult.YOLODetections))
+
+	detectedTags := make([]ui.DetectedTagInfo, 0, len(detectionResult.Tags))
+	for _, tag := range detectionResult.Tags {
+		detectedTags = append(detectedTags, ui.DetectedTagInfo{
+			ID:      tag.TagID,
+			Center:  [2]float64{tag.CenterX, tag.CenterY},
+			Corners: tag.Corners,
+		})
+	}
+	rs.webServer.UpdateDetectedTags(detectedTags)
 }
 
 func decodeToImage(data []byte, width, height int) image.Image {
@@ -534,6 +555,16 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 	}
 
 	rs.webServer.UpdateStats(len(demoTags), 0)
+
+	detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
+	for _, tag := range demoTags {
+		detectedTags = append(detectedTags, ui.DetectedTagInfo{
+			ID:      tag.TagID,
+			Center:  [2]float64{tag.CenterX, tag.CenterY},
+			Corners: tag.Corners,
+		})
+	}
+	rs.webServer.UpdateDetectedTags(detectedTags)
 }
 
 func main() {

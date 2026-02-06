@@ -96,18 +96,17 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		}
 	}
 
-	if homographyData, ok := calibration["homography"].([]interface{}); ok && len(homographyData) >= 9 {
-		e.homography.SetFromValues(
-			toFloat64(homographyData[0]),
-			toFloat64(homographyData[1]),
-			toFloat64(homographyData[2]),
-			toFloat64(homographyData[3]),
-			toFloat64(homographyData[4]),
-			toFloat64(homographyData[5]),
-			toFloat64(homographyData[6]),
-			toFloat64(homographyData[7]),
-			toFloat64(homographyData[8]),
-		)
+	if homographyData, ok := calibration["homography"].([]interface{}); ok && len(homographyData) >= 3 {
+		row0, _ := homographyData[0].([]interface{})
+		row1, _ := homographyData[1].([]interface{})
+		row2, _ := homographyData[2].([]interface{})
+		if len(row0) >= 3 && len(row1) >= 3 && len(row2) >= 3 {
+			e.homography.SetFromValues(
+				toFloat64(row0[0]), toFloat64(row0[1]), toFloat64(row0[2]),
+				toFloat64(row1[0]), toFloat64(row1[1]), toFloat64(row1[2]),
+				toFloat64(row2[0]), toFloat64(row2[1]), toFloat64(row2[2]),
+			)
+		}
 	}
 
 	if scale, ok := calibration["world_scale"].(float64); ok {

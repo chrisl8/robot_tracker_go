@@ -1,3 +1,5 @@
+//go:build gocv
+
 package ui
 
 const indexHTML = `<!DOCTYPE html>
@@ -31,6 +33,16 @@ const indexHTML = `<!DOCTYPE html>
             align-items: center;
             gap: 10px;
         }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .status { display: flex; gap: 20px; font-size: 0.9rem; }
+        .status span { color: #888; }
+        .status .value { color: #4ecca3; font-weight: 500; }
+        .status .connected .value { color: #4ecca3; }
+        .status .disconnected .value { color: #e94560; }
         header h1::before {
             content: '';
             display: inline-block;
@@ -44,11 +56,36 @@ const indexHTML = `<!DOCTYPE html>
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        .status { display: flex; gap: 20px; font-size: 0.9rem; }
-        .status span { color: #888; }
-        .status .value { color: #4ecca3; font-weight: 500; }
-        .status .connected .value { color: #4ecca3; }
-        .status .disconnected .value { color: #e94560; }
+        .calibration-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .calibration-badge.calibrated {
+            background: rgba(78, 204, 163, 0.2);
+            color: #4ecca3;
+            border-color: #4ecca3;
+        }
+        .calibration-badge.calibrated:hover {
+            background: rgba(78, 204, 163, 0.3);
+        }
+        .calibration-badge.not-calibrated {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+            border-color: #e94560;
+            animation: pulse-warning 2s infinite;
+        }
+        .calibration-badge.not-calibrated:hover {
+            background: rgba(233, 69, 96, 0.3);
+        }
+        @keyframes pulse-warning {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(233, 69, 96, 0); }
+        }
         .main { display: flex; flex: 1; overflow: hidden; }
         .video-container {
             flex: 1;
@@ -216,9 +253,22 @@ const indexHTML = `<!DOCTYPE html>
             color: #aaa;
             line-height: 1.6;
         }
-        .instructions li {
-            margin-bottom: 6px;
+        .instructions li { margin-bottom: 6px; }
+        .instructions.calibration-needed {
+            border: 1px solid #e94560;
+            border-radius: 8px;
+            padding: 12px;
+            background: rgba(233, 69, 96, 0.1);
         }
+        .instructions.calibration-needed li {
+            color: #ff8a9b;
+        }
+        .instructions.calibration-needed .warning {
+            color: #e94560;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .hidden { display: none !important; }
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -240,17 +290,464 @@ const indexHTML = `<!DOCTYPE html>
             color: #666;
             margin-top: 2px;
         }
+        .calibration-wizard {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+        }
+        .calibration-wizard.active { display: block; }
+        .calibration-content {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: #16213e;
+            border-radius: 12px;
+            padding: 0;
+            max-width: 520px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            transition: transform 0.2s, left 0.1s, top 0.1s;
+        }
+        .calibration-content.pinned {
+            transform: none;
+            left: 20px;
+            top: 20px;
+        }
+        .calibration-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid #0f3460;
+            cursor: move;
+            background: #1a1a2e;
+            border-radius: 12px 12px 0 0;
+        }
+        .calibration-header h2 {
+            margin: 0;
+            color: #4ecca3;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.2rem;
+        }
+        .calibration-header h2::before {
+            content: '📐';
+        }
+        .calibration-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .calibration-btn-icon {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 6px;
+            background: #0f3460;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .calibration-btn-icon:hover {
+            background: #1a4a7a;
+            color: #eee;
+        }
+        .calibration-btn-icon.pinned {
+            background: #4ecca3;
+            color: #1a1a2e;
+        }
+        .calibration-body {
+            padding: 20px 24px 24px;
+        }
+        .calibration-content h2 {
+            margin-bottom: 16px;
+            color: #4ecca3;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .calibration-content h2::before {
+            content: '📐';
+        }
+        .calibration-content p {
+            color: #aaa;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .calibration-step {
+            display: none;
+        }
+        .calibration-step.active { display: block; }
+        .tag-size-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 1.1rem;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .tag-size-input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+        .tag-size-hint {
+            font-size: 0.8rem;
+            color: #666;
+            text-align: center;
+            margin-top: -8px;
+            margin-bottom: 16px;
+        }
+        .calibration-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .calibration-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .calibration-btn.primary {
+            background: #4ecca3;
+            color: #1a1a2e;
+        }
+        .calibration-btn.primary:hover {
+            background: #5fd9b0;
+            transform: translateY(-1px);
+        }
+        .calibration-btn.primary:disabled {
+            background: #2a4a3a;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .calibration-btn.secondary {
+            background: #0f3460;
+            color: #eee;
+        }
+        .calibration-btn.secondary:hover {
+            background: #1a4a7a;
+        }
+        .detected-tags-list {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .detected-tag-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: #16213e;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .detected-tag-item:hover {
+            background: #1a2a4e;
+        }
+        .detected-tag-item.selected {
+            border-color: #00bcd4;
+            background: rgba(0, 188, 212, 0.1);
+        }
+        .detected-tag-item .tag-id {
+            font-weight: bold;
+            color: #4ecca3;
+        }
+        .detected-tag-item .tag-status {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        .calibration-status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            text-align: center;
+            font-weight: 500;
+        }
+        .calibration-status.success {
+            background: rgba(78, 204, 163, 0.2);
+            color: #4ecca3;
+        }
+        .calibration-status.warning {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+        .calibration-status.info {
+            background: rgba(0, 188, 212, 0.2);
+            color: #00bcd4;
+        }
+        .calibration-status.error {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+        }
+        .dimension-results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .dimension-box {
+            background: #1a1a2e;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .dimension-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #4ecca3;
+        }
+        .dimension-label {
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 4px;
+        }
+        .measurement-guide {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .measurement-guide h4 {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .tag-diagram {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+        .tag-preview {
+            width: 100px;
+            height: 100px;
+            position: relative;
+            border: 8px solid white;
+            background: black;
+            flex-shrink: 0;
+        }
+        .tag-preview::after {
+            content: 'DATA';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .measurement-arrow {
+            flex: 1;
+            position: relative;
+            height: 30px;
+        }
+        .measurement-arrow::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 2px;
+            background: #4ecca3;
+        }
+        .measurement-arrow::after {
+            content: '▼';
+            position: absolute;
+            left: 50%;
+            bottom: 0;
+            transform: translateX(-50%);
+            color: #4ecca3;
+            font-size: 12px;
+        }
+        .measurement-label {
+            text-align: center;
+            color: #4ecca3;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        .measurement-note {
+            font-size: 0.8rem;
+            color: #888;
+            line-height: 1.5;
+            margin-top: 8px;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #16213e;
+            color: #eee;
+            padding: 12px 24px;
+            border-radius: 8px;
+            z-index: 2000;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            border: 1px solid #0f3460;
+        }
+        .toast.show { display: block; animation: toastIn 0.3s; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .tag-size-presets {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .preset-btn {
+            padding: 6px 12px;
+            border: 1px solid #0f3460;
+            background: #1a1a2e;
+            color: #888;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover {
+            border-color: #4ecca3;
+            color: #4ecca3;
+        }
+        .preset-btn.selected {
+            background: rgba(78, 204, 163, 0.2);
+            border-color: #4ecca3;
+            color: #4ecca3;
+        }
     </style>
 </head>
 <body>
     <header>
         <h1>Robot Tracker</h1>
-        <div class="status">
-            <span>FPS: <span class="value" id="fps">0</span></span>
-            <span>Tracks: <span class="value" id="trackCount">0</span></span>
-            <span id="arduinoStatus" class="disconnected">Arduino: <span class="value" id="arduino">Disconnected</span></span>
+        <div class="header-right">
+            <div class="status">
+                <span>FPS: <span class="value" id="fps">0</span></span>
+                <span>Tracks: <span class="value" id="trackCount">0</span></span>
+                <span id="calibrationBadge" class="calibration-badge not-calibrated" onclick="openCalibration()">Not Calibrated</span>
+                <span id="arduinoStatus" class="disconnected">Arduino: <span class="value" id="arduino">Disconnected</span></span>
+            </div>
         </div>
     </header>
+
+    <div class="calibration-wizard" id="calibrationWizard">
+        <div class="calibration-content" id="calibrationContent">
+            <div class="calibration-header" id="calibrationHeader">
+                <h2>Camera Calibration</h2>
+                <div class="calibration-actions">
+                    <button class="calibration-btn-icon" id="pinCalibrationBtn" onclick="toggleCalibrationPin()" title="Pin/Unpin dialogue">📌</button>
+                    <button class="calibration-btn-icon" onclick="closeCalibration()" title="Close">✕</button>
+                </div>
+            </div>
+            <div class="calibration-body">
+            <div class="calibration-step active" id="calibrationStep1">
+                <p>Calibration enables <strong>click-to-navigate</strong> and <strong>path planning</strong> by mapping camera pixels to world coordinates.</p>
+
+                <div class="measurement-guide">
+                    <h4>How to Measure Your AprilTag</h4>
+                    <div class="tag-diagram">
+                        <div class="tag-preview"></div>
+                        <div class="measurement-arrow"></div>
+                    </div>
+                    <div class="measurement-label">TAG SIZE (black-white border edge)</div>
+                    <p class="measurement-note">
+                        Tag size is measured across the outside edge of the inner border which comprises the black pixels for 36h11.
+                        The image shows a complete AprilTag with outer white border. From the 36h11 family, its ID code is 42.
+                    </p>
+                </div>
+
+                <label style="color: #888; font-size: 0.9rem;">Tag Size (meters):</label>
+
+                <div class="tag-size-presets">
+                    <button class="preset-btn" onclick="setTagSize(0.10)">10cm</button>
+                    <button class="preset-btn selected" onclick="setTagSize(0.15)">15cm</button>
+                    <button class="preset-btn" onclick="setTagSize(0.20)">20cm</button>
+                </div>
+
+                <input type="number" class="tag-size-input" id="tagSizeInput" value="0.15" step="0.01" min="0.01" max="1.0">
+
+                <div class="calibration-buttons">
+                    <button class="calibration-btn secondary" onclick="cancelCalibration()">Cancel</button>
+                    <button class="calibration-btn primary" onclick="startCalibrationDetection()">Detect Tags</button>
+                </div>
+            </div>
+
+            <div class="calibration-step" id="calibrationStep2">
+                <div class="calibration-status info" id="calibrationStatus">
+                    Detecting AprilTags...
+                </div>
+
+                <p id="selectionPrompt" class="hidden">Click a tag in the list or on the video to select:</p>
+
+                <div class="detected-tags-list" id="detectedTagsList" style="display: none;">
+                    <!-- Tags will be populated here -->
+                </div>
+
+                <div id="noTagsMessage" style="text-align: center; color: #888; padding: 20px;">
+                    No tags detected. Make sure the tag is visible in the camera.
+                </div>
+
+                <div class="calibration-buttons">
+                    <button class="calibration-btn secondary" onclick="cancelCalibration()">Cancel</button>
+                    <button class="calibration-btn primary" id="useSelectedBtn" onclick="useSelectedTag()" disabled>Use Selected Tag</button>
+                </div>
+            </div>
+
+            <div class="calibration-step" id="calibrationStep3">
+                <div class="calibration-status success" id="calibrationSuccess">
+                    Calibration Complete!
+                </div>
+
+                <div class="dimension-results">
+                    <div class="dimension-box">
+                        <div class="dimension-value" id="resultWidth">--</div>
+                        <div class="dimension-label">Width (meters)</div>
+                    </div>
+                    <div class="dimension-box">
+                        <div class="dimension-value" id="resultHeight">--</div>
+                        <div class="dimension-label">Height (meters)</div>
+                    </div>
+                </div>
+
+                <p id="calibrationSavedTo" style="text-align: center; color: #888; font-size: 0.9rem;"></p>
+
+                <div class="calibration-buttons">
+                    <button class="calibration-btn primary" onclick="closeCalibration()">Done</button>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
     <div class="main">
         <div class="video-container">
             <div class="video-wrapper" id="videoWrapper">
@@ -293,16 +790,17 @@ const indexHTML = `<!DOCTYPE html>
                     <div class="no-tracks">Waiting for detections...</div>
                 </div>
             </div>
-            <div class="panel">
+            <div class="panel" id="instructionsPanel">
                 <h3>Instructions</h3>
-                <ul class="instructions">
-                    <li>Click on video to set navigation target</li>
-                    <li>Use WASD keys for movement control</li>
-                    <li>Press <kbd>E</kbd> for weapon mode</li>
-                    <li>Press <kbd>X</kbd> for emergency stop</li>
-                    <li>Green boxes = tracked robots</li>
-                    <li>Red boxes = detected obstacles</li>
-                </ul>
+                <div class="instructions calibration-needed" id="instructionsContent">
+                    <p class="warning">Camera not calibrated - navigation disabled</p>
+                    <p>Click the <strong>"Not Calibrated"</strong> badge above to run calibration.</p>
+                    <ul>
+                        <li>Click-to-navigate on video</li>
+                        <li>Path planning around obstacles</li>
+                        <li>World coordinate tracking</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
@@ -331,6 +829,9 @@ const indexHTML = `<!DOCTYPE html>
         var lastFrameTime = Date.now();
         var frameCount = 0;
         var fps = 0;
+        var calibrationMode = false;
+        var detectedTags = [];
+        var selectedTagId = null;
 
         ws.onopen = function() {
             loading.style.display = 'none';
@@ -373,6 +874,19 @@ const indexHTML = `<!DOCTYPE html>
                     if (data.detections) {
                         tracks = data.detections;
                         updateTrackList();
+                    }
+                    break;
+                case 'calibration_tags':
+                    handleCalibrationTags(data.tags);
+                    break;
+                case 'calibration':
+                    if (data.calibration) {
+                        var calib = data.calibration;
+                        if (calib.state === 'complete' || calib.state === 'calibrated') {
+                            updateCalibrationBadge(true);
+                        } else if (calib.state === 'not_calibrated') {
+                            updateCalibrationBadge(false);
+                        }
                     }
                     break;
             }
@@ -422,7 +936,7 @@ const indexHTML = `<!DOCTYPE html>
 
         function updateTrackList() {
             if (tracks.length === 0) {
-                trackList.innerHTML = '<div class=\"no-tracks\">Waiting for detections...</div>';
+                trackList.innerHTML = '<div class="no-tracks">Waiting for detections...</div>';
                 return;
             }
 
@@ -431,13 +945,13 @@ const indexHTML = `<!DOCTYPE html>
                 var track = tracks[i];
                 var color = getTrackColor(track.id);
                 var tagInfo = track.tag_id !== undefined
-                    ? '<span class=\"track-tag\">Tag #' + track.tag_id + '</span>'
+                    ? '<span class="track-tag">Tag #' + track.tag_id + '</span>'
                     : '';
-                html += '<div class=\"track-item\">';
-                html += '<div class=\"track-color\" style=\"background: ' + color + '; color: #1a1a2e;\">' + track.id + '</div>';
-                html += '<div class=\"track-info\">';
-                html += '<div class=\"track-label\">Track #' + track.id + tagInfo + '</div>';
-                html += '<div class=\"track-conf\">Confidence: ' + (track.confidence * 100).toFixed(1) + '%</div>';
+                html += '<div class="track-item">';
+                html += '<div class="track-color" style="background: ' + color + '; color: #1a1a2e;">' + track.id + '</div>';
+                html += '<div class="track-info">';
+                html += '<div class="track-label">Track #' + track.id + tagInfo + '</div>';
+                html += '<div class="track-conf">Confidence: ' + (track.confidence * 100).toFixed(1) + '%</div>';
                 html += '</div></div>';
             }
             trackList.innerHTML = html;
@@ -451,6 +965,12 @@ const indexHTML = `<!DOCTYPE html>
             ctx.strokeStyle = color;
             ctx.lineWidth = 2;
             ctx.strokeRect(bbox.x1, bbox.y1, bbox.x2 - bbox.x1, bbox.y2 - bbox.y1);
+
+            if (bbox.id && selectedTagId === bbox.id && calibrationMode) {
+                ctx.strokeStyle = '#00bcd4';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(bbox.x1 - 4, bbox.y1 - 4, bbox.x2 - bbox.x1 + 8, bbox.y2 - bbox.y1 + 8);
+            }
 
             ctx.fillStyle = color;
             ctx.fillRect(bbox.x1 - 1, bbox.y1 - 22, 60, 18);
@@ -471,9 +991,7 @@ const indexHTML = `<!DOCTYPE html>
 
         video.onload = syncCanvasSize;
         video.onloadeddata = syncCanvasSize;
-
         window.addEventListener('resize', syncCanvasSize);
-
         setInterval(syncCanvasSize, 1000);
 
         var buttons = document.querySelectorAll('.btn');
@@ -516,6 +1034,14 @@ const indexHTML = `<!DOCTYPE html>
             var x = Math.round((e.clientX - rect.left) * (overlay.width / rect.width));
             var y = Math.round((e.clientY - rect.top) * (overlay.height / rect.height));
 
+            if (calibrationMode && detectedTags.length > 0) {
+                var closestTag = findClosestTag(x, y);
+                if (closestTag !== null) {
+                    selectTag(closestTag);
+                    return;
+                }
+            }
+
             destinations.push({ x: x, y: y, time: Date.now() });
 
             ctx.strokeStyle = '#4ecca3';
@@ -555,6 +1081,314 @@ const indexHTML = `<!DOCTYPE html>
         });
 
         console.log('Robot Tracker UI initialized');
+
+        function openCalibration() {
+            calibrationMode = true;
+            selectedTagId = null;
+            detectedTags = [];
+            document.getElementById('calibrationWizard').classList.add('active');
+            showCalibrationStep(1);
+        }
+
+        function closeCalibration() {
+            calibrationMode = false;
+            selectedTagId = null;
+            document.getElementById('calibrationWizard').classList.remove('active');
+        }
+
+        function toggleCalibrationPin() {
+            isCalibrationPinned = !isCalibrationPinned;
+            var btn = document.getElementById('pinCalibrationBtn');
+            var content = document.getElementById('calibrationContent');
+            if (isCalibrationPinned) {
+                btn.classList.add('pinned');
+                content.classList.add('pinned');
+            } else {
+                btn.classList.remove('pinned');
+                content.classList.remove('pinned');
+            }
+        }
+
+        var dragOffset = { x: 0, y: 0 };
+        var isDraggingCalibration = false;
+
+        document.getElementById('calibrationHeader').addEventListener('mousedown', function(e) {
+            if (e.target.tagName === 'BUTTON') return;
+            isDraggingCalibration = true;
+            var content = document.getElementById('calibrationContent');
+            var rect = content.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (isDraggingCalibration) {
+                var content = document.getElementById('calibrationContent');
+                content.style.transform = 'none';
+                content.style.left = (e.clientX - dragOffset.x) + 'px';
+                content.style.top = (e.clientY - dragOffset.y) + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', function() {
+            isDraggingCalibration = false;
+        });
+
+        function cancelCalibration() {
+            calibrationMode = false;
+            selectedTagId = null;
+            fetch('/api/calibration/cancel', { method: 'POST' })
+                .then(function() { closeCalibration(); });
+        }
+
+        function showCalibrationStep(step) {
+            document.getElementById('calibrationStep1').classList.toggle('active', step === 1);
+            document.getElementById('calibrationStep2').classList.toggle('active', step === 2);
+            document.getElementById('calibrationStep3').classList.toggle('active', step === 3);
+        }
+
+        function setTagSize(size) {
+            document.getElementById('tagSizeInput').value = size;
+            var presetBtns = document.querySelectorAll('.preset-btn');
+            presetBtns.forEach(function(btn) {
+                btn.classList.toggle('selected', btn.textContent.includes(size.toString().replace('0.', '')));
+            });
+        }
+
+        function startCalibrationDetection() {
+            var tagSize = parseFloat(document.getElementById('tagSizeInput').value) || 0.15;
+
+            fetch('/api/calibration/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tagSize: tagSize })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.status === 'ok') {
+                    showCalibrationStep(2);
+                    updateCalibrationStatus('info', 'Detecting AprilTags...');
+                    document.getElementById('detectedTagsList').style.display = 'none';
+                    document.getElementById('noTagsMessage').style.display = 'none';
+                    document.getElementById('selectionPrompt').classList.add('hidden');
+                    document.getElementById('useSelectedBtn').disabled = true;
+
+                    setTimeout(pollForDetectedTags, 500);
+                }
+            });
+        }
+
+        function pollForDetectedTags() {
+            fetch('/api/calibration/detected-tags')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.tags && data.tags.length > 0) {
+                        handleCalibrationTags(data.tags);
+                    } else {
+                        setTimeout(pollForDetectedTags, 500);
+                    }
+                })
+                .catch(function() {
+                    setTimeout(pollForDetectedTags, 500);
+                });
+        }
+
+        function handleCalibrationTags(tags) {
+            if (!calibrationMode) return;
+
+            detectedTags = tags;
+
+            if (tags.length === 0) {
+                document.getElementById('detectedTagsList').style.display = 'none';
+                document.getElementById('noTagsMessage').style.display = 'block';
+                document.getElementById('selectionPrompt').classList.add('hidden');
+                updateCalibrationStatus('info', 'Looking for AprilTags...');
+            } else {
+                document.getElementById('detectedTagsList').style.display = 'block';
+                document.getElementById('noTagsMessage').style.display = 'none';
+                document.getElementById('selectionPrompt').classList.remove('hidden');
+
+                var html = '';
+                tags.forEach(function(tag, idx) {
+                    var isSelected = tag.id === selectedTagId;
+                    html += '<div class="detected-tag-item' + (isSelected ? ' selected' : '') + '" onclick="selectTag(' + tag.id + ')" data-id="' + tag.id + '">';
+                    html += '<span class="tag-id">Tag #' + tag.id + '</span>';
+                    html += '<span class="tag-status">' + (isSelected ? '✓ Selected' : 'Click to select') + '</span>';
+                    html += '</div>';
+                });
+                document.getElementById('detectedTagsList').innerHTML = html;
+
+                if (selectedTagId !== null) {
+                    document.getElementById('useSelectedBtn').disabled = false;
+                    updateCalibrationStatus('success', 'Tag #' + selectedTagId + ' selected');
+                } else {
+                    updateCalibrationStatus('info', tags.length + ' tag(s) detected - select one to use');
+                }
+            }
+        }
+
+        function selectTag(tagId) {
+            selectedTagId = tagId;
+
+            var items = document.querySelectorAll('.detected-tag-item');
+            items.forEach(function(item) {
+                var id = parseInt(item.getAttribute('data-id'));
+                item.classList.toggle('selected', id === tagId);
+                item.querySelector('.tag-status').textContent = id === tagId ? '✓ Selected' : 'Click to select';
+            });
+
+            document.getElementById('useSelectedBtn').disabled = false;
+            updateCalibrationStatus('success', 'Tag #' + tagId + ' selected - click "Use Selected Tag"');
+
+            var tag = detectedTags.find(function(t) { return t.id === tagId; });
+            if (tag && tag.corners) {
+                redrawOverlay();
+            }
+        }
+
+        function findClosestTag(x, y) {
+            if (detectedTags.length === 0) return null;
+
+            var closest = null;
+            var minDist = Infinity;
+
+            detectedTags.forEach(function(tag) {
+                if (tag.center) {
+                    var dx = tag.center[0] - x;
+                    var dy = tag.center[1] - y;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closest = tag.id;
+                    }
+                }
+            });
+
+            return closest;
+        }
+
+        function redrawOverlay() {
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            detectedTags.forEach(function(tag) {
+                if (tag.corners) {
+                    var isSelected = tag.id === selectedTagId;
+                    var corners = tag.corners;
+
+                    ctx.strokeStyle = isSelected ? '#00bcd4' : '#4ecca3';
+                    ctx.lineWidth = isSelected ? 4 : 2;
+                    ctx.beginPath();
+                    ctx.moveTo(corners[0][0], corners[0][1]);
+                    for (var i = 1; i < corners.length; i++) {
+                        ctx.lineTo(corners[i][0], corners[i][1]);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    if (isSelected) {
+                        ctx.strokeStyle = 'rgba(0, 188, 212, 0.3)';
+                        ctx.lineWidth = 8;
+                        ctx.stroke();
+                    }
+
+                    ctx.fillStyle = isSelected ? '#00bcd4' : '#4ecca3';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.fillText('Tag #' + tag.id, corners[0][0], corners[0][1] - 10);
+                }
+            });
+        }
+
+        function useSelectedTag() {
+            if (selectedTagId === null) {
+                showToast('Please select a tag first');
+                return;
+            }
+
+            var tag = detectedTags.find(function(t) { return t.id === selectedTagId; });
+            if (!tag) {
+                showToast('Tag not found');
+                return;
+            }
+
+            var tagSize = parseFloat(document.getElementById('tagSizeInput').value) || 0.15;
+
+            fetch('/api/calibration/compute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tagId: selectedTagId,
+                    tagSize: tagSize,
+                    corners: tag.corners || [[100,100],[200,100],[200,200],[100,200]]
+                })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.state === 'complete') {
+                    document.getElementById('resultWidth').textContent = data.computedWidth.toFixed(2);
+                    document.getElementById('resultHeight').textContent = data.computedHeight.toFixed(2);
+
+                    var filename = data.filename || 'config/calibration_*.yaml';
+                    document.getElementById('calibrationSavedTo').textContent = 'Saved to: ' + filename;
+
+                    updateCalibrationBadge(true);
+                    showCalibrationStep(3);
+                    calibrationMode = false;
+                } else {
+                    updateCalibrationStatus('error', data.error || 'Calibration failed');
+                }
+            })
+            .catch(function(err) {
+                console.error('Calibration compute error:', err);
+                showToast('Calibration failed');
+            });
+        }
+
+        function updateCalibrationStatus(type, message) {
+            var statusEl = document.getElementById('calibrationStatus');
+            statusEl.className = 'calibration-status ' + type;
+            statusEl.textContent = message;
+        }
+
+        function updateCalibrationBadge(calibrated) {
+            var badge = document.getElementById('calibrationBadge');
+            var instructionsContent = document.getElementById('instructionsContent');
+            var instructionsPanel = document.getElementById('instructionsPanel');
+
+            if (calibrated) {
+                badge.textContent = 'Calibrated';
+                badge.classList.remove('not-calibrated');
+                badge.classList.add('calibrated');
+                instructionsContent.innerHTML = '<ul><li>Click on video to set navigation target</li><li>Use WASD keys for movement control</li><li>Press <kbd>E</kbd> for weapon mode</li><li>Press <kbd>X</kbd> for emergency stop</li><li>Green boxes = tracked robots</li><li>Red boxes = detected obstacles</li></ul>';
+            } else {
+                badge.textContent = 'Not Calibrated';
+                badge.classList.remove('calibrated');
+                badge.classList.add('not-calibrated');
+            }
+        }
+
+        function showToast(message) {
+            var toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(function() {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        checkCalibrationStatus();  // Check immediately on load
+        setInterval(checkCalibrationStatus, 5000);
+        function checkCalibrationStatus() {
+            fetch('/api/calibration/status')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.state === 'complete' || data.state === 'calibrated') {
+                        updateCalibrationBadge(true);
+                    } else if (data.state === 'not_calibrated') {
+                        updateCalibrationBadge(false);
+                    }
+                })
+                .catch(function() {});
+        }
     </script>
 </body>
 </html>`

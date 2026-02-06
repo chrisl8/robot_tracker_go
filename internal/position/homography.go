@@ -204,3 +204,124 @@ func (h *Homography) GetPixelsPerMeter() float64 {
 func (h *Homography) SetPixelsPerMeter(ppm float64) {
 	h.PixelsPerMeter = ppm
 }
+
+func (h *Homography) ComputeFromAprilTag(imgCorners [][2]float64, worldCorners [][3]float64) error {
+	if len(imgCorners) < 4 || len(worldCorners) < 4 {
+		return fmt.Errorf("need at least 4 corner points")
+	}
+
+	A := make([]float64, 8*9)
+	rowIdx := 0
+
+	for i := 0; i < 4; i++ {
+		ux := imgCorners[i][0]
+		uy := imgCorners[i][1]
+		WX := worldCorners[i][0]
+		WY := worldCorners[i][1]
+		WZ := worldCorners[i][2]
+
+		A[rowIdx*9+0] = WX
+		A[rowIdx*9+1] = WY
+		A[rowIdx*9+2] = WZ
+		A[rowIdx*9+3] = 0
+		A[rowIdx*9+4] = 0
+		A[rowIdx*9+5] = 0
+		A[rowIdx*9+6] = -WX * ux
+		A[rowIdx*9+7] = -WY * ux
+		A[rowIdx*9+8] = -WZ * ux
+		rowIdx++
+
+		A[rowIdx*9+0] = 0
+		A[rowIdx*9+1] = 0
+		A[rowIdx*9+2] = 0
+		A[rowIdx*9+3] = WX
+		A[rowIdx*9+4] = WY
+		A[rowIdx*9+5] = WZ
+		A[rowIdx*9+6] = -WX * uy
+		A[rowIdx*9+7] = -WY * uy
+		A[rowIdx*9+8] = -WZ * uy
+		rowIdx++
+	}
+
+	h.H = solveDLT(A)
+	h.ComputeInverse()
+
+	avgDiag := (dist3D(worldCorners[0], worldCorners[2]) + dist3D(worldCorners[1], worldCorners[3])) / 2.0
+	if avgDiag > 0 {
+		expectedPixels := avgDiag * 1000
+		scale := h.EstimateScaleFromCorners(imgCorners, expectedPixels)
+		h.PixelsPerMeter = scale
+	} else {
+		h.EstimateScale()
+	}
+
+	h.Valid = true
+	return nil
+}
+
+func solveDLT(A []float64) [3][3]float64 {
+	var H [3][3]float64
+
+	_, V := eigenDecomposition(A)
+
+	for j := 0; j < 9; j++ {
+		H[j/3][j%3] = V[8][j]
+	}
+
+	scale := H[2][2]
+	if scale != 0 {
+		for i := 0; i < 3; i++ {
+			for j := 0; j < 3; j++ {
+				H[i][j] /= scale
+			}
+		}
+	}
+
+	return H
+}
+
+func eigenDecomposition(A []float64) ([]float64, [][]float64) {
+	n := 8
+	eigenvalues := make([]float64, n)
+	eigenvectors := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		eigenvectors[i] = make([]float64, n)
+	}
+
+	for i := 0; i < n; i++ {
+		eigenvalues[i] = 1.0
+		for j := 0; j < n; j++ {
+			eigenvectors[i][j] = A[i*9+j%9]
+		}
+	}
+
+	return eigenvalues, eigenvectors
+}
+
+func dist3D(p1, p2 [3]float64) float64 {
+	dx := p2[0] - p1[0]
+	dy := p2[1] - p1[1]
+	dz := p2[2] - p1[2]
+	return sqrt(dx*dx + dy*dy + dz*dz)
+}
+
+func (h *Homography) EstimateScaleFromCorners(corners [][2]float64, expectedPixels float64) float64 {
+	diag1 := sqrt(pow(corners[0][0]-corners[2][0], 2) + pow(corners[0][1]-corners[2][1], 2))
+	diag2 := sqrt(pow(corners[1][0]-corners[3][0], 2) + pow(corners[1][1]-corners[3][1], 2))
+	avgDiag := (diag1 + diag2) / 2.0
+	if avgDiag > 0 {
+		return expectedPixels / avgDiag
+	}
+	return 1000.0
+}
+
+func pow(x, y float64) float64 {
+	if y == 0 {
+		return 1
+	}
+	result := 1.0
+	for i := 0; i < int(y); i++ {
+		result *= x
+	}
+	return result
+}

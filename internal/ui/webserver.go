@@ -3,16 +3,24 @@
 package ui
 
 import (
-	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
-	"image/jpeg"
+	"log"
+	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hybridgroup/mjpeg"
+	"gopkg.in/yaml.v3"
+	"robot_tracker_go/internal/position"
 )
 
 type WebServer struct {
@@ -27,15 +35,28 @@ type WebServer struct {
 	lastTagCount  int
 	lastYoloCount int
 	statsMutex    sync.RWMutex
+
+	calibrationMutex    sync.RWMutex
+	calibrationState    string
+	calibrationMessage  string
+	calibrationFilename string
+	calibrationTagSize  float64
+	calibrationData     *CalibrationSaveRequest
+	cameraName          string
+
+	detectedTags    []DetectedTagInfo
+	detectedTagsMut sync.RWMutex
+	lastTagUpdate   time.Time
 }
 
 type OverlayMessage struct {
-	Type    string          `json:"type"`
-	BBox    *BBoxMessage    `json:"bbox,omitempty"`
-	Track   *TrackMessage   `json:"track,omitempty"`
-	Path    *PathMessage    `json:"path,omitempty"`
-	Status  *StatusMessage  `json:"status,omitempty"`
-	Command *CommandMessage `json:"command,omitempty"`
+	Type        string                    `json:"type"`
+	BBox        *BBoxMessage              `json:"bbox,omitempty"`
+	Track       *TrackMessage             `json:"track,omitempty"`
+	Path        *PathMessage              `json:"path,omitempty"`
+	Status      *StatusMessage            `json:"status,omitempty"`
+	Command     *CommandMessage           `json:"command,omitempty"`
+	Calibration *CalibrationStatusMessage `json:"calibration,omitempty"`
 }
 
 type BBoxMessage struct {
@@ -76,6 +97,22 @@ type DestinationRequest struct {
 
 type CommandRequest struct {
 	Command string `json:"command"`
+}
+
+type CalibrationStartRequest struct {
+	TagSize float64 `json:"tagSize"`
+}
+
+type CalibrationDetectRequest struct {
+	TagID   int           `json:"tagId"`
+	Corners [4][2]float64 `json:"corners"`
+}
+
+type CalibrationSaveRequest struct {
+	ComputedWidth  float64     `json:"computedWidth"`
+	ComputedHeight float64     `json:"computedHeight"`
+	PixelsPerMeter float64     `json:"pixelsPerMeter"`
+	Homography     [][]float64 `json:"homography"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -125,6 +162,11 @@ func (s *WebServer) setupRoutes() {
 	s.engine.POST("/api/command", s.handleCommand)
 	s.engine.POST("/api/destination", s.handleDestination)
 	s.engine.GET("/api/status", s.handleStatus)
+	s.engine.GET("/api/calibration/status", s.handleCalibrationStatus)
+	s.engine.POST("/api/calibration/start", s.handleCalibrationStart)
+	s.engine.GET("/api/calibration/detected-tags", s.handleCalibrationDetectedTags)
+	s.engine.POST("/api/calibration/compute", s.handleCalibrationCompute)
+	s.engine.POST("/api/calibration/cancel", s.handleCalibrationCancel)
 }
 
 func (s *WebServer) handleIndex(c *gin.Context) {
@@ -184,6 +226,14 @@ func (s *WebServer) broadcastCommand(cmd string) {
 	s.clientMutex.RUnlock()
 }
 
+func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
+	s.clientMutex.RLock()
+	for client := range s.clients {
+		client.WriteJSON(msg)
+	}
+	s.clientMutex.RUnlock()
+}
+
 func (s *WebServer) handleCommand(c *gin.Context) {
 	var req CommandRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -218,64 +268,284 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 	})
 }
 
+func (s *WebServer) SetCameraName(name string) {
+	s.cameraName = name
+}
+
+func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize float64) {
+	s.calibrationMutex.Lock()
+	s.calibrationState = state
+	s.calibrationMessage = message
+	s.calibrationFilename = filename
+	s.calibrationTagSize = tagSize
+	s.calibrationMutex.Unlock()
+
+	s.BroadcastOverlay(OverlayMessage{
+		Type: "calibration",
+		Calibration: &CalibrationStatusMessage{
+			State:    state,
+			Message:  message,
+			Filename: filename,
+			TagSize:  tagSize,
+		},
+	})
+}
+
+type CalibrationStatusMessage struct {
+	State    string  `json:"state"`
+	Message  string  `json:"message"`
+	Filename string  `json:"filename"`
+	TagSize  float64 `json:"tagSize"`
+}
+
+func (s *WebServer) handleCalibrationStatus(c *gin.Context) {
+	s.calibrationMutex.RLock()
+	state := s.calibrationState
+	message := s.calibrationMessage
+	filename := s.calibrationFilename
+	tagSize := s.calibrationTagSize
+	s.calibrationMutex.RUnlock()
+
+	c.JSON(http.StatusOK, gin.H{
+		"state":    state,
+		"message":  message,
+		"filename": filename,
+		"tagSize":  tagSize,
+	})
+}
+
+func (s *WebServer) handleCalibrationStart(c *gin.Context) {
+	var req CalibrationStartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tagSize := req.TagSize
+	if tagSize <= 0 {
+		tagSize = 0.15
+	}
+
+	s.SetCalibrationState("detecting", "Looking for AprilTags...", "", tagSize)
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "detecting"})
+}
+
+type DetectedTagInfo struct {
+	ID      int           `json:"id"`
+	Center  [2]float64    `json:"center"`
+	Corners [4][2]float64 `json:"corners"`
+}
+
+type CalibrationDetectedTagsResponse struct {
+	Tags  []DetectedTagInfo `json:"tags"`
+	Count int               `json:"count"`
+}
+
+func (s *WebServer) UpdateDetectedTags(tags []DetectedTagInfo) {
+	s.detectedTagsMut.Lock()
+	s.detectedTags = tags
+	s.lastTagUpdate = time.Now()
+	s.detectedTagsMut.Unlock()
+}
+
+func (s *WebServer) handleCalibrationDetectedTags(c *gin.Context) {
+	s.detectedTagsMut.RLock()
+	if time.Since(s.lastTagUpdate) > 2*time.Second {
+		s.detectedTags = nil
+	}
+	tags := s.detectedTags
+	s.detectedTagsMut.RUnlock()
+	c.JSON(http.StatusOK, gin.H{"tags": tags, "count": len(tags)})
+}
+
+type CalibrationComputeRequest struct {
+	TagID   int           `json:"tagId"`
+	TagSize float64       `json:"tagSize"`
+	Corners [4][2]float64 `json:"corners"`
+}
+
+type CalibrationComputeResponse struct {
+	State          string      `json:"state"`
+	TagID          int         `json:"tagId,omitempty"`
+	ComputedWidth  float64     `json:"computedWidth,omitempty"`
+	ComputedHeight float64     `json:"computedHeight,omitempty"`
+	PixelsPerMeter float64     `json:"pixelsPerMeter,omitempty"`
+	Message        string      `json:"message,omitempty"`
+	Error          string      `json:"error,omitempty"`
+	Filename       string      `json:"filename,omitempty"`
+	Homography     [][]float64 `json:"homography,omitempty"`
+}
+
+func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
+	var req CalibrationComputeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tagSize := req.TagSize
+	if tagSize <= 0 {
+		tagSize = 0.15
+	}
+
+	halfSize := tagSize / 2.0
+
+	srcPoints := []position.Point2D{
+		{X: req.Corners[0][0], Y: req.Corners[0][1]},
+		{X: req.Corners[1][0], Y: req.Corners[1][1]},
+		{X: req.Corners[2][0], Y: req.Corners[2][1]},
+		{X: req.Corners[3][0], Y: req.Corners[3][1]},
+	}
+
+	dstPoints := []position.Point2D{
+		{X: -halfSize, Y: -halfSize},
+		{X: halfSize, Y: -halfSize},
+		{X: halfSize, Y: halfSize},
+		{X: -halfSize, Y: halfSize},
+	}
+
+	h := position.NewHomography()
+	err := h.ComputeFromPoints(srcPoints, dstPoints)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to compute homography: %v", err)})
+		return
+	}
+
+	computedWidth := tagSize
+	computedHeight := tagSize
+
+	pixelsPerMeter := h.GetPixelsPerMeter()
+
+	hMatrix := [][]float64{
+		{h.H[0][0], h.H[0][1], h.H[0][2]},
+		{h.H[1][0], h.H[1][1], h.H[1][2]},
+		{h.H[2][0], h.H[2][1], h.H[2][2]},
+	}
+
+	s.calibrationMutex.Lock()
+	s.calibrationData = &CalibrationSaveRequest{
+		ComputedWidth:  computedWidth,
+		ComputedHeight: computedHeight,
+		PixelsPerMeter: pixelsPerMeter,
+		Homography:     hMatrix,
+	}
+	s.calibrationTagSize = tagSize
+	s.calibrationMutex.Unlock()
+
+	cameraFile := GetCalibrationFilename(s.cameraName)
+
+	calib := &position.CalibrationConfig{
+		Version: 1,
+		Camera: position.CameraInfo{
+			Name:       s.cameraName,
+			Resolution: [2]int{1280, 720},
+		},
+		Intrinsics: position.CameraIntrinsics{
+			CameraMatrix: [3][3]float64{
+				{pixelsPerMeter * 800, 0, 640},
+				{0, pixelsPerMeter * 800, 360},
+				{0, 0, 1},
+			},
+			DistortionCoeffs: [5]float64{0, 0, 0, 0, 0},
+			Width:            1280,
+			Height:           720,
+		},
+		Homography:   hMatrix,
+		WorldScale:   pixelsPerMeter,
+		TagSize:      tagSize,
+		CalibratedAt: "2026-02-06",
+	}
+
+	saveToFile := func(filename string) error {
+		data, err := yaml.Marshal(calib)
+		if err != nil {
+			return fmt.Errorf("failed to marshal: %w", err)
+		}
+		dir := filepath.Dir(filename)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+		if err := os.WriteFile(filename, data, 0644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		return nil
+	}
+
+	if err := saveToFile(cameraFile); err != nil {
+		log.Printf("Warning: failed to save calibration: %v", err)
+	}
+
+	s.SetCalibrationState("complete",
+		fmt.Sprintf("Calibration complete! Area: %.2fm x %.2fm", computedWidth, computedHeight),
+		cameraFile, tagSize)
+
+	c.JSON(http.StatusOK, CalibrationComputeResponse{
+		State:          "complete",
+		TagID:          req.TagID,
+		ComputedWidth:  computedWidth,
+		ComputedHeight: computedHeight,
+		PixelsPerMeter: pixelsPerMeter,
+		Message:        "Calibration computed successfully",
+		Filename:       cameraFile,
+		Homography:     hMatrix,
+	})
+}
+
+func GetCalibrationFilename(cameraName string) string {
+	sanitized := sanitizeCameraName(cameraName)
+	return fmt.Sprintf("config/calibration_%s.yaml", sanitized)
+}
+
+func sanitizeCameraName(name string) string {
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+	sanitized := reg.ReplaceAllString(name, "_")
+	sanitized = strings.Trim(sanitized, "_")
+	if sanitized == "" {
+		sanitized = "unknown"
+	}
+	return sanitized
+}
+
 func (s *WebServer) Start() {
 	s.isRunning = true
-	go s.engine.Run(s.addr)
+	go func() {
+		srv := &http.Server{
+			Addr:    s.addr,
+			Handler: s.engine,
+		}
+		if err := srv.ListenAndServe(); err != nil && !strings.Contains(err.Error(), "Server closed") {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
+	log.Printf("Web server started on %s", s.addr)
 }
 
 func (s *WebServer) Stop() {
 	s.isRunning = false
 	close(s.stopChan)
+	log.Printf("Web server stopped")
 }
 
-func (s *WebServer) PushFrame(frame interface{}) {
-	if frame == nil {
+func (s *WebServer) PushFrame(img image.Image) {
+	if img == nil {
 		return
 	}
+	bounds := img.Bounds()
+	width := bounds.Max.X - bounds.Min.X
+	height := bounds.Max.Y - bounds.Min.Y
 
-	var jpegData []byte
-
-	switch f := frame.(type) {
-	case []byte:
-		if len(f) == 0 {
-			return
+	buf := make([]byte, width*height*3)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			idx := ((y-bounds.Min.Y)*width + (x - bounds.Min.X)) * 3
+			buf[idx+0] = byte(r >> 8)
+			buf[idx+1] = byte(g >> 8)
+			buf[idx+2] = byte(b >> 8)
 		}
-		width, height := 1280, 720
-		if len(f) != width*height*3 {
-			return
-		}
-		img := image.NewRGBA(image.Rect(0, 0, width, height))
-		for i := 0; i < width*height; i++ {
-			b := f[i*3]
-			g := f[i*3+1]
-			r := f[i*3+2]
-			img.Pix[i*4] = r
-			img.Pix[i*4+1] = g
-			img.Pix[i*4+2] = b
-			img.Pix[i*4+3] = 255
-		}
-		buf := new(bytes.Buffer)
-		if err := jpeg.Encode(buf, img, &jpeg.Options{Quality: 85}); err != nil {
-			return
-		}
-		jpegData = buf.Bytes()
-	case *image.RGBA:
-		if f == nil || len(f.Pix) == 0 {
-			return
-		}
-		buf := new(bytes.Buffer)
-		if err := jpeg.Encode(buf, f, &jpeg.Options{Quality: 85}); err != nil {
-			return
-		}
-		jpegData = buf.Bytes()
-	default:
-		return
 	}
-
-	if len(jpegData) == 0 {
-		return
-	}
-	s.stream.UpdateJPEG(jpegData)
+	s.stream.UpdateJPEG(buf)
 }
 
 func (s *WebServer) PushRawJPEG(jpegData []byte) {
@@ -285,25 +555,20 @@ func (s *WebServer) PushRawJPEG(jpegData []byte) {
 	s.stream.UpdateJPEG(jpegData)
 }
 
-func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
-	s.clientMutex.RLock()
-	for client := range s.clients {
-		client.WriteJSON(msg)
-	}
-	s.clientMutex.RUnlock()
-}
-
-func (s *WebServer) IsRunning() bool {
-	return s.isRunning
-}
-
-func (s *WebServer) GetAddr() string {
-	return s.addr
-}
-
 func (s *WebServer) UpdateStats(tagCount, yoloCount int) {
 	s.statsMutex.Lock()
 	s.lastTagCount = tagCount
 	s.lastYoloCount = yoloCount
 	s.statsMutex.Unlock()
+}
+
+func (s *WebServer) handleCalibrationCancel(c *gin.Context) {
+	s.SetCalibrationState("not_calibrated", "Click Settings to calibrate", "", 0)
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "cancelled"})
+}
+
+func distPoints(p1, p2 [2]float64) float64 {
+	dx := p2[0] - p1[0]
+	dy := p2[1] - p1[1]
+	return math.Sqrt(dx*dx + dy*dy)
 }
