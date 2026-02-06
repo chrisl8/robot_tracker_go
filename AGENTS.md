@@ -1,18 +1,19 @@
 # AGENTS.md - Robot Tracker Go Project
 
-## General Agent Guidelines
+# General Agent Guidelines
 
 - Always make a plan before doing anything.
-- Document and save everything you plan to do in the PLAN.md file.
+- Document and save everything you plan to do in the `PLAN.md` file.
 - If something causes you to deviate from the plan, stop and ask the user before proceeding. Do not modify the plan without consent.
+- My intention is for the agent to write all of the code, but to do it in in small chunks and iterate on top of each part after testing
 
-## Bug Tracking
+# Bug Tracking
 
-### After making code changes:
+## After making code changes:
 
 - read `BUGS.md` and verify your changes don't introduce documented issues.
 
-### When a bug is discovered and fixed
+## When a bug is discovered and fixed
 
 1. Add it to an appropriate category in `BUGS.md` with ID (e.g., `PATTERN-001`)
 2. Describe the symptom, root cause, and fix
@@ -20,9 +21,61 @@
 4. Create unit tests to ensure that the bug does not happen again
 5. Create integration tests to ensure that the bug does not happen again
 
-## Code generation guidelines
+# Code generation guidelines
 
+- Always update `PLAN.md` with your plan before writing code
 - After code is finished you must create unit and integration tests to cover the code before presenting it as complete
+- Always update `PLAN.md` after writing code
+
+# Go advice
+
+- To see source files from a dependency, or to answer questions
+  about a dependency, run `go mod download -json MODULE` and use
+  the returned `Dir` path to read the files.
+
+- Use `go doc foo.Bar` or `go doc -all foo` to read documentation
+  for packages, types, functions, etc.
+
+- Use `go run .` or `go run ./cmd/foo` instead of `go build` to
+  run programs, to avoid leaving behind build artifacts.
+
+# Go Code Exploration Preferences
+
+When exploring or analyzing Go code, **always prefer using gopls MCP server tools** over local grep, find, or codebase_search tools.
+
+## Tool Priority for Go Code
+
+1. **First choice**: Use gopls MCP tools:
+   - `go_search` - for searching Go symbols
+   - `go_package_api` - for exploring package APIs
+   - `go_file_context` - for understanding file dependencies
+   - `go_symbol_references` - for finding symbol references
+   - `go_workspace` - for workspace information
+   - `go_diagnostics` - for checking errors
+
+2. **Fallback only**: Use local tools (grep, codebase_search) only if:
+   - The gopls MCP server is unavailable
+   - The query is not Go-specific (e.g., searching for configuration files)
+   - The gopls tools don't provide the needed information
+
+## Examples
+
+- ✅ "Find all usages of function X" → Use `go_symbol_references`
+- ✅ "What does package Y export?" → Use `go_package_api`
+- ✅ "Search for type Z" → Use `gopls_go_search`
+- ❌ Don't use `grep` or `codebase_search` for Go symbol searches
+
+## Rationale
+
+gopls MCP tools provide:
+
+- Semantic understanding of Go code
+- Accurate symbol resolution
+- Type-aware search
+- Better context about package structure
+- More accurate than text-based search
+
+# Commands
 
 ## Build Commands
 
@@ -69,16 +122,16 @@ go test -v -run "TestSerialProtocol" ./internal/controller/
 go test -v ./internal/...
 ```
 
-## Code Style Guidelines
+# Code Style Guidelines
 
-### General Principles
+## General Principles
 
 - Write idiomatic Go code following effective go conventions
 - Keep functions short and focused on single responsibility
 - Use interfaces for abstraction (e.g., `Camera`, `Tracker` interfaces)
 - Prefer composition over inheritance
 
-### Naming Conventions
+## Naming Conventions
 
 - **Packages**: lowercase, concise, usually single word
 - **Types**: PascalCase (e.g., `Track`, `Detection`, `CameraConfig`)
@@ -87,7 +140,7 @@ go test -v ./internal/...
 - **Interfaces**: named for what they do (e.g., `Camera`, `Tracker`), not prefixed with `I`
 - **Error variables**: `ErrXxx` format (e.g., `ErrInvalidData`, `ErrNotConnected`)
 
-### Import Organization
+## Import Organization
 
 Group imports in this order with blank line between groups:
 
@@ -109,7 +162,7 @@ import (
 )
 ```
 
-### Error Handling
+## Error Handling
 
 - Use `fmt.Errorf("message: %w", err)` for wrapped errors
 - Define package-level error variables for sentinel/expected errors
@@ -127,7 +180,7 @@ func Decode(data []byte) (Command, error) {
 }
 ```
 
-### Struct Definitions
+## Struct Definitions
 
 - Use yaml tags for configuration structs
 - Use JSON-like map returns for API/serialization (`ToDict()` pattern)
@@ -149,7 +202,7 @@ type Track struct {
 }
 ```
 
-### Testing Patterns
+## Testing Patterns
 
 Use table-driven tests for consistent test coverage:
 
@@ -175,7 +228,7 @@ func TestSerialProtocol_EncodeCommand(t *testing.T) {
 }
 ```
 
-### Project Structure
+## Project Structure
 
 ```
 robot_tracker_go/
@@ -194,14 +247,14 @@ robot_tracker_go/
 └── scripts/                 # Utility scripts
 ```
 
-### Configuration
+## Configuration
 
 - Use YAML for configuration files
 - Store in `config/` directory
 - Load with `internal/config/config.go` `Load()` function
 - Configuration structs use yaml struct tags
 
-### Module Dependencies
+## Module Dependencies
 
 - Module name: `robot_tracker_go`
 - Go version: 1.23.2+
@@ -212,7 +265,7 @@ robot_tracker_go/
   - `go.bug.st/serial` - Serial port communication
   - `github.com/gorilla/websocket` - WebSocket support
 
-### Command-Line Flags
+## Command-Line Flags
 
 Use Go's `flag` package for CLI arguments:
 
@@ -222,7 +275,7 @@ Use Go's `flag` package for CLI arguments:
 - `--web-port`: Web server port
 - `--demo`: Run demo mode with test pattern
 
-### Common Tasks
+## Common Tasks
 
 **Add a new detection type:**
 
@@ -243,7 +296,7 @@ Use Go's `flag` package for CLI arguments:
 3. Add test cases in `controller_test.go`
 4. Update README command table
 
-### Notes
+## Notes
 
 - This is a multi-robot tracking system using AprilTags and YOLO
 - Integrates with Arduino microcontrollers via serial communication

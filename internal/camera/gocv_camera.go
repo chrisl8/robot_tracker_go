@@ -1,8 +1,9 @@
+//go:build gocv
+
 package camera
 
 import (
 	"fmt"
-	"time"
 
 	"gocv.io/x/gocv"
 )
@@ -19,7 +20,11 @@ type GoCVCamera struct {
 	isFile   bool
 }
 
-func NewGoCVCamera(cameraID int, width, height, fps int) (*GoCVCamera, error) {
+func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
+	width := config.Width
+	height := config.Height
+	fps := config.FPS
+
 	if width == 0 {
 		width = DefaultWidth
 	}
@@ -30,9 +35,9 @@ func NewGoCVCamera(cameraID int, width, height, fps int) (*GoCVCamera, error) {
 		fps = DefaultFPS
 	}
 
-	cap := gocv.OpenVideoCaptureDevice(cameraID)
+	cap := gocv.OpenVideoCaptureDevice(config.CameraID)
 	if !cap.IsOpened() {
-		return nil, fmt.Errorf("failed to open camera %d", cameraID)
+		return nil, fmt.Errorf("failed to open camera %d: %w", config.CameraID, &CameraError{Message: "camera not available"})
 	}
 
 	cap.Set(gocv.VideoCaptureFrameWidth, float64(width))
@@ -48,7 +53,7 @@ func NewGoCVCamera(cameraID int, width, height, fps int) (*GoCVCamera, error) {
 		height:   actualHeight,
 		fps:      fps,
 		running:  true,
-		cameraID: cameraID,
+		cameraID: config.CameraID,
 		isFile:   false,
 	}, nil
 }
@@ -66,7 +71,7 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 
 	cap := gocv.OpenVideoCaptureFile(url)
 	if !cap.IsOpened() {
-		return nil, fmt.Errorf("failed to open video file: %s", url)
+		return nil, fmt.Errorf("failed to open video file: %s: %w", url, &CameraError{Message: "file not accessible"})
 	}
 
 	actualWidth := int(cap.Get(gocv.VideoCaptureFrameWidth))
@@ -183,16 +188,3 @@ func (c *GoCVCamera) GetFPS() int {
 func (c *GoCVCamera) IsRunning() bool {
 	return c.running
 }
-
-type CameraError struct {
-	Message string
-}
-
-func (e *CameraError) Error() string {
-	return e.Message
-}
-
-const DefaultWidth = 640
-const DefaultHeight = 480
-const DefaultFPS = 30
-const DefaultTimeout = 10 * time.Second

@@ -66,18 +66,16 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 
 	t.predictAllTracks()
 
-	matched, unmatchedDetections, _ := t.matchTracks(highConfDetections)
+	matchedDetections, matchedTrackIDs, unmatchedDetections := t.matchTracks(highConfDetections)
 
-	for i, detIdx := range matched {
-		trackID := t.getMatchedTrackID(i)
-		if trackID >= 0 {
-			tt := t.tracks[trackID]
-			tt.track.Update(highConfDetections[detIdx].Bbox, timestamp, highConfDetections[detIdx].Confidence)
-			tt.timeSinceUpdate = 0
-			if tt.track.TagID == nil && highConfDetections[detIdx].TagID != nil {
-				tagID := *highConfDetections[detIdx].TagID
-				tt.track.TagID = &tagID
-			}
+	for i, detIdx := range matchedDetections {
+		trackID := matchedTrackIDs[i]
+		tt := t.tracks[trackID]
+		tt.track.Update(highConfDetections[detIdx].Bbox, timestamp, highConfDetections[detIdx].Confidence)
+		tt.timeSinceUpdate = 0
+		if tt.track.TagID == nil && highConfDetections[detIdx].TagID != nil {
+			tagID := *highConfDetections[detIdx].TagID
+			tt.track.TagID = &tagID
 		}
 	}
 
@@ -85,15 +83,13 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 		t.createNewTrack(highConfDetections[detIdx], timestamp)
 	}
 
-	lowMatched, lowUnmatchedDetections, _ := t.matchTracksLowConf(lowConfDetections)
+	lowMatched, lowUnmatchedDetections, lowMatchedTrackIDs := t.matchTracksLowConf(lowConfDetections)
 
 	for i, detIdx := range lowMatched {
-		trackID := t.getMatchedTrackIDFromLowConf(i)
-		if trackID >= 0 {
-			tt := t.tracks[trackID]
-			tt.track.Update(lowConfDetections[detIdx].Bbox, timestamp, lowConfDetections[detIdx].Confidence)
-			tt.timeSinceUpdate = 0
-		}
+		trackID := lowMatchedTrackIDs[i]
+		tt := t.tracks[trackID]
+		tt.track.Update(lowConfDetections[detIdx].Bbox, timestamp, lowConfDetections[detIdx].Confidence)
+		tt.timeSinceUpdate = 0
 	}
 
 	for _, detIdx := range lowUnmatchedDetections {
@@ -115,10 +111,10 @@ func (t *ByteTrack) predictAllTracks() {
 	}
 }
 
-func (t *ByteTrack) matchTracks(detections []Detection) (matched []int, unmatchedDetections []int, unmatchedTracks []int) {
+func (t *ByteTrack) matchTracks(detections []Detection) (matchedDetectionsResult []int, unmatchedDetections []int, unmatchedTracksResult []int) {
 	if len(detections) == 0 {
 		for trackID := range t.tracks {
-			unmatchedTracks = append(unmatchedTracks, trackID)
+			unmatchedTracksResult = append(unmatchedTracksResult, trackID)
 		}
 		return
 	}
@@ -135,7 +131,8 @@ func (t *ByteTrack) matchTracks(detections []Detection) (matched []int, unmatche
 	costMatrix := ComputeIoUCost(detections, activeTracks, t.config.MatchThresh)
 	assignment := Hungarian(costMatrix)
 
-	matched = make([]int, 0)
+	matchedDetections := make([]int, 0)
+	matchedTrackIDs := make([]int, 0)
 	unmatchedDetectionsMap := make(map[int]bool)
 	unmatchedTracksMap := make(map[int]bool)
 
@@ -148,7 +145,8 @@ func (t *ByteTrack) matchTracks(detections []Detection) (matched []int, unmatche
 
 	for i, j := range assignment.RowToCol {
 		if i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < 0.5 {
-			matched = append(matched, i)
+			matchedDetections = append(matchedDetections, i)
+			matchedTrackIDs = append(matchedTrackIDs, trackIDs[j])
 			delete(unmatchedDetectionsMap, i)
 			delete(unmatchedTracksMap, j)
 		}
@@ -158,13 +156,13 @@ func (t *ByteTrack) matchTracks(detections []Detection) (matched []int, unmatche
 		unmatchedDetections = append(unmatchedDetections, idx)
 	}
 	for idx := range unmatchedTracksMap {
-		unmatchedTracks = append(unmatchedTracks, trackIDs[idx])
+		unmatchedTracksResult = append(unmatchedTracksResult, trackIDs[idx])
 	}
 
-	return
+	return matchedDetections, unmatchedDetections, unmatchedTracksResult
 }
 
-func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, unmatchedDetections []int, unmatchedTracks []int) {
+func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, unmatchedDetections []int, matchedTrackIDs []int) {
 	if len(detections) == 0 {
 		return
 	}
@@ -188,7 +186,7 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 	costMatrix := ComputeIoUCost(detections, activeTracks, 0.3)
 	assignment := Hungarian(costMatrix)
 
-	matched = make([]int, 0)
+	matchedDetections := make([]int, 0)
 	unmatchedDetectionsMap := make(map[int]bool)
 
 	for i := 0; i < len(detections); i++ {
@@ -197,7 +195,8 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 
 	for i, j := range assignment.RowToCol {
 		if i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < 0.5 {
-			matched = append(matched, i)
+			matchedDetections = append(matchedDetections, i)
+			matchedTrackIDs = append(matchedTrackIDs, trackIDs[j])
 			delete(unmatchedDetectionsMap, i)
 		}
 	}
@@ -206,7 +205,7 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 		unmatchedDetections = append(unmatchedDetections, idx)
 	}
 
-	return
+	return matchedDetections, unmatchedDetections, matchedTrackIDs
 }
 
 func (t *ByteTrack) getMatchedTrackID(matchIdx int) int {

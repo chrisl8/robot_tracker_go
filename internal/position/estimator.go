@@ -214,7 +214,7 @@ func (e *PositionEstimator) UpdatePosition(trackID int, x, y float64) {
 	}
 
 	if e.positions[trackID] == nil {
-		e.positions[trackID] = &SmoothedPosition{X: x, Y: y}
+		e.positions[trackID] = &SmoothedPosition{X: x, Y: y, Updated: true}
 	} else {
 		sp := e.positions[trackID]
 		sp.X = e.smoothingAlpha*x + (1-e.smoothingAlpha)*sp.X
