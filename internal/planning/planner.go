@@ -49,6 +49,21 @@ func (p *Planner) ComputeVelocity(robotID int, goal [2]float64) ([2]float64, boo
 	return p.localPlanner.ComputeVelocity(robot, goal, otherRobots)
 }
 
+func (p *Planner) ComputeVelocityWithDynamicObstacles(
+	robotID int,
+	goal [2]float64,
+	dynamicObstacles []*DynamicObstacle,
+	minConfidence float64,
+) ([2]float64, bool) {
+	robot, exists := p.coordinator.GetRobotState(robotID)
+	if !exists {
+		return [2]float64{0, 0}, false
+	}
+
+	otherRobots := p.coordinator.getOtherRobots(robotID)
+	return p.localPlanner.ComputeVelocityWithObstacles(robot, goal, otherRobots, dynamicObstacles, minConfidence)
+}
+
 func (p *Planner) AddObstacle(obstacle Obstacle) {
 	p.obstacles = append(p.obstacles, obstacle)
 	p.coordinator.SetObstacles(p.obstacles)

@@ -220,6 +220,17 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 
+	relevantClasses := map[string]bool{
+		"person": true, "cup": true, "chair": true,
+		"laptop": true, "keyboard": true, "bottle": true,
+	}
+	dynamicObstacles := detection.YOLODetectionsToDynamicObstacles(
+		detectionResult.YOLODetections,
+		rs.positionEst,
+		relevantClasses,
+		0.5,
+	)
+
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
 	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
 
@@ -251,6 +262,8 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		})
 	}
 	rs.webServer.UpdateDetectedTags(detectedTags)
+
+	_ = dynamicObstacles
 }
 
 func decodeToImage(data []byte, width, height int) image.Image {

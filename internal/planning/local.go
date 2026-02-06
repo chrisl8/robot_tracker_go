@@ -238,3 +238,29 @@ func (p *LocalPlanner) IsCollisionFree(robot RobotState, velocity [2]float64, ob
 
 	return true
 }
+
+func (p *LocalPlanner) ComputeVelocityWithObstacles(
+	robot RobotState,
+	goal [2]float64,
+	robotObstacles []RobotState,
+	dynamicObstacles []*DynamicObstacle,
+	minConfidence float64,
+) ([2]float64, bool) {
+	desiredVel := p.computeDesiredVelocity(robot, goal)
+
+	filteredObstacles := make([]RobotState, 0, len(robotObstacles))
+	for _, obs := range robotObstacles {
+		if obs.Diameter > 0 {
+			filteredObstacles = append(filteredObstacles, obs)
+		}
+	}
+
+	for _, dyn := range dynamicObstacles {
+		if dyn.Confidence >= minConfidence && dyn.Radius > 0 {
+			filteredObstacles = append(filteredObstacles, dyn.ToRobotState())
+		}
+	}
+
+	safeVel := p.applyVelocityObstacles(robot, desiredVel, filteredObstacles)
+	return safeVel, true
+}

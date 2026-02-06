@@ -241,215 +241,202 @@ Web server started on :8080
 
 ---
 
-## Phase 9: Obstacle Detection and Avoidance (In Progress)
+## Phase 9: Dynamic Obstacle Detection and Avoidance (In Progress)
 
-### Overview
+### Problem Statement
 
-Enable obstacle detection for small indoor robot navigation with both static (user-defined) and dynamic (YOLO-detected) obstacles.
+**Why Python version worked better:**
 
-**Problem Statement:**
-- Current system detects AprilTags (robots) but NOT obstacles
-- Path planning has no obstacles to avoid
-- Robot may collide with objects in environment
+The Python version has a complete dynamic obstacle pipeline:
 
-**Solution:**
-- Static obstacles: User-defined via web UI (drag-to-draw)
-- Dynamic obstacles: YOLO detects objects (person, cup, chair, laptop, etc.)
-- Both obstacle types passed to path planner for collision avoidance
+1. **DynamicObstacle dataclass** - stores position, velocity, radius, class_name, confidence
+2. **LocalPlanner with VO algorithm** - Velocity Obstacle for avoidance
+3. **YOLO-to-Obstacle conversion** - converts bounding boxes to circular obstacles
+4. **Integration in main.py** - filters YOLO detections, creates DynamicObstacles
 
-### Configuration Decisions
+**What's missing in Go:**
 
-| Decision | Answer |
-|----------|--------|
-| Size threshold | Yes (configurable, default 5cm) |
-| Click-to-add UI | Drag to define custom bounding box |
-| Persistence | Yes, save to `config/obstacles_<camera>.yaml` |
+1. `DynamicObstacle` struct in planning package
+2. Conversion from YOLO detections to DynamicObstacles
+3. Integration of YOLO obstacles into local planning loop
+4. Class filtering for relevant obstacle types
 
-### Indoor-Relevant YOLO Classes
+### Implementation Plan
 
-Objects detected for small indoor robot navigation:
+#### Phase 9.1: Add DynamicObstacle Struct
 
-| Class ID | Name | Relevance |
-|----------|------|-----------|
-| 0 | person | ✅ People moving in environment |
-| 27 | backpack | ✅ Small obstacle |
-| 28 | umbrella | ✅ Obstacle |
-| 31 | handbag | ✅ Small obstacle |
-| 39 | cup | ✅ Small obstacle |
-| 44 | bowl | ✅ Small obstacle |
-| 52 | potted plant | ✅ Furniture obstacle |
-| 56 | chair | ✅ MAJOR furniture obstacle |
-| 60 | dining table | ✅ Furniture obstacle |
-| 62 | laptop | ✅ Small obstacle |
-| 65 | keyboard | ✅ Small obstacle |
-| 66 | cell phone | ✅ Small obstacle |
+**New file: `internal/planning/dynamic_obstacle.go`**
 
-### Implementation Phases
+```go
+package planning
 
-#### Phase 9A: Complete YOLO Detector ✅ COMPLETED
-
-**Objective:** Fix `Detect()` method to perform actual ONNX inference.
-
-| Step | Task | Description | Status |
-|------|------|-------------|--------|
-| 9A.1 | Preprocess | Convert BGR bytes → blob (640×640, normalization) | ✅ Done |
-| 9A.2 | Inference | Call `net.Forward()` with blob | ✅ Done |
-| 9A.3 | Parse output | Extract [batch, classes, boxes] from YOLO tensor | ✅ Done |
-| 9A.4 | Apply NMS | Simple O(n²) Non-Maximum Suppression | ✅ Done |
-| 9A.5 | Scale boxes | Map 640→frame size, center→corner format | ✅ Done |
-| 9A.6 | Filter classes | Only indoor-relevant classes (configurable) | ✅ Done |
-| 9A.7 | Size filter | Ignore objects < 5cm (configurable) | ✅ Done |
-
-**Files Modified:**
-| File | Changes |
-|------|---------|
-| `internal/detection/types.go` | Added `RelevantClasses` and `MinObstacleSize`, `PixelsPerMeter` to `YOLOConfig` |
-| `internal/detection/yolo.go` | Complete `Detect()`, add `preprocessImage()`, add simple `nonMaxSuppression()` |
-| `config/tracking_config.yaml` | Added `min_obstacle_size`, `pixels_per_meter`, `classes` settings |
-
-#### Phase 9B: Static Obstacle UI
-
-**Objective:** Allow users to draw obstacles on video and persist them.
-
-| Step | Task | Description |
-|------|------|-------------|
-| 9B.1 | Define struct | `Obstacle { ID, X1, Y1, X2, Y2, Label }` |
-| 9B.2 | CRUD API | POST/GET/DELETE `/api/obstacles` |
-| 9B.3 | Draw UI | Click-drag on video for bounding box |
-| 9B.4 | Overlay | Draw saved obstacles on MJPEG stream |
-| 9B.5 | Persistence | Save to `config/obstacles_<camera>.yaml` |
-| 9B.6 | Load startup | Load obstacles when camera initializes |
-
-**API Endpoints:**
-```
-POST   /api/obstacles          # Add obstacle ({x1, y1, x2, y2, label})
-GET    /api/obstacles          # List all obstacles
-DELETE /api/obstacles/{id}     # Remove obstacle
-PUT    /api/obstacles/{id}     # Update obstacle
+type DynamicObstacle struct {
+    X          float64  // World X position (meters)
+    Y          float64  // World Y position (meters)
+    VX         float64  // Velocity X (m/s)
+    VY         float64  // Velocity Y (m/s)
+    Radius     float64  // Obstacle radius (meters)
+    ClassName  string   // e.g., "person", "cup", "chair"
+    Confidence float64  // Detection confidence (0-1)
+    IsRobot    bool     // True if this is another robot
+}
 ```
 
-#### Phase 9C: Integration with Path Planning
+**Methods:**
+- `FromYOLODetection()` - factory from YOLO bounding box + position estimator
+- `FromRobotState()` - factory from tracked robot state
+- `ContainsPoint()` - point-in-circle check
+- `DistanceTo()` - distance to another obstacle/point
 
-**Objective:** Use obstacles in A* and collision avoidance.
+#### Phase 9.2: Update LocalPlanner for YOLO Obstacles
 
-| Step | Task | Description |
-|------|------|-------------|
-| 9C.1 | Fuse sources | AprilTag (robots) + YOLO (obstacles) + static |
-| 9C.2 | Update planner | `planner.UpdateObstacles()` with detections |
-| 9C.3 | Collision | Update `CollisionDetector` to use obstacles |
-| 9C.4 | Visualize | Different colors: robots (green), static (orange), dynamic (red) |
+**Modify: `internal/planning/local.go`**
 
-#### Phase 9D: Testing and Polish
+```go
+func (p *LocalPlanner) ComputeVelocity(
+    robot RobotState,
+    goal [2]float64,
+    obstacles []RobotState,        // Other robots
+    dynamicObstacles []DynamicObstacle,  // NEW: YOLO detections
+) ([2]float64, bool)
+```
 
-| Step | Task |
-|------|------|
-| 9D.1 | Unit tests for YOLO parsing, NMS, coordinate scaling |
-| 9D.2 | Integration test: camera → detection → planning → control |
-| 9D.3 | Obstacle avoidance verification |
-| 9D.4 | UI drag-to-draw testing |
+Key changes:
+- Accept `[]DynamicObstacle` parameter
+- Convert `DynamicObstacle` to `RobotState` for existing VO algorithm
+- Add confidence threshold filtering
+- Support stationary obstacles (vx=0, vy=0)
 
-### Configuration Settings (YAML)
+#### Phase 9.3: Create YOLO-to-DynamicObstacle Converter
+
+**New file: `internal/detection/dynamic_obstacle.go`**
+
+```go
+package detection
+
+import (
+    "robot_tracker_go/internal/planning"
+    "robot_tracker_go/internal/position"
+)
+
+func YOLODetectionsToDynamicObstacles(
+    detections []YOLODetection,
+    positionEst *position.PositionEstimator,
+    relevantClasses map[string]bool,
+    minConfidence float64,
+) []planning.DynamicObstacle
+```
+
+Features:
+- Convert bounding box center to world coordinates using homography
+- Calculate radius from bbox dimensions
+- Filter by class name (person, cup, chair, laptop, etc.)
+- Filter by confidence threshold
+- Handle uncalibrated case (use pixel coordinates)
+
+#### Phase 9.4: Integration in Main Loop
+
+**Modify: `cmd/main.go` - `ProcessFrame()`**
+
+```go
+func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
+    // ... existing detection ...
+
+    // NEW: Convert YOLO detections to dynamic obstacles
+    dynamicObstacles := detection.YOLODetectionsToDynamicObstacles(
+        detectionResult.YOLODetections,
+        rs.positionEst,
+        relevantClasses,
+        0.5,
+    )
+
+    // Pass to local planner for collision avoidance
+    velocity, shouldPause := rs.planner.ComputeVelocityWithObstacles(
+        robotID,
+        goal,
+        otherRobots,
+        dynamicObstacles,
+    )
+}
+```
+
+#### Phase 9.5: Configuration Settings
+
+**Update: `config/tracking_config.yaml`**
 
 ```yaml
-# YOLOv8 Detection Settings
-yolo:
-  model: "assets/yolov8n.onnx"
-  input_size: 640
-  conf_thres: 0.5           # Detection confidence threshold
-  iou_thres: 0.45           # NMS IoU threshold
-  device: ""                # Empty = auto (CUDA if available, else CPU)
-  min_obstacle_size: 0.05   # 5cm minimum (filter small objects)
-  classes:                  # Indoor-relevant classes
-    - person
-    - cup
-    - chair
-    - laptop
-    - keyboard
-
-# Obstacle Settings
-obstacles:
-  draw_border: true
-  border_color: [255, 165, 0]  # Orange for static obstacles
-  border_width: 3
-  persist: true                 # Save to file
-  filename: "config/obstacles_{camera_name}.yaml"
+# Local Planning Settings
+local_planning:
+  enabled: true
+  safety_margin: 0.15
+  max_speed: 0.15
+  time_horizon: 2.0
+  min_obstacle_confidence: 0.5  # NEW: Filter low-confidence detections
+  obstacle_classes:          # NEW: Relevant classes for avoidance
+    - "person"
+    - "cup"
+    - "chair"
+    - "laptop"
+    - "keyboard"
+  debug:
+    enabled: true
+    draw_velocity_vector: true
+    draw_collision_cone: true
+    draw_obstacle_radius: true
+    draw_pause_indicator: true
 ```
 
-### Files Created/Modified
+### Files to Create/Modify
 
-#### New Files
-| File | Purpose |
-|------|---------|
-| `config/obstacles_default.yaml` | Sample static obstacles |
+| File | Change |
+|------|--------|
+| `internal/planning/dynamic_obstacle.go` | **NEW** - DynamicObstacle struct |
+| `internal/planning/local.go` | **MODIFY** - Add dynamicObstacles param |
+| `internal/planning/planner.go` | **MODIFY** - Add ComputeVelocityWithObstacles |
+| `internal/detection/dynamic_obstacle.go` | **NEW** - YOLO-to-Obstacle converter |
+| `internal/detection/types.go` | **MODIFY** - Add ObstacleClasses to config |
+| `cmd/main.go` | **MODIFY** - Integrate in ProcessFrame |
+| `config/tracking_config.yaml` | **MODIFY** - Add local_planning settings |
 
-#### Modified Files
-| File | Changes |
-|------|---------|
-| `internal/detection/yolo.go` | Complete `Detect()` method |
-| `internal/detection/types.go` | Add `Obstacle` struct, update `YOLOConfig` |
-| `internal/detection/pipeline.go` | Fuse static + dynamic obstacles |
-| `internal/ui/webserver.go` | Add obstacle CRUD API |
-| `internal/ui/index.go` | Add obstacle drawing UI |
-| `internal/planning/collision.go` | Use detected obstacles |
-| `internal/planning/planner.go` | Add `UpdateObstacles()` method |
-| `cmd/main.go` | Pass obstacles to planner |
-| `config/tracking_config.yaml` | Add YOLO and obstacle settings |
+### Python-to-Go Mapping
 
-### Detection Fusion
+| Python | Go |
+|--------|----|
+| `DynamicObstacle` class | `DynamicObstacle` struct |
+| `DynamicObstacle.from_yolo_detection()` | `YOLODetectionsToDynamicObstacles()` |
+| `LocalPlanner.compute_velocity()` | `LocalPlanner.ComputeVelocity()` |
+| `velocity_to_command()` | In `controller/executor.go` |
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Detection Pipeline                      │
-├─────────────────────────────────────────────────────────┤
-│  Camera Frame                                            │
-│       ↓                                                  │
-│  ┌─────────────────┐    ┌─────────────────┐              │
-│  │ AprilTag Detector│    │ YOLO Detector   │              │
-│  │ (✅ Complete)   │    │ (🔄 Phase 9A)  │              │
-│  └────────┬────────┘    └────────┬────────┘              │
-│           │                       │                        │
-│           └───────────┬───────────┘                        │
-│                       ↓                                     │
-│            ┌─────────────────┐                              │
-│            │  Static Obstacle│                              │
-│            │  (Phase 9B)    │                              │
-│            └────────┬────────┘                              │
-│                       ↓                                     │
-│            ┌─────────────────┐                              │
-│            │  Fuse Results   │                              │
-│            │  (Phase 9C)    │                              │
-│            └────────┬────────┘                              │
-│                       ↓                                     │
-│         Tracking → Planning → Control                       │
-└─────────────────────────────────────────────────────────┘
-```
+### Testing Plan
 
-### Visual Differentiation
+1. **Unit tests for DynamicObstacle:**
+   - FromYOLODetection with calibrated position estimator
+   - FromYOLODetection without calibration (pixel coords)
+   - FromRobotState conversion
+   - Point containment, distance calculations
 
-| Type | Color | Description |
-|------|-------|-------------|
-| Robot | Green border + ID | AprilTag detection |
-| Static Obstacle | Orange border | User-defined |
-| Dynamic Obstacle | Red border | YOLO detection |
+2. **Integration tests:**
+   - Camera → Detection → DynamicObstacle conversion
+   - LocalPlanner with dynamic obstacles
+   - Collision avoidance verification
 
-### Estimated Effort
+3. **Verification checklist:**
+   - [ ] Person walking detected as dynamic obstacle
+   - [ ] Robot slows/stops for approaching person
+   - [ ] Static objects (cups, chairs) cause avoidance
+   - [ ] Confidence threshold filters noise
+   - [ ] No false positives on background
 
-| Phase | Complexity | Time |
-|-------|------------|------|
-| 9A: YOLO | Hard | 4-6 hours |
-| 9B: Static UI | Medium | 2-3 hours |
-| 9C: Integration | Medium | 2-4 hours |
-| 9D: Testing | Medium | 2-3 hours |
-| **Total** | - | **10-16 hours** |
+### Effort Estimate
 
-### Verification Checklist
-
-- [ ] YOLO detects indoor objects (person, cup, chair, laptop)
-- [ ] Static obstacles can be drawn via web UI (drag-to-draw)
-- [ ] Obstacles persist between sessions (YAML file)
-- [ ] Robot navigates around both static and dynamic obstacles
-- [ ] Web UI shows different colors for robots vs obstacles
-- [ ] DET-002 marked resolved in BUGS.md
+| Task | Complexity | Time |
+|------|------------|------|
+| 9.1 DynamicObstacle struct | Easy | 30 min |
+| 9.2 LocalPlanner update | Medium | 1 hour |
+| 9.3 YOLO converter | Medium | 1.5 hours |
+| 9.4 Main integration | Medium | 1 hour |
+| 9.5 Config + tests | Easy | 30 min |
+| **Total** | - | **4.5 hours** |
 
 ---
 
