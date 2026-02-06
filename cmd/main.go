@@ -204,7 +204,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		rgbaImg = image.NewRGBA(bounds)
 		draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
 	}
-	imageBytes := rgbaImg.Pix
 
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 
@@ -221,17 +220,14 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		}
 	}
 
-	overlay := rs.detectionPipe.DrawResults(imageBytes, width, height, detectionResult)
-	if overlay != nil {
-		overlayImg := decodeToImage(overlay, width, height)
-		if overlayImg != nil {
-			rs.webServer.PushFrame(overlayImg)
-		} else {
-			rs.webServer.PushFrame(img)
-		}
-	} else {
+	overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult)
+	if len(overlay) > 0 && len(overlay) < width*height*3 {
+		rs.webServer.PushRawJPEG(overlay)
+	} else if img != nil {
 		rs.webServer.PushFrame(img)
 	}
+
+	rs.webServer.UpdateStats(len(detectionResult.Tags), len(detectionResult.YOLODetections))
 }
 
 func decodeToImage(data []byte, width, height int) image.Image {

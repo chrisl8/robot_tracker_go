@@ -46,9 +46,7 @@ func (p *DetectionPipeline) Detect(image []byte, width, height int, timestamp fl
 	}
 
 	tags := p.tagDetector.Detect(image, width, height)
-	if len(tags) > 0 {
-		result.Tags = tags
-	}
+	result.Tags = tags
 
 	var yoloDetections []YOLODetection
 	if p.yoloEnabled {
