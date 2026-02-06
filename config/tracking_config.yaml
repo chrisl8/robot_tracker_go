@@ -47,7 +47,7 @@ april_tags:
 
 # YOLOv8 Detection Settings
 yolo:
-  model: "yolov8n.pt"
+  model: "assets/yolov8n.onnx"
   input_size: 640
   conf_thres: 0.5
   iou_thres: 0.45

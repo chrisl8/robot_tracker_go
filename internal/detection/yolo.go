@@ -4,15 +4,17 @@ package detection
 
 import (
 	"fmt"
+	"image"
 	"os"
 
 	"gocv.io/x/gocv"
 )
 
 type YOLODetector struct {
-	config      *YOLOConfig
-	classNames  map[int]string
-	obstacleIDs map[int]struct{}
+	config     *YOLOConfig
+	net        gocv.Net
+	classNames map[int]string
+	loaded     bool
 }
 
 func NewYOLODetector(config *YOLOConfig) (*YOLODetector, error) {
@@ -30,20 +32,30 @@ func NewYOLODetector(config *YOLOConfig) (*YOLODetector, error) {
 		config.IOUThres = 0.45
 	}
 
-	obstacleIDs := make(map[int]struct{})
-	obstacleClasses := []string{"person", "car", "truck", "bicycle", "motorcycle"}
-	if len(config.ObstacleClasses) > 0 {
-		obstacleClasses = config.ObstacleClasses
+	detector := &YOLODetector{
+		config:     config,
+		classNames: make(map[int]string),
+		loaded:     false,
 	}
 
-	_ = obstacleIDs
-	_ = obstacleClasses
+	if config.ModelPath != "" {
+		net := gocv.ReadNetFromONNX(config.ModelPath)
+		if net.Empty() {
+			return nil, fmt.Errorf("failed to load ONNX model: %s", config.ModelPath)
+		}
 
-	return &YOLODetector{
-		config:      config,
-		classNames:  make(map[int]string),
-		obstacleIDs: obstacleIDs,
-	}, nil
+		backend := gocv.NetBackendDefault
+		if config.Device != "" {
+			backend = gocv.ParseNetBackend(config.Device)
+		}
+		net.SetPreferableBackend(backend)
+		net.SetPreferableTarget(gocv.NetTargetCPU)
+
+		detector.net = net
+		detector.loaded = true
+	}
+
+	return detector, nil
 }
 
 func fileExists(path string) bool {
@@ -51,22 +63,170 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func (d *YOLODetector) Detect(image []byte, width, height int) []YOLODetection {
+func (d *YOLODetector) Detect(imageBytes []byte, width, height int) []YOLODetection {
 	detections := make([]YOLODetection, 0)
 
-	_ = image
-	_ = width
-	_ = height
+	if !d.loaded || len(imageBytes) == 0 {
+		return detections
+	}
+
+	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, imageBytes)
+	if err != nil || img.Empty() {
+		return detections
+	}
+	defer img.Close()
+
+	params := gocv.NewImageToBlobParams(
+		0.003921568627,
+		image.Pt(d.config.InputSize, d.config.InputSize),
+		gocv.NewScalar(0, 0, 0, 0),
+		false,
+		gocv.MatTypeCV32F,
+		gocv.DataLayoutNCHW,
+		gocv.PaddingModeLetterbox,
+		gocv.NewScalar(144.0, 0, 0, 0),
+	)
+
+	blob := gocv.BlobFromImageWithParams(img, params)
+	defer blob.Close()
+
+	d.net.SetInput(blob, "")
+
+	outputNames := d.getOutputNames()
+	if len(outputNames) == 0 {
+		return detections
+	}
+
+	probs := d.net.ForwardLayers(outputNames)
+	defer func() {
+		for _, prob := range probs {
+			prob.Close()
+		}
+	}()
+
+	boxes, confidences, classIds := d.performDetection(probs)
+	if len(boxes) == 0 {
+		return detections
+	}
+
+	rects := params.BlobRectToImageRect(boxes, image.Pt(width, height))
+	indices := gocv.NMSBoxes(rects, confidences, float32(d.config.ConfThres), float32(d.config.IOUThres))
+
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(boxes) || idx >= len(classIds) {
+			continue
+		}
+
+		box := boxes[idx]
+		detections = append(detections, YOLODetection{
+			Bbox: &BoundingBox{
+				X1: box.Min.X,
+				Y1: box.Min.Y,
+				X2: box.Max.X,
+				Y2: box.Max.Y,
+			},
+			Confidence: float64(confidences[idx]),
+			ClassID:    classIds[idx],
+			ClassName:  d.GetClassName(classIds[idx]),
+		})
+	}
 
 	return detections
 }
 
+func (d *YOLODetector) getOutputNames() []string {
+	var outputLayers []string
+	for _, i := range d.net.GetUnconnectedOutLayers() {
+		layer := d.net.GetLayer(i)
+		layerName := layer.GetName()
+		if layerName != "_input" {
+			outputLayers = append(outputLayers, layerName)
+		}
+	}
+	return outputLayers
+}
+
+func (d *YOLODetector) performDetection(outs []gocv.Mat) ([]image.Rectangle, []float32, []int) {
+	var classIds []int
+	var confidences []float32
+	var boxes []image.Rectangle
+
+	if len(outs) == 0 || outs[0].Empty() {
+		return boxes, confidences, classIds
+	}
+
+	tmp := gocv.NewMat()
+	gocv.TransposeND(outs[0], []int{0, 2, 1}, &tmp)
+	outs[0].Close()
+	outs[0] = tmp
+
+	for _, out := range outs {
+		if out.Empty() {
+			continue
+		}
+
+		out = out.Reshape(1, out.Size()[1])
+
+		for i := 0; i < out.Rows(); i++ {
+			cols := out.Cols()
+			scoresCol := out.RowRange(i, i+1)
+			scores := scoresCol.ColRange(4, cols)
+			_, confidence, _, classIDPoint := gocv.MinMaxLoc(scores)
+
+			scores.Close()
+			scoresCol.Close()
+
+			if confidence > float32(d.config.ConfThres) {
+				centerX := out.GetFloatAt(i, 0)
+				centerY := out.GetFloatAt(i, 1)
+				width := out.GetFloatAt(i, 2)
+				height := out.GetFloatAt(i, 3)
+
+				left := centerX - width/2
+				top := centerY - height/2
+				right := centerX + width/2
+				bottom := centerY + height/2
+
+				classIds = append(classIds, classIDPoint.X)
+				confidences = append(confidences, float32(confidence))
+				boxes = append(boxes, image.Rect(int(left), int(top), int(right), int(bottom)))
+			}
+		}
+
+		out.Close()
+	}
+
+	return boxes, confidences, classIds
+}
+
 func (d *YOLODetector) DrawDetections(image []byte, width, height int, detections []YOLODetection) []byte {
-	return image
+	if len(image) == 0 || len(detections) == 0 {
+		return image
+	}
+
+	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, image)
+	if err != nil || img.Empty() {
+		return image
+	}
+	defer img.Close()
+
+	for _, det := range detections {
+		if det.Bbox != nil {
+			rect := image.Rect(det.Bbox.X1, det.Bbox.Y1, det.Bbox.X2, det.Bbox.Y2)
+			gocv.Rectangle(&img, rect, gocv.Scalar{Val1: 0, Val2: 255, Val3: 0, Val4: 0}, 2)
+		}
+	}
+
+	buf, err := gocv.IMEncode(".png", img)
+	if err != nil {
+		return image
+	}
+
+	return buf.GetBytes()
 }
 
 func (d *YOLODetector) IsAvailable() bool {
-	return d.config.ModelPath != ""
+	return d.loaded
 }
 
 func (d *YOLODetector) SetClassNames(names map[int]string) {
@@ -81,4 +241,12 @@ func (d *YOLODetector) GetClassName(classID int) string {
 		return name
 	}
 	return fmt.Sprintf("class_%d", classID)
+}
+
+func (d *YOLODetector) Close() error {
+	if d.loaded {
+		d.net.Close()
+		d.loaded = false
+	}
+	return nil
 }
