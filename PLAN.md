@@ -16,6 +16,7 @@ Go implementation of the multi-robot tracking and control system, migrated from 
 | Phase 6 | ✅ Complete    | Web UI (Gin Web Server, MJPEG Streaming, WebSocket Overlay)             |
 | Phase 7 | ✅ Complete    | Integration & Testing                                                   |
 | Phase 8 | ✅ Complete    | Web-Based Calibration (Auto-detect, guide user, save to file)          |
+| Phase 9 | 🔄 In Progress | Obstacle Detection (YOLO + Static Obstacles + Path Planning)            |
 
 ## Architecture
 
@@ -238,33 +239,217 @@ Web server started on :8080
 | POST | `/api/calibration/save` | Save calibration to file |
 | POST | `/api/calibration/cancel` | Cancel calibration |
 
-### Integration Points
+---
 
-| Component | Changes |
-|----------|---------|
-| `internal/ui/webserver.go` | Added `detectedTags` storage, `UpdateDetectedTags()` method, 2-second expiration |
-| `cmd/main.go:ProcessFrame()` | Pushes real camera detections to webserver |
-| `cmd/main.go:ProcessDemoFrame()` | Pushes demo mode detections to webserver |
+## Phase 9: Obstacle Detection and Avoidance (In Progress)
 
-### Calibration Workflow
+### Overview
 
-1. Click **"Not Calibrated"** badge in header (opens wizard)
-2. Drag the wizard by its header to reposition it out of the way
-3. Optionally click **📌 Pin** to keep it visible while selecting tags
-4. Enter tag size (default: 15cm) or use preset buttons (10cm, 15cm, 20cm)
-5. Review **measurement guide** showing how to measure tag
-6. Click **"Detect Tags"** - system polls for detected tags
-7. Select which tag to use (click on video or list)
-8. Click **"Use Selected Tag"** to compute calibration
-9. Review results and click **"Done"** to save
+Enable obstacle detection for small indoor robot navigation with both static (user-defined) and dynamic (YOLO-detected) obstacles.
 
-### Calibration File Location
+**Problem Statement:**
+- Current system detects AprilTags (robots) but NOT obstacles
+- Path planning has no obstacles to avoid
+- Robot may collide with objects in environment
+
+**Solution:**
+- Static obstacles: User-defined via web UI (drag-to-draw)
+- Dynamic obstacles: YOLO detects objects (person, cup, chair, laptop, etc.)
+- Both obstacle types passed to path planner for collision avoidance
+
+### Configuration Decisions
+
+| Decision | Answer |
+|----------|--------|
+| Size threshold | Yes (configurable, default 5cm) |
+| Click-to-add UI | Drag to define custom bounding box |
+| Persistence | Yes, save to `config/obstacles_<camera>.yaml` |
+
+### Indoor-Relevant YOLO Classes
+
+Objects detected for small indoor robot navigation:
+
+| Class ID | Name | Relevance |
+|----------|------|-----------|
+| 0 | person | ✅ People moving in environment |
+| 27 | backpack | ✅ Small obstacle |
+| 28 | umbrella | ✅ Obstacle |
+| 31 | handbag | ✅ Small obstacle |
+| 39 | cup | ✅ Small obstacle |
+| 44 | bowl | ✅ Small obstacle |
+| 52 | potted plant | ✅ Furniture obstacle |
+| 56 | chair | ✅ MAJOR furniture obstacle |
+| 60 | dining table | ✅ Furniture obstacle |
+| 62 | laptop | ✅ Small obstacle |
+| 65 | keyboard | ✅ Small obstacle |
+| 66 | cell phone | ✅ Small obstacle |
+
+### Implementation Phases
+
+#### Phase 9A: Complete YOLO Detector ✅ COMPLETED
+
+**Objective:** Fix `Detect()` method to perform actual ONNX inference.
+
+| Step | Task | Description | Status |
+|------|------|-------------|--------|
+| 9A.1 | Preprocess | Convert BGR bytes → blob (640×640, normalization) | ✅ Done |
+| 9A.2 | Inference | Call `net.Forward()` with blob | ✅ Done |
+| 9A.3 | Parse output | Extract [batch, classes, boxes] from YOLO tensor | ✅ Done |
+| 9A.4 | Apply NMS | Simple O(n²) Non-Maximum Suppression | ✅ Done |
+| 9A.5 | Scale boxes | Map 640→frame size, center→corner format | ✅ Done |
+| 9A.6 | Filter classes | Only indoor-relevant classes (configurable) | ✅ Done |
+| 9A.7 | Size filter | Ignore objects < 5cm (configurable) | ✅ Done |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `internal/detection/types.go` | Added `RelevantClasses` and `MinObstacleSize`, `PixelsPerMeter` to `YOLOConfig` |
+| `internal/detection/yolo.go` | Complete `Detect()`, add `preprocessImage()`, add simple `nonMaxSuppression()` |
+| `config/tracking_config.yaml` | Added `min_obstacle_size`, `pixels_per_meter`, `classes` settings |
+
+#### Phase 9B: Static Obstacle UI
+
+**Objective:** Allow users to draw obstacles on video and persist them.
+
+| Step | Task | Description |
+|------|------|-------------|
+| 9B.1 | Define struct | `Obstacle { ID, X1, Y1, X2, Y2, Label }` |
+| 9B.2 | CRUD API | POST/GET/DELETE `/api/obstacles` |
+| 9B.3 | Draw UI | Click-drag on video for bounding box |
+| 9B.4 | Overlay | Draw saved obstacles on MJPEG stream |
+| 9B.5 | Persistence | Save to `config/obstacles_<camera>.yaml` |
+| 9B.6 | Load startup | Load obstacles when camera initializes |
+
+**API Endpoints:**
+```
+POST   /api/obstacles          # Add obstacle ({x1, y1, x2, y2, label})
+GET    /api/obstacles          # List all obstacles
+DELETE /api/obstacles/{id}     # Remove obstacle
+PUT    /api/obstacles/{id}     # Update obstacle
+```
+
+#### Phase 9C: Integration with Path Planning
+
+**Objective:** Use obstacles in A* and collision avoidance.
+
+| Step | Task | Description |
+|------|------|-------------|
+| 9C.1 | Fuse sources | AprilTag (robots) + YOLO (obstacles) + static |
+| 9C.2 | Update planner | `planner.UpdateObstacles()` with detections |
+| 9C.3 | Collision | Update `CollisionDetector` to use obstacles |
+| 9C.4 | Visualize | Different colors: robots (green), static (orange), dynamic (red) |
+
+#### Phase 9D: Testing and Polish
+
+| Step | Task |
+|------|------|
+| 9D.1 | Unit tests for YOLO parsing, NMS, coordinate scaling |
+| 9D.2 | Integration test: camera → detection → planning → control |
+| 9D.3 | Obstacle avoidance verification |
+| 9D.4 | UI drag-to-draw testing |
+
+### Configuration Settings (YAML)
+
+```yaml
+# YOLOv8 Detection Settings
+yolo:
+  model: "assets/yolov8n.onnx"
+  input_size: 640
+  conf_thres: 0.5           # Detection confidence threshold
+  iou_thres: 0.45           # NMS IoU threshold
+  device: ""                # Empty = auto (CUDA if available, else CPU)
+  min_obstacle_size: 0.05   # 5cm minimum (filter small objects)
+  classes:                  # Indoor-relevant classes
+    - person
+    - cup
+    - chair
+    - laptop
+    - keyboard
+
+# Obstacle Settings
+obstacles:
+  draw_border: true
+  border_color: [255, 165, 0]  # Orange for static obstacles
+  border_width: 3
+  persist: true                 # Save to file
+  filename: "config/obstacles_{camera_name}.yaml"
+```
+
+### Files Created/Modified
+
+#### New Files
+| File | Purpose |
+|------|---------|
+| `config/obstacles_default.yaml` | Sample static obstacles |
+
+#### Modified Files
+| File | Changes |
+|------|---------|
+| `internal/detection/yolo.go` | Complete `Detect()` method |
+| `internal/detection/types.go` | Add `Obstacle` struct, update `YOLOConfig` |
+| `internal/detection/pipeline.go` | Fuse static + dynamic obstacles |
+| `internal/ui/webserver.go` | Add obstacle CRUD API |
+| `internal/ui/index.go` | Add obstacle drawing UI |
+| `internal/planning/collision.go` | Use detected obstacles |
+| `internal/planning/planner.go` | Add `UpdateObstacles()` method |
+| `cmd/main.go` | Pass obstacles to planner |
+| `config/tracking_config.yaml` | Add YOLO and obstacle settings |
+
+### Detection Fusion
 
 ```
-config/calibration_{sanitized_camera_name}.yaml
+┌─────────────────────────────────────────────────────────┐
+│                    Detection Pipeline                      │
+├─────────────────────────────────────────────────────────┤
+│  Camera Frame                                            │
+│       ↓                                                  │
+│  ┌─────────────────┐    ┌─────────────────┐              │
+│  │ AprilTag Detector│    │ YOLO Detector   │              │
+│  │ (✅ Complete)   │    │ (🔄 Phase 9A)  │              │
+│  └────────┬────────┘    └────────┬────────┘              │
+│           │                       │                        │
+│           └───────────┬───────────┘                        │
+│                       ↓                                     │
+│            ┌─────────────────┐                              │
+│            │  Static Obstacle│                              │
+│            │  (Phase 9B)    │                              │
+│            └────────┬────────┘                              │
+│                       ↓                                     │
+│            ┌─────────────────┐                              │
+│            │  Fuse Results   │                              │
+│            │  (Phase 9C)    │                              │
+│            └────────┬────────┘                              │
+│                       ↓                                     │
+│         Tracking → Planning → Control                       │
+└─────────────────────────────────────────────────────────┘
 ```
 
-Example: `config/calibration_Video__http___192_168_8_183_4747_video.yaml`
+### Visual Differentiation
+
+| Type | Color | Description |
+|------|-------|-------------|
+| Robot | Green border + ID | AprilTag detection |
+| Static Obstacle | Orange border | User-defined |
+| Dynamic Obstacle | Red border | YOLO detection |
+
+### Estimated Effort
+
+| Phase | Complexity | Time |
+|-------|------------|------|
+| 9A: YOLO | Hard | 4-6 hours |
+| 9B: Static UI | Medium | 2-3 hours |
+| 9C: Integration | Medium | 2-4 hours |
+| 9D: Testing | Medium | 2-3 hours |
+| **Total** | - | **10-16 hours** |
+
+### Verification Checklist
+
+- [ ] YOLO detects indoor objects (person, cup, chair, laptop)
+- [ ] Static obstacles can be drawn via web UI (drag-to-draw)
+- [ ] Obstacles persist between sessions (YAML file)
+- [ ] Robot navigates around both static and dynamic obstacles
+- [ ] Web UI shows different colors for robots vs obstacles
+- [ ] DET-002 marked resolved in BUGS.md
 
 ---
 
@@ -427,10 +612,20 @@ go test -v ./internal/position/
 - Full integration: Camera → Detection → Tracking → Planning → Control
 - AprilTag detection via GoCV ArucoDetector (DET-001 resolved Feb 6, 2026)
 - Web-based calibration with persistence (Complete)
+- **Phase 9A: YOLO Detector** (Complete - Feb 6, 2026)
+- **Phase 9B**: Static Obstacle UI (Pending)
 
 ### What Needs Work 🔄
 
-- **YOLO Detector**: Returns empty array (stubbed - DET-002)
+- **Phase 9B**: Static Obstacle UI (Add drag-to-draw obstacle definition)
+- **Obstacle Persistence**: Save/load obstacles to YAML (Phase 9B)
+- **Path Planning Integration**: Use obstacles in A* and collision avoidance (Phase 9C)
+
+### Known Issues (BUGS.md)
+
+| ID | Component | Status |
+|----|-----------|--------|
+| DET-002 | YOLO Detector | ✅ Complete (Phase 9A - Feb 6, 2026) |
 
 ---
 

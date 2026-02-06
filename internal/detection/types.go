@@ -108,6 +108,9 @@ type YOLOConfig struct {
 	IOUThres        float64
 	Device          string
 	ObstacleClasses []string
+	RelevantClasses map[int]string // Map of classID → name for filtering
+	MinObstacleSize float64        // Minimum obstacle size in meters
+	PixelsPerMeter  float64        // Scale factor for size filtering
 }
 
 type AprilTagConfig struct {

@@ -49,10 +49,17 @@ april_tags:
 yolo:
   model: "assets/yolov8n.onnx"
   input_size: 640
-  conf_thres: 0.5
-  iou_thres: 0.45
-  classes: null # Detect all classes, or specify [0] for specific class
-  device: "" # Empty = auto (CUDA if available, else CPU)
+  conf_thres: 0.5           # Detection confidence threshold
+  iou_thres: 0.45           # NMS IoU threshold
+  device: ""                 # Empty = auto (CUDA if available, else CPU)
+  min_obstacle_size: 0.05    # 5cm minimum (filter small objects in meters)
+  pixels_per_meter: 1000     # Scale factor for size filtering
+  classes:                   # Indoor-relevant classes (configurable)
+    - person
+    - cup
+    - chair
+    - laptop
+    - keyboard
 
 # ByteTrack Settings
 tracking:
