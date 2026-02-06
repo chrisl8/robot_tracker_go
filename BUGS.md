@@ -60,7 +60,7 @@ OpenCV version: 4.13.0
 2. Build command with correct environment:
    ```cmd
    set PATH=C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;%PATH%
-   go build -o robot_tracker.exe ./cmd/main.go
+   go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
    ```
 
 **Related Files:**

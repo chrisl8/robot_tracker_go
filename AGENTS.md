@@ -104,7 +104,7 @@ REM Add MinGW GCC and OpenCV DLLs to PATH
 set PATH=C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;%PATH%
 
 REM Build the application
-go build -o robot_tracker.exe ./cmd/main.go
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 
 REM Run the application
 ./robot_tracker.exe --demo
@@ -114,7 +114,7 @@ REM Run the application
 
 ```powershell
 $env:PATH = "C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;$env:PATH"
-go build -o robot_tracker.exe ./cmd/main.go
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 ./robot_tracker.exe --demo
 ```
 
@@ -122,7 +122,7 @@ go build -o robot_tracker.exe ./cmd/main.go
 
 ```bash
 export PATH="/c/mingw64/bin:/c/opencv/build/install/x64/mingw/bin:$PATH"
-go build -o robot_tracker.exe ./cmd/main.go
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 ./robot_tracker.exe --demo
 ```
 
@@ -133,7 +133,7 @@ go build -o robot_tracker.exe ./cmd/main.go
 go mod tidy
 
 # Build the application
-go build -o robot_tracker.exe ./cmd/main.go
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 
 # Build with race detector
 go build -race -o robot_tracker_race.exe ./cmd/main.go

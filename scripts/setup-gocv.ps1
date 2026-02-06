@@ -19,4 +19,4 @@ Write-Host "  PATH includes: $env:OPENCV_DIR\x64\mingw\bin" -ForegroundColor Cya
 Write-Host ""
 Write-Host "You can now run:" -ForegroundColor Yellow
 Write-Host "  go test ./internal/camera/... -v" -ForegroundColor Yellow
-Write-Host "  go build -o robot_tracker.exe ./cmd/main.go" -ForegroundColor Yellow
+Write-Host "  go build -tags=gocv -o robot_tracker.exe ./cmd/main.go" -ForegroundColor Yellow

@@ -11,6 +11,7 @@ Go implementation of the multi-robot tracking and control system.
 ## Dependencies
 
 Install Go dependencies:
+
 ```bash
 go mod tidy
 ```
@@ -30,13 +31,37 @@ mv yolov8n.onnx assets/
 
 ## Building
 
+### Environment
+
+You must set up the environment before building so that OpenCV can be found
+
+```powershell
+.\scripts\setup-gocv.ps1
+```
+
+### Build
+
+```powershell
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
+```
+
 ```bash
 # Build the application
-go build -o robot_tracker.exe ./cmd/main.go
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 
 # Build with race detector
 go build -race -o robot_tracker_race.exe ./cmd/main.go
 ```
+
+## Testing
+
+Start with the Demo
+
+```
+.\robot_tracker.exe --demo
+```
+
+Open the website and it should show a little demo video.
 
 ## Running
 
@@ -79,6 +104,7 @@ robot_tracker_go/
 ## Configuration
 
 Edit `config/tracking_config.yaml` to configure:
+
 - Robot definitions (tag IDs, sizes, speeds)
 - Detection parameters (confidence thresholds)
 - Planning settings (step size, safety margins)
@@ -88,13 +114,13 @@ Edit `config/tracking_config.yaml` to configure:
 
 Commands are single ASCII characters:
 
-| Command | Char | Description |
-|---------|------|-------------|
-| FORWARD | F | Move forward |
-| BACKWARD | B | Move backward |
-| LEFT | L | Rotate CCW |
-| RIGHT | R | Rotate CW |
-| STOP | S | Stop immediately |
+| Command  | Char | Description      |
+| -------- | ---- | ---------------- |
+| FORWARD  | F    | Move forward     |
+| BACKWARD | B    | Move backward    |
+| LEFT     | L    | Rotate CCW       |
+| RIGHT    | R    | Rotate CW        |
+| STOP     | S    | Stop immediately |
 
 Format: `{command}\r\n` (e.g., `F\r\n`)
 
