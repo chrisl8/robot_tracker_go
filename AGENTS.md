@@ -93,6 +93,41 @@ gopls MCP tools provide:
 
 ## Build Commands
 
+**IMPORTANT:** Before building on Windows, you must configure the environment for GoCV + OpenCV 4.13.0.
+
+### Windows Environment Setup
+
+GoCV requires a C compiler and OpenCV DLLs to be in PATH:
+
+```cmd
+REM Add MinGW GCC and OpenCV DLLs to PATH
+set PATH=C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;%PATH%
+
+REM Build the application
+go build -o robot_tracker.exe ./cmd/main.go
+
+REM Run the application
+./robot_tracker.exe --demo
+```
+
+### PowerShell
+
+```powershell
+$env:PATH = "C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;$env:PATH"
+go build -o robot_tracker.exe ./cmd/main.go
+./robot_tracker.exe --demo
+```
+
+### Git Bash / WSL
+
+```bash
+export PATH="/c/mingw64/bin:/c/opencv/build/install/x64/mingw/bin:$PATH"
+go build -o robot_tracker.exe ./cmd/main.go
+./robot_tracker.exe --demo
+```
+
+### Build Without Setup Script
+
 ```bash
 # Install dependencies
 go mod tidy
