@@ -16,6 +16,7 @@ type Config struct {
 	Obstacles     ObstaclesConfig     `yaml:"obstacles"`
 	Position      PositionConfig      `yaml:"position"`
 	Output        OutputConfig        `yaml:"output"`
+	Tracking      TrackingConfig      `yaml:"tracking"`
 }
 
 type RobotConfig struct {
@@ -72,8 +73,20 @@ type ObstaclesConfig struct {
 }
 
 type PositionConfig struct {
-	Smoothing      bool    `yaml:"smoothing"`
-	SmoothingAlpha float64 `yaml:"smoothing_alpha"`
+	GroundPlaneZ     float64 `yaml:"ground_plane_z"`
+	Smoothing        bool    `yaml:"smoothing"`
+	SmoothingAlpha   float64 `yaml:"smoothing_alpha"`
+	OutlierThreshold float64 `yaml:"outlier_threshold"`
+}
+
+type TrackingConfig struct {
+	TrackThresh float64 `yaml:"track_thresh"`
+	TrackBuffer int     `yaml:"track_buffer"`
+	MatchThresh float64 `yaml:"match_thresh"`
+	FrameRate   int     `yaml:"frame_rate"`
+	MOT20       bool    `yaml:"mot20"`
+	MinBoxArea  int     `yaml:"min_box_area"`
+	CameraFPS   int     `yaml:"camera_fps"`
 }
 
 type OutputConfig struct {

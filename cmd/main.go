@@ -14,8 +14,197 @@ import (
 
 	"robot_tracker_go/internal/config"
 	"robot_tracker_go/internal/controller"
+	"robot_tracker_go/internal/detection"
+	"robot_tracker_go/internal/planning"
+	"robot_tracker_go/internal/position"
+	"robot_tracker_go/internal/tracking"
 	"robot_tracker_go/internal/ui"
 )
+
+type RobotSystem struct {
+	cfg           *config.Config
+	detectionPipe *detection.DetectionPipeline
+	tracker       tracking.Tracker
+	planner       *planning.Planner
+	positionEst   *position.PositionEstimator
+	arduino       *controller.ArduinoController
+	commandQueue  *controller.CommandQueue
+	webServer     *ui.WebServer
+	cameraRunning bool
+	frameNum      int
+}
+
+func NewRobotSystem(cfg *config.Config) *RobotSystem {
+	return &RobotSystem{
+		cfg:           cfg,
+		cameraRunning: false,
+		frameNum:      0,
+	}
+}
+
+func (rs *RobotSystem) Initialize() error {
+	tagConfig := detection.AprilTagConfig{
+		Family:       rs.cfg.AprilTags.Family,
+		QuadDecimate: rs.cfg.AprilTags.QuadDecimate,
+	}
+
+	yoloConfig := &detection.YOLOConfig{
+		ModelPath: rs.cfg.YOLO.ModelPath,
+		InputSize: rs.cfg.YOLO.InputSize,
+		ConfThres: rs.cfg.YOLO.ConfThres,
+		IOUThres:  rs.cfg.YOLO.IOUThres,
+		Device:    rs.cfg.YOLO.Device,
+	}
+
+	rs.detectionPipe = detection.NewDetectionPipeline(yoloConfig, tagConfig)
+	log.Printf("Detection pipeline initialized, YOLO enabled: %v", rs.detectionPipe.IsYOLOEnabled())
+
+	trackConfig := &tracking.ByteTrackConfig{
+		TrackThresh: rs.cfg.Tracking.TrackThresh,
+		TrackBuffer: rs.cfg.Tracking.TrackBuffer,
+		MatchThresh: rs.cfg.Tracking.MatchThresh,
+		FrameRate:   rs.cfg.Tracking.FrameRate,
+		MinBoxArea:  rs.cfg.Tracking.MinBoxArea,
+		MOT20:       rs.cfg.Tracking.MOT20,
+	}
+	rs.tracker = tracking.NewByteTrack(trackConfig)
+	log.Printf("ByteTrack initialized")
+
+	plannerConfig := &planning.PlannerConfig{
+		AStarConfig:            nil,
+		VelocityObstacleConfig: nil,
+		CollisionMargin:        0.05,
+	}
+	rs.planner = planning.NewPlanner(plannerConfig)
+	log.Printf("Planner initialized")
+
+	calibrationPath := "config/calibration_default.yaml"
+	obstaclesPath := ""
+	if rs.cfg.Obstacles.Path != "" {
+		obstaclesPath = rs.cfg.Obstacles.Path
+	}
+	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
+	if err != nil {
+		log.Printf("Warning: Position estimator initialization failed: %v", err)
+		rs.positionEst = nil
+	} else {
+		rs.positionEst = posEst
+		log.Printf("Position estimator initialized")
+	}
+
+	rs.arduino = controller.NewArduinoController("auto", controller.BaudRate)
+	if err := rs.arduino.Connect(); err != nil {
+		log.Printf("Warning: Could not connect to Arduino: %v", err)
+	} else {
+		log.Printf("Connected to Arduino on %s", rs.arduino.GetPort())
+	}
+
+	rs.commandQueue = controller.NewCommandQueue(rs.arduino, controller.CommandIntervalMs)
+	rs.commandQueue.Start()
+	log.Printf("Command queue started")
+
+	rs.webServer = ui.NewWebServer(":8080")
+	rs.webServer.Start()
+	log.Printf("Web UI started at http://localhost:8080")
+
+	return nil
+}
+
+func (rs *RobotSystem) StartCamera() error {
+	log.Printf("Starting camera...")
+	rs.cameraRunning = true
+	return nil
+}
+
+func (rs *RobotSystem) Stop() {
+	log.Printf("Stopping system...")
+	rs.cameraRunning = false
+	rs.commandQueue.Stop()
+	if rs.arduino != nil {
+		rs.arduino.Disconnect()
+	}
+	rs.webServer.Stop()
+	log.Printf("System stopped")
+}
+
+func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedDetection) []tracking.Detection {
+	detections := make([]tracking.Detection, 0, len(fused))
+	for _, f := range fused {
+		bbox := f.Bbox
+		det := tracking.Detection{
+			Bbox:       [4]int{bbox.X1, bbox.Y1, bbox.X2, bbox.Y2},
+			Confidence: f.Confidence,
+		}
+		if f.TagID != nil {
+			det.TagID = f.TagID
+		}
+		if f.ClassName != "" {
+			classID := int(f.Confidence * 100)
+			det.ClassID = classID
+		}
+		detections = append(detections, det)
+	}
+	return detections
+}
+
+func (rs *RobotSystem) ProcessFrame(img image.Image) {
+	if img == nil {
+		return
+	}
+
+	rs.frameNum++
+	timestamp := float64(time.Now().UnixNano()) / 1e9
+
+	bounds := img.Bounds()
+	width := bounds.Max.X - bounds.Min.X
+	height := bounds.Max.Y - bounds.Min.Y
+
+	rgbaImg, ok := img.(*image.RGBA)
+	if !ok {
+		rgbaImg = image.NewRGBA(bounds)
+		draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
+	}
+	imageBytes := rgbaImg.Pix
+
+	detectionResult := rs.detectionPipe.Detect(imageBytes, width, height, timestamp, rs.frameNum)
+
+	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
+	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+
+	for _, track := range trackingResult.Tracks {
+		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+			if rs.positionEst != nil {
+				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+				worldPos := rs.positionEst.PixelToWorld(px, py)
+				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+			}
+		}
+	}
+
+	overlay := rs.detectionPipe.DrawResults(imageBytes, width, height, detectionResult)
+	if overlay != nil {
+		overlayImg := decodeToImage(overlay, width, height)
+		if overlayImg != nil {
+			rs.webServer.PushFrame(overlayImg)
+		} else {
+			rs.webServer.PushFrame(img)
+		}
+	} else {
+		rs.webServer.PushFrame(img)
+	}
+}
+
+func decodeToImage(data []byte, width, height int) image.Image {
+	if len(data) == 0 {
+		return nil
+	}
+	rgba := &image.RGBA{
+		Pix:    data,
+		Stride: 4 * width,
+		Rect:   image.Rect(0, 0, width, height),
+	}
+	return rgba
+}
 
 func generateTestPattern(width, height int, frameNum int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -34,20 +223,9 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 		}
 	}
 
-	borderColor := color.RGBA{78, 204, 163, 255}
-	for x := 0; x < width; x++ {
-		img.Set(x, 10, borderColor)
-		img.Set(x, height-10, borderColor)
-	}
-	for y := 0; y < height; y++ {
-		img.Set(10, y, borderColor)
-		img.Set(width-10, y, borderColor)
-	}
-
 	numRobots := 3
 	for i := 0; i < numRobots; i++ {
-		angle := float64(frameNum+i*100) * 0.02
-		_ = angle
+		_ = float64(frameNum+i*100) * 0.02
 		radius := 100.0
 		cx := float64(width)/2 + float64(i-1)*80
 		cy := float64(height) / 2
@@ -67,11 +245,6 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 			if tx >= 0 && tx < width && y-35 >= 0 && y-35 < height {
 				img.Set(tx, y-35, color.RGBA{0, 0, 0, 200})
 			}
-		}
-
-		if x+2 >= 0 && x+2 < width && y-30 >= 0 && y-30 < height {
-			draw.Draw(img, image.Rect(x-25, y-35, x+25, y-25), &image.Uniform{color.RGBA{0, 0, 0, 200}}, image.Point{}, draw.Src)
-			img.Set(x+2, y-30, color.White)
 		}
 	}
 
@@ -94,14 +267,13 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 
 func main() {
 	configPath := flag.String("config", "config/tracking_config.yaml", "Path to configuration file")
-	port := flag.String("port", "auto", "Serial port (auto-detect if not specified)")
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")
-	webPort := flag.String("web-port", ":8080", "Web server port")
+	flag.String("web-port", ":8080", "Web server port")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	flag.Parse()
 
 	if *listPorts {
-		arduino := controller.NewArduinoController(*port, 0)
+		arduino := controller.NewArduinoController("auto", controller.BaudRate)
 		ports := arduino.ListPorts()
 		fmt.Println("Available serial ports:")
 		for _, p := range ports {
@@ -113,60 +285,49 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Printf("Warning: Could not load config: %v", err)
+		log.Printf("Running with demo mode only")
+		*demoMode = true
 	}
 
-	arduino := controller.NewArduinoController(*port, controller.BaudRate)
-	if err := arduino.Connect(); err != nil {
-		log.Printf("Warning: Could not connect to Arduino: %v", err)
-	} else {
-		defer arduino.Disconnect()
-		fmt.Printf("Connected to Arduino on %s\n", arduino.GetPort())
+	rs := NewRobotSystem(cfg)
+	if cfg != nil {
+		rs.Initialize()
 	}
+	defer rs.Stop()
 
-	queue := controller.NewCommandQueue(arduino, controller.CommandIntervalMs)
-	queue.Start()
-	defer queue.Stop()
-
-	webServer := ui.NewWebServer(*webPort)
-	webServer.Start()
-	defer webServer.Stop()
-
-	fmt.Printf("Web UI started at http://localhost%s\n", *webPort)
-	fmt.Println("Command queue started. Press Ctrl+C to exit.")
+	fmt.Println("Press Ctrl+C to exit.")
 
 	if *demoMode {
 		fmt.Println("Demo mode: Generating test pattern...")
+		rs.StartCamera()
 		frameNum := 0
 		for {
 			frame := generateTestPattern(640, 480, frameNum)
-			webServer.PushFrame(frame)
+			rs.ProcessFrame(frame)
 			frameNum++
 			time.Sleep(33 * time.Millisecond)
 		}
 	}
 
 	if cfg != nil {
-		log.Printf("Config loaded: %+v", cfg)
-	}
+		executor := controller.NewPathExecutor(0.15, 1.0)
+		testCommands := []controller.Command{
+			controller.CommandForward,
+			controller.CommandLeft,
+			controller.CommandRight,
+			controller.CommandStop,
+		}
 
-	executor := controller.NewPathExecutor(0.15, 1.0)
-	testCommands := []controller.Command{
-		controller.CommandForward,
-		controller.CommandLeft,
-		controller.CommandRight,
-		controller.CommandStop,
-	}
-
-	for _, cmd := range testCommands {
-		fmt.Printf("Sending command: %c\n", cmd)
-		queue.Enqueue(cmd)
-		vel := executor.CommandToVelocity(cmd)
-		fmt.Printf("  Velocity: (%.2f, %.2f)\n", vel.VX, vel.VY)
+		for _, cmd := range testCommands {
+			fmt.Printf("Sending command: %c\n", cmd)
+			rs.commandQueue.Enqueue(cmd)
+			vel := executor.CommandToVelocity(cmd)
+			fmt.Printf("  Velocity: (%.2f, %.2f)\n", vel.VX, vel.VY)
+		}
 	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
 	<-sigCh
 	fmt.Println("\nShutting down...")
 }
