@@ -1,13 +1,19 @@
 package detection
 
-func NewDetectionPipeline(config *YOLOConfig, tagFamily string, tagQuadDecimate float64) *DetectionPipeline {
+func NewDetectionPipeline(yoloConfig *YOLOConfig, tagConfig AprilTagConfig) *DetectionPipeline {
 	pipeline := &DetectionPipeline{
-		tagDetector: NewAprilTagDetector(tagFamily, tagQuadDecimate),
 		yoloEnabled: false,
 	}
 
-	if config != nil && config.ModelPath != "" {
-		detector, err := NewYOLODetector(config)
+	tagDetector, err := NewAprilTagDetector(tagConfig)
+	if err == nil {
+		pipeline.tagDetector = tagDetector
+	} else {
+		pipeline.tagDetector = nil
+	}
+
+	if yoloConfig != nil && yoloConfig.ModelPath != "" {
+		detector, err := NewYOLODetector(yoloConfig)
 		if err == nil {
 			pipeline.yoloDetector = detector
 			pipeline.yoloEnabled = true

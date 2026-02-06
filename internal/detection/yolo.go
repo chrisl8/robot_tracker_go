@@ -1,8 +1,12 @@
+//go:build gocv
+
 package detection
 
 import (
 	"fmt"
 	"os"
+
+	"gocv.io/x/gocv"
 )
 
 type YOLODetector struct {
@@ -66,7 +70,10 @@ func (d *YOLODetector) IsAvailable() bool {
 }
 
 func (d *YOLODetector) SetClassNames(names map[int]string) {
-	d.classNames = names
+	d.classNames = make(map[int]string)
+	for k, v := range names {
+		d.classNames[k] = v
+	}
 }
 
 func (d *YOLODetector) GetClassName(classID int) string {

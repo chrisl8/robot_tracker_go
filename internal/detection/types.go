@@ -110,8 +110,34 @@ type YOLOConfig struct {
 	ObstacleClasses []string
 }
 
+type AprilTagConfig struct {
+	Family             string
+	TagSize            float64
+	NThreads           int
+	QuadDecimate       float64
+	QuadSigma          float64
+	RefineEdges        int
+	DecodingSharpening float64
+	MinTagSize         float64
+	MaxHammingDistance int
+}
+
 type DetectionPipeline struct {
-	tagDetector  *AprilTagDetector
-	yoloDetector *YOLODetector
+	tagDetector  TagDetector
+	yoloDetector YOLODetectorInterface
 	yoloEnabled  bool
+}
+
+type TagDetector interface {
+	Detect(image []byte, width, height int) []AprilTag
+	DrawTags(image []byte, width, height int, tags []AprilTag) []byte
+	Close() error
+}
+
+type YOLODetectorInterface interface {
+	Detect(image []byte, width, height int) []YOLODetection
+	DrawDetections(image []byte, width, height int, detections []YOLODetection) []byte
+	IsAvailable() bool
+	SetClassNames(names map[int]string)
+	GetClassName(classID int) string
 }

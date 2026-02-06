@@ -7,31 +7,28 @@ import (
 
 func TestNewDetectionPipeline(t *testing.T) {
 	tests := []struct {
-		name         string
-		config       *YOLOConfig
-		tagFamily    string
-		tagQuadDecim float64
-		yoloEnabled  bool
+		name        string
+		config      *YOLOConfig
+		tagConfig   AprilTagConfig
+		yoloEnabled bool
 	}{
 		{
-			name:         "nil config",
-			config:       nil,
-			tagFamily:    "tag36h11",
-			tagQuadDecim: 2.0,
-			yoloEnabled:  false,
+			name:        "nil config",
+			config:      nil,
+			tagConfig:   AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0},
+			yoloEnabled: false,
 		},
 		{
-			name:         "empty model path",
-			config:       &YOLOConfig{ModelPath: ""},
-			tagFamily:    "tag36h11",
-			tagQuadDecim: 2.0,
-			yoloEnabled:  false,
+			name:        "empty model path",
+			config:      &YOLOConfig{ModelPath: ""},
+			tagConfig:   AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0},
+			yoloEnabled: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pipeline := NewDetectionPipeline(tt.config, tt.tagFamily, tt.tagQuadDecim)
+			pipeline := NewDetectionPipeline(tt.config, tt.tagConfig)
 			if pipeline == nil {
 				t.Fatal("NewDetectionPipeline returned nil")
 			}
@@ -46,7 +43,7 @@ func TestNewDetectionPipeline(t *testing.T) {
 }
 
 func TestDetectionPipeline_Detect(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, "tag36h11", 2.0)
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	timestamp := float64(time.Now().UnixNano()) / 1e9
 	result := pipeline.Detect([]byte{}, 640, 480, timestamp, 1)
@@ -83,7 +80,7 @@ func TestDetectionPipeline_IsYOLOEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pipeline := NewDetectionPipeline(tt.config, "tag36h11", 2.0)
+			pipeline := NewDetectionPipeline(tt.config, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 			if pipeline.IsYOLOEnabled() != tt.expectedValue {
 				t.Errorf("IsYOLOEnabled() = %v, want %v", pipeline.IsYOLOEnabled(), tt.expectedValue)
 			}
@@ -92,7 +89,7 @@ func TestDetectionPipeline_IsYOLOEnabled(t *testing.T) {
 }
 
 func TestDetectionPipeline_fuseDetections(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, "tag36h11", 2.0)
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	t.Run("no detections", func(t *testing.T) {
 		fused := pipeline.fuseDetections([]AprilTag{}, []YOLODetection{})
@@ -185,7 +182,7 @@ func TestDetectionPipeline_fuseDetections(t *testing.T) {
 }
 
 func TestDetectionPipeline_findMatchingYOLO(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, "tag36h11", 2.0)
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	t.Run("no yolo detections", func(t *testing.T) {
 		tag := AprilTag{TagID: 1, CenterX: 100, CenterY: 100}
@@ -230,7 +227,7 @@ func TestDetectionPipeline_findMatchingYOLO(t *testing.T) {
 }
 
 func TestDetectionPipeline_tagToBbox(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, "tag36h11", 2.0)
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	tests := []struct {
 		name       string
@@ -280,7 +277,7 @@ func TestDetectionPipeline_tagToBbox(t *testing.T) {
 }
 
 func TestDetectionPipeline_DrawResults(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, "tag36h11", 2.0)
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	image := []byte{1, 2, 3, 4, 5}
 	result := &DetectionResult{
@@ -324,14 +321,14 @@ func TestDetectionResult_Empty(t *testing.T) {
 }
 
 func TestDetectionPipeline_setDefaultClassNames(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, "tag36h11", 2.0)
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	if pipeline.yoloDetector == nil {
 		t.Skip("yoloDetector is nil (expected with nil config)")
 	}
 
-	pipeline.setDefaultClassNames()
-	if len(pipeline.yoloDetector.classNames) == 0 {
-		t.Error("classNames should not be empty after setDefaultClassNames")
+	className := pipeline.yoloDetector.GetClassName(0)
+	if className == "" {
+		t.Error("GetClassName should return a valid class name")
 	}
 }
