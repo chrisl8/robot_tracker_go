@@ -4,8 +4,22 @@
 
 - Always make a plan before doing anything.
 - Document and save everything you plan to do in the `PLAN.md` file.
-- If something causes you to deviate from the plan, stop and ask the user before proceeding. Do not modify the plan without consent.
-- My intention is for the agent to write all of the code, but to do it in in small chunks and iterate on top of each part after testing
+
+# Deviation Protocol
+
+If any of the following occur, STOP IMMEDIATELY and ask the user before proceeding:
+
+1. Dependency changes — Adding, removing, or changing versions of any dependencies (libraries, tools, packages)
+2. Alternative approaches — Switching to a different implementation strategy than what was agreed upon in the plan
+3. Build system changes — Modifying build flags, tags, or configurations
+4. Workarounds — Attempting to bypass an issue rather than solving it as specified in the plan
+
+Template for asking:
+The plan specifies [X approach], but I've encountered [issue]. I see two options:
+
+1. [Option A - continue with original plan with adjustment]
+2. [Option B - different approach]
+   Which would you prefer? Or do you want me to update PLAN.md with a new approach first?
 
 # Bug Tracking
 
