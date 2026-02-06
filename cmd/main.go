@@ -25,17 +25,20 @@ import (
 )
 
 type RobotSystem struct {
-	cfg           *config.Config
-	cam           camera.Camera
-	detectionPipe *detection.DetectionPipeline
-	tracker       tracking.Tracker
-	planner       *planning.Planner
-	positionEst   *position.PositionEstimator
-	arduino       *controller.ArduinoController
-	commandQueue  *controller.CommandQueue
-	webServer     *ui.WebServer
-	cameraRunning bool
-	frameNum      int
+	cfg              *config.Config
+	cam              camera.Camera
+	detectionPipe    *detection.DetectionPipeline
+	tracker          tracking.Tracker
+	planner          *planning.Planner
+	positionEst      *position.PositionEstimator
+	arduino          *controller.ArduinoController
+	commandQueue     *controller.CommandQueue
+	webServer        *ui.WebServer
+	cameraRunning    bool
+	frameNum         int
+	DynamicObstacles []*planning.DynamicObstacle
+	CurrentRobotID   int
+	CurrentGoal      [2]float64
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -43,7 +46,16 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		cfg:           cfg,
 		cameraRunning: false,
 		frameNum:      0,
+		CurrentGoal:   [2]float64{0, 0},
 	}
+}
+
+func classesToMap(classes []string) map[string]bool {
+	m := make(map[string]bool)
+	for _, c := range classes {
+		m[c] = true
+	}
+	return m
 }
 
 func (rs *RobotSystem) Initialize() error {
@@ -220,15 +232,13 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 
-	relevantClasses := map[string]bool{
-		"person": true, "cup": true, "chair": true,
-		"laptop": true, "keyboard": true, "bottle": true,
-	}
-	dynamicObstacles := detection.YOLODetectionsToDynamicObstacles(
+	relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
+	minConfidence := rs.cfg.LocalPlanning.MinConfidence
+	rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
 		detectionResult.YOLODetections,
 		rs.positionEst,
 		relevantClasses,
-		0.5,
+		minConfidence,
 	)
 
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
@@ -236,12 +246,26 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	for _, track := range trackingResult.Tracks {
 		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+			rs.CurrentRobotID = *track.TagID
 			if rs.positionEst != nil {
 				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
 				worldPos := rs.positionEst.PixelToWorld(px, py)
 				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+				rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
 			}
 		}
+	}
+
+	if rs.CurrentGoal != [2]float64{0, 0} && rs.CurrentRobotID != 0 {
+		velocity, _ := rs.planner.ComputeVelocityWithDynamicObstacles(
+			rs.CurrentRobotID,
+			rs.CurrentGoal,
+			rs.DynamicObstacles,
+			minConfidence,
+		)
+		log.Printf("Computed velocity with %d dynamic obstacles: (%.3f, %.3f)",
+			len(rs.DynamicObstacles), velocity[0], velocity[1])
+		_ = velocity
 	}
 
 	overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult)
@@ -262,8 +286,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		})
 	}
 	rs.webServer.UpdateDetectedTags(detectedTags)
-
-	_ = dynamicObstacles
 }
 
 func decodeToImage(data []byte, width, height int) image.Image {
@@ -587,6 +609,8 @@ func main() {
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")
 	flag.String("web-port", ":8080", "Web server port")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
+	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
+	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
 	flag.Parse()
 
 	if *listPorts {
@@ -613,6 +637,24 @@ func main() {
 	defer rs.Stop()
 
 	fmt.Println("Press Ctrl+C to exit.")
+
+	if *selfTestMode {
+		rs := NewRobotSystem(cfg)
+		if cfg != nil {
+			rs.Initialize()
+		}
+		RunSelfTest(rs)
+		return
+	}
+
+	if *demoYOLOMode {
+		rs := NewRobotSystem(cfg)
+		if cfg != nil {
+			rs.Initialize()
+		}
+		RunDemoYOLOMode(rs)
+		return
+	}
 
 	if rs.cam != nil && !*demoMode {
 		fmt.Println("Starting real camera capture...")

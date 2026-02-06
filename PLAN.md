@@ -254,189 +254,183 @@ The Python version has a complete dynamic obstacle pipeline:
 3. **YOLO-to-Obstacle conversion** - converts bounding boxes to circular obstacles
 4. **Integration in main.py** - filters YOLO detections, creates DynamicObstacles
 
-**What's missing in Go:**
+### Current Status (After Commit daac606)
 
-1. `DynamicObstacle` struct in planning package
-2. Conversion from YOLO detections to DynamicObstacles
-3. Integration of YOLO obstacles into local planning loop
-4. Class filtering for relevant obstacle types
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `DynamicObstacle` struct | ✅ Done | `internal/planning/dynamic_obstacle.go` |
+| `LocalPlanner.ComputeVelocityWithObstacles()` | ✅ Done | `internal/planning/local.go:242-264` |
+| `Planner.ComputeVelocityWithDynamicObstacles()` | ✅ Done | `internal/planning/planner.go:52-64` |
+| YOLO-to-Obstacle converter | ✅ Done | `internal/detection/dynamic_obstacle.go` |
+| Tests (11 cases) | ✅ Done | All passing |
+| **ProcessFrame integration** | ⚠️ Partial | Creates obstacles but discards them |
+| **Actual avoidance using obstacles** | ❌ Missing | No code passes obstacles to planner |
 
-### Implementation Plan
+### Gaps Identified
 
-#### Phase 9.1: Add DynamicObstacle Struct
+1. **Dynamic obstacles are created but never used** - `cmd/main.go:266` has `_ = dynamicObstacles`
+2. **Hardcoded obstacle classes** - Should use `cfg.LocalPlanning.ObstacleClasses`
+3. **Hardcoded confidence threshold** - Should use `cfg.LocalPlanning.MinConfidence`
 
-**New file: `internal/planning/dynamic_obstacle.go`**
+---
+
+## Remaining Implementation
+
+### Phase 9.5: Fix Dynamic Obstacle Integration
+
+**Goal:** Actually use the dynamic obstacles in the planning/avoidance loop.
+
+**Current Issue:** `cmd/main.go:266` discards obstacles: `_ = dynamicObstacles`
+
+**Changes:**
+1. Add `DynamicObstacles []*planning.DynamicObstacle` to `RobotSystem` struct
+2. Store obstacles after conversion
+3. Call `planner.ComputeVelocityWithDynamicObstacles()` with obstacles
+4. Track robot IDs from AprilTag detections
+
+**Files Modified:**
+| File | Change |
+|------|--------|
+| `cmd/main.go` | Store and use dynamic obstacles in planning |
+
+---
+
+### Phase 9.6: Load Configuration from YAML
+
+**Goal:** Replace hardcoded values with configuration.
+
+**Current Issues:**
+- `cmd/main.go:223-225`: Hardcoded obstacle classes
+- `cmd/main.go:231`: Hardcoded confidence threshold (0.5)
+
+**Changes:**
+1. Add helper `classesToMap()` function
+2. Load from `rs.cfg.LocalPlanning.ObstacleClasses`
+3. Load `rs.cfg.LocalPlanning.MinConfidence`
+
+**Files Modified:**
+| File | Change |
+|------|--------|
+| `cmd/main.go` | Use config values instead of hardcoded |
+
+---
+
+### Phase 9.7: Static (Manual) Obstacle UI (Optional)
+
+**Goal:** Allow users to draw obstacles on video and persist them.
+
+**What's Missing:**
+- API endpoints for obstacle CRUD (`/api/obstacles`)
+- Static obstacle data structure
+- Web UI drag-to-draw functionality
+- Obstacle overlay on video stream
+- YAML persistence
+
+**Files to Create/Modify:**
+| File | Change |
+|------|--------|
+| `internal/ui/webserver.go` | Obstacle CRUD API endpoints |
+| `internal/planning/static_obstacle.go` | Static obstacle struct |
+| `internal/ui/index.go` | Draw UI + overlay |
+| `internal/detection/pipeline.go` | Render static obstacles |
+| `config/obstacles.yaml` | Persist obstacles |
+
+---
+
+## Implementation Details
+
+### Phase 9.5: Integration Pseudocode
 
 ```go
-package planning
-
-type DynamicObstacle struct {
-    X          float64  // World X position (meters)
-    Y          float64  // World Y position (meters)
-    VX         float64  // Velocity X (m/s)
-    VY         float64  // Velocity Y (m/s)
-    Radius     float64  // Obstacle radius (meters)
-    ClassName  string   // e.g., "person", "cup", "chair"
-    Confidence float64  // Detection confidence (0-1)
-    IsRobot    bool     // True if this is another robot
+// In RobotSystem struct, add:
+type RobotSystem struct {
+    // ... existing fields ...
+    DynamicObstacles []*planning.DynamicObstacle
+    CurrentRobotID   int
+    CurrentGoal      [2]float64
 }
-```
 
-**Methods:**
-- `FromYOLODetection()` - factory from YOLO bounding box + position estimator
-- `FromRobotState()` - factory from tracked robot state
-- `ContainsPoint()` - point-in-circle check
-- `DistanceTo()` - distance to another obstacle/point
-
-#### Phase 9.2: Update LocalPlanner for YOLO Obstacles
-
-**Modify: `internal/planning/local.go`**
-
-```go
-func (p *LocalPlanner) ComputeVelocity(
-    robot RobotState,
-    goal [2]float64,
-    obstacles []RobotState,        // Other robots
-    dynamicObstacles []DynamicObstacle,  // NEW: YOLO detections
-) ([2]float64, bool)
-```
-
-Key changes:
-- Accept `[]DynamicObstacle` parameter
-- Convert `DynamicObstacle` to `RobotState` for existing VO algorithm
-- Add confidence threshold filtering
-- Support stationary obstacles (vx=0, vy=0)
-
-#### Phase 9.3: Create YOLO-to-DynamicObstacle Converter
-
-**New file: `internal/detection/dynamic_obstacle.go`**
-
-```go
-package detection
-
-import (
-    "robot_tracker_go/internal/planning"
-    "robot_tracker_go/internal/position"
-)
-
-func YOLODetectionsToDynamicObstacles(
-    detections []YOLODetection,
-    positionEst *position.PositionEstimator,
-    relevantClasses map[string]bool,
-    minConfidence float64,
-) []planning.DynamicObstacle
-```
-
-Features:
-- Convert bounding box center to world coordinates using homography
-- Calculate radius from bbox dimensions
-- Filter by class name (person, cup, chair, laptop, etc.)
-- Filter by confidence threshold
-- Handle uncalibrated case (use pixel coordinates)
-
-#### Phase 9.4: Integration in Main Loop
-
-**Modify: `cmd/main.go` - `ProcessFrame()`**
-
-```go
+// In ProcessFrame:
 func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
     // ... existing detection ...
 
-    // NEW: Convert YOLO detections to dynamic obstacles
-    dynamicObstacles := detection.YOLODetectionsToDynamicObstacles(
+    relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
+    rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
         detectionResult.YOLODetections,
         rs.positionEst,
         relevantClasses,
-        0.5,
+        rs.cfg.LocalPlanning.MinConfidence,
     )
 
-    // Pass to local planner for collision avoidance
-    velocity, shouldPause := rs.planner.ComputeVelocityWithObstacles(
-        robotID,
-        goal,
-        otherRobots,
-        dynamicObstacles,
-    )
+    // Track robot from AprilTag
+    for _, track := range trackingResult.Tracks {
+        if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+            rs.CurrentRobotID = *track.TagID
+            // Update robot state in planner
+            px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+            worldPos := rs.positionEst.PixelToWorld(px, py)
+            rs.planner.UpdateRobotState(rs.CurrentRobotID, worldPos, [2]float64{0, 0})
+        }
+    }
+
+    // Compute velocity with dynamic obstacles
+    if rs.CurrentGoal != [2]float64{0, 0} {
+        velocity, _ := rs.planner.ComputeVelocityWithDynamicObstacles(
+            rs.CurrentRobotID,
+            rs.CurrentGoal,
+            rs.DynamicObstacles,
+            rs.cfg.LocalPlanning.MinConfidence,
+        )
+        // Use velocity for robot control
+        _ = velocity
+    }
+
+    // ... rest of processing ...
 }
 ```
 
-#### Phase 9.5: Configuration Settings
+### Phase 9.6: Configuration Helper
 
-**Update: `config/tracking_config.yaml`**
-
-```yaml
-# Local Planning Settings
-local_planning:
-  enabled: true
-  safety_margin: 0.15
-  max_speed: 0.15
-  time_horizon: 2.0
-  min_obstacle_confidence: 0.5  # NEW: Filter low-confidence detections
-  obstacle_classes:          # NEW: Relevant classes for avoidance
-    - "person"
-    - "cup"
-    - "chair"
-    - "laptop"
-    - "keyboard"
-  debug:
-    enabled: true
-    draw_velocity_vector: true
-    draw_collision_cone: true
-    draw_obstacle_radius: true
-    draw_pause_indicator: true
+```go
+func classesToMap(classes []string) map[string]bool {
+    m := make(map[string]bool)
+    for _, c := range classes {
+        m[c] = true
+    }
+    return m
+}
 ```
 
-### Files to Create/Modify
+---
 
-| File | Change |
-|------|--------|
-| `internal/planning/dynamic_obstacle.go` | **NEW** - DynamicObstacle struct |
-| `internal/planning/local.go` | **MODIFY** - Add dynamicObstacles param |
-| `internal/planning/planner.go` | **MODIFY** - Add ComputeVelocityWithObstacles |
-| `internal/detection/dynamic_obstacle.go` | **NEW** - YOLO-to-Obstacle converter |
-| `internal/detection/types.go` | **MODIFY** - Add ObstacleClasses to config |
-| `cmd/main.go` | **MODIFY** - Integrate in ProcessFrame |
-| `config/tracking_config.yaml` | **MODIFY** - Add local_planning settings |
+## Verification Checklist
 
-### Python-to-Go Mapping
+- [ ] YOLO detections create DynamicObstacles
+- [ ] DynamicObstacles passed to local planner
+- [ ] Robot velocity adjusted for obstacle avoidance
+- [ ] Configuration loaded from YAML (not hardcoded)
+- [ ] Dynamic obstacle integration verified
+
+---
+
+## Effort Estimate
+
+| Phase | Tasks | Time |
+|-------|-------|------|
+| 9.5: Fix Dynamic Integration | 3 tasks | 1-2 hours |
+| 9.6: Config Loading | 2 tasks | 30 min |
+| 9.7: Static Obstacle UI | 6 tasks | 3-4 hours |
+
+---
+
+## Python-to-Go Mapping (Complete)
 
 | Python | Go |
 |--------|----|
-| `DynamicObstacle` class | `DynamicObstacle` struct |
-| `DynamicObstacle.from_yolo_detection()` | `YOLODetectionsToDynamicObstacles()` |
-| `LocalPlanner.compute_velocity()` | `LocalPlanner.ComputeVelocity()` |
-| `velocity_to_command()` | In `controller/executor.go` |
-
-### Testing Plan
-
-1. **Unit tests for DynamicObstacle:**
-   - FromYOLODetection with calibrated position estimator
-   - FromYOLODetection without calibration (pixel coords)
-   - FromRobotState conversion
-   - Point containment, distance calculations
-
-2. **Integration tests:**
-   - Camera → Detection → DynamicObstacle conversion
-   - LocalPlanner with dynamic obstacles
-   - Collision avoidance verification
-
-3. **Verification checklist:**
-   - [ ] Person walking detected as dynamic obstacle
-   - [ ] Robot slows/stops for approaching person
-   - [ ] Static objects (cups, chairs) cause avoidance
-   - [ ] Confidence threshold filters noise
-   - [ ] No false positives on background
-
-### Effort Estimate
-
-| Task | Complexity | Time |
-|------|------------|------|
-| 9.1 DynamicObstacle struct | Easy | 30 min |
-| 9.2 LocalPlanner update | Medium | 1 hour |
-| 9.3 YOLO converter | Medium | 1.5 hours |
-| 9.4 Main integration | Medium | 1 hour |
-| 9.5 Config + tests | Easy | 30 min |
-| **Total** | - | **4.5 hours** |
+| `DynamicObstacle` class | `DynamicObstacle` struct ✅ |
+| `DynamicObstacle.from_yolo_detection()` | `YOLODetectionsToDynamicObstacles()` ✅ |
+| `LocalPlanner.compute_velocity()` | `LocalPlanner.ComputeVelocityWithObstacles()` ✅ |
+| `velocity_to_command()` | `controller/executor.go` |
 
 ---
 
