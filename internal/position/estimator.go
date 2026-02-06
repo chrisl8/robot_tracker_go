@@ -20,6 +20,21 @@ type CalibrationData struct {
 	WorldScale float64
 }
 
+type CalibrationConfig struct {
+	Version      int              `yaml:"version"`
+	Camera       CameraInfo       `yaml:"camera"`
+	Intrinsics   CameraIntrinsics `yaml:"intrinsics"`
+	Homography   [][]float64      `yaml:"homography"`
+	WorldScale   float64          `yaml:"world_scale"`
+	TagSize      float64          `yaml:"tag_size"`
+	CalibratedAt string           `yaml:"calibrated_at"`
+}
+
+type CameraInfo struct {
+	Name       string `yaml:"name"`
+	Resolution [2]int `yaml:"resolution"`
+}
+
 type PositionEstimator struct {
 	homography     *Homography
 	intrinsics     *CameraIntrinsics

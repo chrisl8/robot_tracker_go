@@ -206,6 +206,27 @@ Calibration loaded from config/calibration_Video__http___192_168_8_183_4747_vide
 Web server started on :8080
 ```
 
+### Dead Code Cleanup (Feb 6, 2026)
+
+**Problem:** `internal/position/calibration.go` contained unused `CalibrationManager` struct and methods that were never instantiated.
+
+**Actions:**
+1. Removed `internal/position/calibration.go` (dead code)
+2. Moved `CalibrationConfig` and `CameraInfo` types to `internal/position/estimator.go`
+3. Verified duplicate functions already consolidated in `internal/ui/webserver.go`
+
+**Files Changed:**
+| File | Change |
+|------|--------|
+| `internal/position/calibration.go` | **Deleted** (281 lines of dead code) |
+| `internal/position/estimator.go` | Added `CalibrationConfig` and `CameraInfo` types |
+
+**Consolidated Functions:**
+| Function | Location |
+|----------|----------|
+| `GetCalibrationFilename()` | `internal/ui/webserver.go:495` |
+| `sanitizeCameraName()` | `internal/ui/webserver.go:500` |
+
 ### New API Endpoints
 
 | Method | Path | Description |
