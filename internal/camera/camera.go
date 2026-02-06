@@ -23,6 +23,7 @@ type Camera interface {
 }
 
 type CameraConfig struct {
+	Type     string  `yaml:"type"`
 	Name     string  `yaml:"name"`
 	CameraID int     `yaml:"camera_id"`
 	URL      string  `yaml:"url"`

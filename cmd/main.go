@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"robot_tracker_go/internal/camera"
 	"robot_tracker_go/internal/config"
 	"robot_tracker_go/internal/controller"
 	"robot_tracker_go/internal/detection"
@@ -23,6 +24,7 @@ import (
 
 type RobotSystem struct {
 	cfg           *config.Config
+	cam           camera.Camera
 	detectionPipe *detection.DetectionPipeline
 	tracker       tracking.Tracker
 	planner       *planning.Planner
@@ -92,6 +94,28 @@ func (rs *RobotSystem) Initialize() error {
 		log.Printf("Position estimator initialized")
 	}
 
+	if primaryCam := rs.cfg.GetPrimaryCamera(); primaryCam != nil {
+		camConfig := camera.CameraConfig{
+			Type:     primaryCam.Type,
+			Name:     primaryCam.Name,
+			CameraID: primaryCam.CameraID,
+			URL:      primaryCam.URL,
+			Width:    primaryCam.Width,
+			Height:   primaryCam.Height,
+			FPS:      primaryCam.FPS,
+		}
+		cam, err := camera.NewCamera(camConfig)
+		if err != nil {
+			log.Printf("Warning: Could not initialize camera: %v", err)
+			rs.cam = nil
+		} else {
+			rs.cam = cam
+			log.Printf("Camera initialized: %s", rs.cam.GetName())
+		}
+	} else {
+		log.Printf("No camera configured, using demo mode")
+	}
+
 	rs.arduino = controller.NewArduinoController("auto", controller.BaudRate)
 	if err := rs.arduino.Connect(); err != nil {
 		log.Printf("Warning: Could not connect to Arduino: %v", err)
@@ -112,13 +136,27 @@ func (rs *RobotSystem) Initialize() error {
 
 func (rs *RobotSystem) StartCamera() error {
 	log.Printf("Starting camera...")
+	if rs.cam == nil {
+		log.Printf("No camera available")
+		rs.cameraRunning = false
+		return nil
+	}
+	if err := rs.cam.Start(); err != nil {
+		log.Printf("Failed to start camera: %v", err)
+		rs.cameraRunning = false
+		return err
+	}
 	rs.cameraRunning = true
+	log.Printf("Camera started: %s", rs.cam.GetName())
 	return nil
 }
 
 func (rs *RobotSystem) Stop() {
 	log.Printf("Stopping system...")
 	rs.cameraRunning = false
+	if rs.cam != nil {
+		rs.cam.Stop()
+	}
 	rs.commandQueue.Stop()
 	if rs.arduino != nil {
 		rs.arduino.Disconnect()
@@ -204,6 +242,21 @@ func decodeToImage(data []byte, width, height int) image.Image {
 		Rect:   image.Rect(0, 0, width, height),
 	}
 	return rgba
+}
+
+func cameraFrameToImage(frame *camera.Frame) image.Image {
+	if frame == nil || len(frame.Data) == 0 {
+		return nil
+	}
+	if frame.Channels == 3 {
+		rgba := &image.RGBA{
+			Pix:    frame.Data,
+			Stride: 4 * frame.Width,
+			Rect:   image.Rect(0, 0, frame.Width, frame.Height),
+		}
+		return rgba
+	}
+	return nil
 }
 
 func generateTestPattern(width, height int, frameNum int) image.Image {
@@ -296,6 +349,30 @@ func main() {
 	defer rs.Stop()
 
 	fmt.Println("Press Ctrl+C to exit.")
+
+	if rs.cam != nil && !*demoMode {
+		fmt.Println("Starting real camera capture...")
+		if err := rs.StartCamera(); err != nil {
+			log.Printf("Failed to start camera: %v, falling back to demo mode", err)
+			*demoMode = true
+		} else {
+			frameNum := 0
+			for rs.cameraRunning {
+				frame, err := rs.cam.GetFrame()
+				if err != nil {
+					log.Printf("Failed to get frame: %v", err)
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				img := cameraFrameToImage(frame)
+				if img != nil {
+					rs.ProcessFrame(img)
+				}
+				frameNum++
+				time.Sleep(33 * time.Millisecond)
+			}
+		}
+	}
 
 	if *demoMode {
 		fmt.Println("Demo mode: Generating test pattern...")

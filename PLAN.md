@@ -51,55 +51,37 @@ Go implementation of the multi-robot tracking and control system, migrated from 
 | `github.com/gin-gonic/gin` | Web framework | ✅ Working |
 | `github.com/gorilla/websocket` | WebSocket for real-time overlay | ✅ Working |
 | `github.com/hybridgroup/mjpeg` | MJPEG encoding | ✅ Working |
-| `gocv.io/x/gocv` | OpenCV bindings (camera + image processing) | ⚠️ Build issues |
+| `gocv.io/x/gocv` | OpenCV bindings (camera + image processing) | ✅ Working |
 
-## Critical Issues
+## Critical Issues - RESOLVED
 
-### 1. GoCV Build Failure 🔴
+### 1. GoCV Build Failure - RESOLVED ✅
 
-**Problem:** `internal/camera` fails to build with undefined constants in gocv package.
+**Problem:** GoCV failed to build with undefined constants.
 
-**Error:**
+**Root Cause:** Missing environment configuration (GCC and OpenCV DLLs not in PATH), NOT incompatibility.
+
+**Resolution (Feb 6, 2026):**
+- Add MinGW GCC to PATH: `C:\mingw64\bin`
+- Add OpenCV DLLs to PATH: `C:\opencv\build\install\x64\mingw\bin`
+- Build command: `set PATH=C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;%PATH% && go build ...`
+
+**Verification:**
 ```
-C:\Users\chris\go\pkg\mod\gocv.io\x\gocv@v0.43.0\core_string.go:5:9: undefined: MatType
-C:\Users\chris\go\pkg\mod\gocv.io\x\gocv@v0.43.0\core_string.go:57:9: undefined: CompareType
-... (many more errors)
+GoCV version: 0.43.0
+OpenCV version: 4.13.0
 ```
 
-**Root Cause:** GoCV v0.43.0 has incompatibility with OpenCV 4.13.0 headers. The generated `core_string.go` file references constants that were renamed or removed in OpenCV 4.x.
+### 2. Stubbed Detection Pipeline - IN PROGRESS 🔄
 
-**Impact:** Camera capture and image processing cannot be implemented.
+| Detector | Status | Next Action |
+|----------|--------|-------------|
+| AprilTag | Stubbed | Implement using gocv.ArucoDetector |
+| YOLO | Stubbed | Implement using gocv.Net with ONNX |
 
-**Environment:**
-- Go: 1.23.2
-- GoCV: v0.43.0
-- OpenCV: 4.13.0
-- OS: Windows 11
+### 3. No Integration in Main Loop - IN PROGRESS 🔄
 
-**Fix Attempted:** OpenCV 4.13.0 successfully installed at `C:\opencv\` but GoCV still has header compatibility issues.
-
-### 2. Stubbed Detection Pipeline 🔴
-
-**Problem:** Both AprilTag and YOLO detectors return empty arrays.
-
-- `internal/detection/apriltag.go:21-29` - `Detect()` returns empty slice
-- `internal/detection/yolo.go:50-58` - `Detect()` returns empty slice
-
-**Impact:** No actual robot detection, tracking has no input.
-
-### 3. No Integration in Main Loop 🟡
-
-**Problem:** Camera → Detection → Tracking pipeline not connected in `main.go`.
-
-**Current main.go:**
-- Creates test pattern generator (demo mode)
-- Initializes Arduino controller
-- Starts web server
-- Does NOT capture frames from camera
-- Does NOT run detection pipeline
-- Does NOT update tracking
-
-### 4. Test Coverage Status ✅ (Updated)
+Camera → Detection → Tracking pipeline needs to be connected in `cmd/main.go`.
 
 Packages with tests (contrary to previous assessment):
 - `config` - ✅ Complete (100% coverage)
@@ -117,7 +99,7 @@ Packages with tests (contrary to previous assessment):
 
 | Task | Description | Status |
 |------|-------------|--------|
-| 3.1 | Fix GoCV build issue (OpenCV 4.13.0 header incompatibility) | **In Progress** |
+| 3.1 | Fix GoCV build issue (environment configuration) | **Done** (Feb 6, 2026) |
 | 3.2 | Implement AprilTag detector (use apriltag-go or bindings) | Pending |
 | 3.3 | Implement YOLO detector (use ONNX Runtime Go) | Pending |
 | 3.4 | Create unified detection pipeline | Done (types + pipeline) |
@@ -149,115 +131,28 @@ Packages with tests (contrary to previous assessment):
 | 7.6 | Performance profiling and benchmarking | Pending |
 | 7.7 | Docker containerization (optional) | Pending |
 
-## Camera/Detection Options Research
+## Detection Implementation Approach - RESOLVED
 
-### Option 1: Fix GoCV Build
+GoCV + OpenCV 4.13.0 is now working. The implementation approach is:
 
-**Approach:** Resolve GoCV compilation issues.
+**Camera:**
+- Use `gocv.io/x/gocv` with OpenCV 4.13.0
+- IP camera (DroidCam) configured in `config/tracking_config.yaml`
 
-**Steps:**
-1. Check GoCV version compatibility with Go 1.23.2
-2. Try updating to latest gocv release
-3. Consider downgrading Go version if needed
-4. Alternative: Use pre-built Docker image with GoCV
+**AprilTag Detection:**
+- Use gocv's built-in `ArucoDetector` with AprilTag dictionaries
+- Configure quad_decimate, quad_sigma from config
+- Already imported in `internal/detection/apriltag.go`
 
-**Pros:**
-- Mature OpenCV bindings
-- Full computer vision capabilities
-- Already in use in codebase
-
-**Cons:**
-- Build issues on Windows
-- Heavy dependency
-- May require CGO configuration
+**YOLO Detection:**
+- Use gocv's DNN module for ONNX inference
+- Load `assets/yolov8n.onnx`
+- Already partially implemented in `internal/detection/yolo.go`
 
 **Links:**
-- https://github.com/hybridgroup/gocv
-- https://gocv.io/
-
-### Option 2: Pure Go Camera with External Detection
-
-**Approach:** Use pure Go for camera capture (via system APIs) + external process for detection.
-
-**Camera Options:**
-- `github.com/blackjack/webcam` - Pure Go webcam access (Windows/Linux)
-- `github.com/pion/webrtc` - WebRTC for IP camera streams
-- Direct OS APIs via cgo (minimal)
-
-**Detection Options:**
-- AprilTag: Use `github.com/apriltags/apriltag-go` or C bindings
-- YOLO: Use `github.com/ozexpert/onnxruntime-go` for ONNX inference
-
-**Pros:**
-- No heavy OpenCV dependency
-- Better cross-platform support
-- Cleaner separation of concerns
-
-**Cons:**
-- Multiple dependencies to manage
-- Inter-process communication overhead
-- More complex architecture
-
-### Option 3: Go + Python Bridge
-
-**Approach:** Keep Python detection pipeline, bridge via ZeroMQ/HTTP.
-
-**Camera:**
-- Python OpenCV for capture and detection
-- Go receives pre-processed detections via message queue
-
-**Detection Pipeline:**
-- Existing Python code can be used as-is
-- AprilTag + YOLO in Python
-- Go handles tracking, planning, control
-
-**Pros:**
-- Reuse existing proven Python detection
-- Leverage best tools for each job
-- Easy migration path
-
-**Cons:**
-- Additional complexity (IPC)
-- Two processes to manage
-- Latency overhead
-
-### Option 4: Pure Go with ONNX Runtime
-
-**Approach:** Use ONNX Runtime Go for YOLO, pure Go for camera.
-
-**Camera:**
-- `github.com/blackjack/webcam` or similar
-
-**AprilTag:**
-- Compile apriltag C library with cgo wrapper
-- Or find pure Go implementation
-
-**YOLO:**
-- `github.com/ozexpert/onnxruntime-go` for inference
-
-**Pros:**
-- Good performance (native code)
-- Type safety in Go
-- No Python dependency
-
-**Cons:**
-- Multiple packages to integrate
-- CGO still required for some parts
-- Less mature ecosystem
-
-### Recommendation Summary
-
-| Option | Use Case |
-|--------|----------|
-| Fix GoCV | If we need full OpenCV capabilities and can resolve build issues |
-| Go + Python Bridge | If detection accuracy is priority and Python code already works |
-| Pure Go (ONNX + webcam) | If we want minimal dependencies and cross-platform support |
-
-**Questions for Discussion:**
-1. What detection accuracy do we need? (Python OpenCV vs Go alternatives)
-2. Is IP camera (DroidCam) available, or do we need USB camera support?
-3. Performance requirements? (latency tolerance)
-4. Deployment environment? (Windows development, Linux production?)
+- GoCV documentation: https://gocv.io/
+- ONNX Runtime Go: https://github.com/ozexpert/onnxruntime-go (reference)
+- AprilTag library: https://github.com/AprilRobotics/apriltag (reference)
 
 ## Integration Flow (Target)
 
@@ -293,7 +188,7 @@ robot_tracker_go/
 │   ├── config/                         # ✅ Complete (100% tests)
 │   │   ├── config.go                  # YAML config loading
 │   │   └── config_test.go             # Config tests
-│   ├── camera/                        # 🔴 BLOCKED (GoCV build failure)
+│   ├── camera/                        # ✅ Working (GoCV + OpenCV 4.13.0)
 │   │   ├── camera.go                  # Camera interface
 │   │   ├── gocv_camera.go             # GoCV implementation (blocked)
 │   │   ├── gocv_skip_test.go          # Skip test for gocv
@@ -423,28 +318,114 @@ go test -v ./internal/controller/
 | Tracking FPS | 15-30 | 30-60 | TBD |
 | Memory usage | ~500MB | <100MB | TBD |
 
-## Next Steps (Updated Feb 2026)
+## Next Steps (Updated Feb 6, 2026)
 
-1. **Fix GoCV Build Issue** - Resolve OpenCV 4.13.0 header incompatibility
-   - Try: Update GoCV to latest version
-   - Alternative: Use blackjack/webcam for camera capture
-   - Alternative: Use Go + Python bridge for detection
+### Implementation Order (Logical Dependency Chain)
 
-2. **Implement Detection Algorithms**
-   - AprilTag: Compile apriltag C library with cgo or find pure Go solution
-   - YOLO: Use ONNX Runtime Go for inference on yolov8n.onnx
+| Step | Task | Prerequisite | Status |
+|------|------|--------------|--------|
+| 1 | Enable Real Camera Capture | None | **In Progress** |
+| 2 | Connect Detection Pipeline | Step 1 | Pending |
+| 3 | Implement AprilTag Detection | Step 2 | Pending |
+| 4 | Implement YOLO Detection | Step 2 | Pending |
+| 5 | Connect Tracking Pipeline | Steps 3 & 4 | Pending |
+| 6 | Full Integration | Step 5 | Pending |
 
-3. **Connect Pipeline** - Camera → Detection → Tracking in main.go
-   - Replace demo mode with real camera capture
-   - Wire detection output to ByteTrack
-   - Wire tracking to position estimator
-   - Wire to planner and controller
+### Step 1: Enable Real Camera Capture 🔄
 
-4. **Add UI Tests** - WebSocket and MJPEG test coverage
+**Goal:** Replace demo mode with actual camera capture
 
-5. **Integration Testing** - End-to-end with real hardware
+**Actions:**
+- Initialize real camera using `NewGoCVCamera()` from `config/tracking_config.yaml`
+- Verify camera frame acquisition works
+- Push frames to MJPEG stream
 
-## Codebase Review Summary (Feb 2026)
+**Deliverable:** Camera → MJPEG stream working
+
+**Code Changes:**
+- `cmd/main.go`: Replace `demoPatternGenerator` with `gocvCamera`
+
+### Step 2: Connect Detection Pipeline 🔄
+
+**Goal:** Wire detection to camera frames
+
+**Actions:**
+- Pass camera frames to `Detect()` methods
+- Verify detection stubs receive frames
+- Add debug visualization
+
+**Deliverable:** Detection pipeline receiving real input
+
+### Step 3: Implement AprilTag Detection 🔄
+
+**Goal:** Replace stub with real detection
+
+**Actions:**
+- Use gocv's `ArucoDetector` (already imported)
+- Configure parameters from config
+- Return real `[]AprilTag` detections
+
+**Deliverable:** Real AprilTag detection working
+
+### Step 4: Implement YOLO Detection 🔄
+
+**Goal:** Replace stub with real detection
+
+**Actions:**
+- Use gocv's DNN module for ONNX inference
+- Load `assets/yolov8n.onnx`
+- Configure confidence thresholds
+- Return real `[]YOLODetection`
+
+**Deliverable:** Real YOLO obstacle detection working
+
+### Step 5: Connect Tracking Pipeline 🔄
+
+**Goal:** Wire detections to tracking
+
+**Actions:**
+- Pass fused detections to ByteTrack
+- Verify tracks update correctly
+- Add track visualization to MJPEG
+
+**Deliverable:** Camera → Detection → Tracking pipeline
+
+### Step 6: Full Integration 🔄
+
+**Goal:** Complete multi-robot tracking system
+
+**Actions:**
+- Tracking → Position estimation
+- Position → Path planning
+- Planning → Controller commands
+- Verify end-to-end functionality
+
+**Deliverable:** Complete multi-robot tracking system
+
+---
+
+## Build Commands (Updated)
+
+```cmd
+REM IMPORTANT: Set up environment first!
+set PATH=C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;%PATH%
+
+REM Install dependencies
+go mod tidy
+
+REM Build the application
+go build -o robot_tracker.exe ./cmd/main.go
+
+REM Run the application
+./robot_tracker.exe --demo
+
+REM Run with specific serial port
+./robot_tracker.exe --port COM3
+```
+
+**Full documentation:** See `DIAGNOSTIC_RESULTS.md`
+
+## Codebase Review Summary (Feb 6, 2026)
 
 ### What Works ✅
 - Configuration loading (YAML, 100% tests)
@@ -453,11 +434,12 @@ go test -v ./internal/controller/
 - ByteTrack multi-object tracking (100% tests)
 - A* path planning with collision avoidance (100% tests)
 - Web UI with MJPEG streaming and WebSocket overlay
+- GoCV + OpenCV 4.13.0 (environment configured Feb 6, 2026)
 
 ### What Needs Work 🔄
-- **Camera**: GoCV build blocked by OpenCV 4.13.0 header incompatibility
-- **AprilTag Detector**: Returns empty array (stubbed)
-- **YOLO Detector**: Returns empty array (stubbed)
+- **Camera Capture**: Needs to replace demo mode in main.go
+- **AprilTag Detector**: Returns empty array (stubbed - DET-001)
+- **YOLO Detector**: Returns empty array (stubbed - DET-002)
 - **Main Integration**: Demo mode only, no real camera pipeline
 - **UI Tests**: No test coverage
 
@@ -466,7 +448,7 @@ go test -v ./internal/controller/
 - Test files (*_test.go): 18
 - Test coverage: ~60% (most core packages)
 - Configuration YAML: 1
-- Documentation: PLAN.md, BUGS.md, AGENTS.md
+- Documentation: PLAN.md, BUGS.md, AGENTS.md, DIAGNOSTIC_RESULTS.md
 
 ## References
 

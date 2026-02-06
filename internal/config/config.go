@@ -17,6 +17,17 @@ type Config struct {
 	Position      PositionConfig      `yaml:"position"`
 	Output        OutputConfig        `yaml:"output"`
 	Tracking      TrackingConfig      `yaml:"tracking"`
+	Cameras       []CameraConfig      `yaml:"cameras"`
+}
+
+type CameraConfig struct {
+	Type     string `yaml:"type"`
+	Name     string `yaml:"name"`
+	CameraID int    `yaml:"camera_id"`
+	URL      string `yaml:"url"`
+	Width    int    `yaml:"width"`
+	Height   int    `yaml:"height"`
+	FPS      int    `yaml:"fps"`
 }
 
 type RobotConfig struct {
@@ -126,6 +137,18 @@ func (c *Config) GetRobotByName(name string) *RobotConfig {
 		if c.Robots[i].Name == name {
 			return &c.Robots[i]
 		}
+	}
+	return nil
+}
+
+func (c *Config) GetPrimaryCamera() *CameraConfig {
+	for i := range c.Cameras {
+		if c.Cameras[i].Type == "ip" || c.Cameras[i].CameraID >= 0 {
+			return &c.Cameras[i]
+		}
+	}
+	if len(c.Cameras) > 0 {
+		return &c.Cameras[0]
 	}
 	return nil
 }
