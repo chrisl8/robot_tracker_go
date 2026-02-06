@@ -3,9 +3,12 @@
 package detection
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"os"
 
 	"gocv.io/x/gocv"
@@ -293,25 +296,41 @@ func (d *YOLODetector) DrawDetections(imgData []byte, width, height int, detecti
 		return imgData
 	}
 
-	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, imgData)
-	if err != nil || img.Empty() {
-		return imgData
-	}
-	defer img.Close()
-
-	for _, det := range detections {
-		if det.Bbox != nil {
-			rect := image.Rect(det.Bbox.X1, det.Bbox.Y1, det.Bbox.X2, det.Bbox.Y2)
-			gocv.Rectangle(&img, rect, color.RGBA{0, 255, 0, 0}, 2)
-		}
-	}
-
-	buf, err := gocv.IMEncode(".png", img)
+	reader := bytes.NewReader(imgData)
+	img, _, err := image.Decode(reader)
 	if err != nil {
 		return imgData
 	}
 
-	return buf.GetBytes()
+	rgba, ok := img.(*image.RGBA)
+	if !ok {
+		b := img.Bounds()
+		newImg := image.NewRGBA(b)
+		draw.Draw(newImg, b, img, b.Min, draw.Src)
+		rgba = newImg
+	}
+
+	borderColor := color.RGBA{0, 255, 0, 255}
+
+	for _, det := range detections {
+		if det.Bbox != nil {
+			drawYOLORectangle(rgba, det.Bbox.X1, det.Bbox.Y1, det.Bbox.X2, det.Bbox.Y2, borderColor, 3)
+		}
+	}
+
+	buf := new(bytes.Buffer)
+	if err := jpeg.Encode(buf, rgba, &jpeg.Options{Quality: 85}); err != nil {
+		return imgData
+	}
+
+	return buf.Bytes()
+}
+
+func drawYOLORectangle(img *image.RGBA, x1, y1, x2, y2 int, c color.RGBA, width int) {
+	drawLine(img, image.Point{x1, y1}, image.Point{x2, y1}, c, width)
+	drawLine(img, image.Point{x2, y1}, image.Point{x2, y2}, c, width)
+	drawLine(img, image.Point{x2, y2}, image.Point{x1, y2}, c, width)
+	drawLine(img, image.Point{x1, y2}, image.Point{x1, y1}, c, width)
 }
 
 func (d *YOLODetector) IsAvailable() bool {
