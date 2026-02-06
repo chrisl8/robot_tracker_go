@@ -53,11 +53,13 @@ func (rs *RobotSystem) Initialize() error {
 	}
 
 	yoloConfig := &detection.YOLOConfig{
-		ModelPath: rs.cfg.YOLO.ModelPath,
-		InputSize: rs.cfg.YOLO.InputSize,
-		ConfThres: rs.cfg.YOLO.ConfThres,
-		IOUThres:  rs.cfg.YOLO.IOUThres,
-		Device:    rs.cfg.YOLO.Device,
+		ModelPath:       rs.cfg.YOLO.ModelPath,
+		InputSize:       rs.cfg.YOLO.InputSize,
+		ConfThres:       rs.cfg.YOLO.ConfThres,
+		IOUThres:        rs.cfg.YOLO.IOUThres,
+		Device:          rs.cfg.YOLO.Device,
+		MinObstacleSize: rs.cfg.YOLO.MinObstacleSize,
+		PixelsPerMeter:  rs.cfg.YOLO.PixelsPerMeter,
 	}
 
 	rs.detectionPipe = detection.NewDetectionPipeline(yoloConfig, tagConfig)

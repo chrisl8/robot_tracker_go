@@ -75,7 +75,9 @@ type YOLOConfig struct {
 	ConfThres       float64  `yaml:"conf_thres"`
 	IOUThres        float64  `yaml:"iou_thres"`
 	Device          string   `yaml:"device"`
-	ObstacleClasses []string `yaml:"obstacle_classes"`
+	MinObstacleSize float64  `yaml:"min_obstacle_size"`
+	PixelsPerMeter  float64  `yaml:"pixels_per_meter"`
+	RelevantClasses []string `yaml:"classes"`
 }
 
 type ObstaclesConfig struct {

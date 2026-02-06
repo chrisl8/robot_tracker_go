@@ -49,12 +49,12 @@ april_tags:
 yolo:
   model: "assets/yolov8n.onnx"
   input_size: 640
-  conf_thres: 0.5           # Detection confidence threshold
-  iou_thres: 0.45           # NMS IoU threshold
+  conf_thres: 0.25           # Lowered to detect smaller objects
+  iou_thres: 0.45           # NMS threshold
   device: ""                 # Empty = auto (CUDA if available, else CPU)
-  min_obstacle_size: 0.05    # 5cm minimum (filter small objects in meters)
+  min_obstacle_size: 0.005    # 0.5cm minimum (detect small objects like cups)
   pixels_per_meter: 1000     # Scale factor for size filtering
-  classes:                   # Indoor-relevant classes (configurable)
+  classes:                   # Indoor-relevant classes
     - person
     - cup
     - chair
