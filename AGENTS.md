@@ -91,6 +91,8 @@ gopls MCP tools provide:
 
 # Commands
 
+**Note for AI agents:** The default shell in this environment is **bash** (Git Bash/WSL), not PowerShell or cmd. Always use bash syntax.
+
 ## Build Commands
 
 **IMPORTANT:** Before building on Windows, you must configure the environment for GoCV + OpenCV 4.13.0.
@@ -107,14 +109,6 @@ REM Build the application
 go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 
 REM Run the application
-./robot_tracker.exe --demo
-```
-
-### PowerShell
-
-```powershell
-$env:PATH = "C:\mingw64\bin;C:\opencv\build\install\x64\mingw\bin;$env:PATH"
-go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 ./robot_tracker.exe --demo
 ```
 
