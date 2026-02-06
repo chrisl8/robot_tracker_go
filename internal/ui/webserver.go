@@ -16,14 +16,17 @@ import (
 )
 
 type WebServer struct {
-	addr        string
-	engine      *gin.Engine
-	stream      *mjpeg.Stream
-	wsUpgrader  websocket.Upgrader
-	clients     map[*websocket.Conn]bool
-	clientMutex sync.RWMutex
-	isRunning   bool
-	stopChan    chan struct{}
+	addr          string
+	engine        *gin.Engine
+	stream        *mjpeg.Stream
+	wsUpgrader    websocket.Upgrader
+	clients       map[*websocket.Conn]bool
+	clientMutex   sync.RWMutex
+	isRunning     bool
+	stopChan      chan struct{}
+	lastTagCount  int
+	lastYoloCount int
+	statsMutex    sync.RWMutex
 }
 
 type OverlayMessage struct {
@@ -200,10 +203,17 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 }
 
 func (s *WebServer) handleStatus(c *gin.Context) {
+	s.statsMutex.RLock()
+	tagCount := s.lastTagCount
+	yoloCount := s.lastYoloCount
+	s.statsMutex.RUnlock()
+
 	c.JSON(http.StatusOK, gin.H{
 		"connected":    s.isRunning,
 		"fps":          30.0,
-		"robotCount":   0,
+		"robotCount":   tagCount,
+		"tagCount":     tagCount,
+		"yoloCount":    yoloCount,
 		"arduinoState": "disconnected",
 	})
 }
@@ -289,4 +299,11 @@ func (s *WebServer) IsRunning() bool {
 
 func (s *WebServer) GetAddr() string {
 	return s.addr
+}
+
+func (s *WebServer) UpdateStats(tagCount, yoloCount int) {
+	s.statsMutex.Lock()
+	s.lastTagCount = tagCount
+	s.lastYoloCount = yoloCount
+	s.statsMutex.Unlock()
 }

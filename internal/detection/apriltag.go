@@ -3,7 +3,12 @@
 package detection
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 
 	"gocv.io/x/gocv"
 )
@@ -116,41 +121,140 @@ func (d *AprilTagDetector) Detect(image []byte, width, height int) []AprilTag {
 	return tags
 }
 
-func (d *AprilTagDetector) DrawTags(image []byte, width, height int, tags []AprilTag) []byte {
-	if len(image) == 0 || len(tags) == 0 {
-		return image
+func (d *AprilTagDetector) DrawTags(imgData []byte, width, height int, tags []AprilTag) []byte {
+	if len(imgData) == 0 || len(tags) == 0 {
+		return imgData
 	}
 
-	img, err := gocv.NewMatFromBytes(height, width, gocv.MatTypeCV8UC3, image)
-	if err != nil || img.Empty() {
-		return image
+	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
+	for i := 0; i < width*height; i++ {
+		b := imgData[i*3]
+		g := imgData[i*3+1]
+		r := imgData[i*3+2]
+		rgba.Pix[i*4] = r
+		rgba.Pix[i*4+1] = g
+		rgba.Pix[i*4+2] = b
+		rgba.Pix[i*4+3] = 255
 	}
-	defer img.Close()
 
-	borderColor := gocv.Scalar{Val1: 0, Val2: 255, Val3: 0, Val4: 0}
+	borderColor := color.RGBA{0, 255, 0, 255}
+	labelColor := color.RGBA{0, 0, 0, 255}
+	bgColor := color.RGBA{0, 255, 0, 200}
 
-	markerIds := make([]int, len(tags))
-	markerCorners := make([][]gocv.Point2f, len(tags))
-
-	for i, tag := range tags {
-		markerIds[i] = tag.TagID
-		markerCorners[i] = make([]gocv.Point2f, 4)
+	for _, tag := range tags {
+		points := make([]image.Point, 4)
 		for j := 0; j < 4; j++ {
-			markerCorners[i][j] = gocv.Point2f{
-				X: float32(tag.Corners[j][0]),
-				Y: float32(tag.Corners[j][1]),
+			points[j] = image.Point{
+				X: int(tag.Corners[j][0]),
+				Y: int(tag.Corners[j][1]),
+			}
+		}
+
+		lineWidth := 3
+		for j := 0; j < 4; j++ {
+			p1 := points[j]
+			p2 := points[(j+1)%4]
+			drawLine(rgba, p1, p2, borderColor, lineWidth)
+		}
+
+		cx := int(tag.CenterX)
+		cy := int(tag.CenterY)
+
+		label := string(rune('0' + tag.TagID%10))
+		if tag.TagID >= 10 {
+			label = "T"
+		}
+
+		drawLabel(rgba, cx, cy-25, label, labelColor, bgColor)
+	}
+
+	buf := new(bytes.Buffer)
+	if err := jpeg.Encode(buf, rgba, &jpeg.Options{Quality: 85}); err != nil {
+		return imgData
+	}
+
+	return buf.Bytes()
+}
+
+func drawLine(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int) {
+	dx := p2.X - p1.X
+	dy := p2.Y - p1.Y
+
+	if abs(dx) > abs(dy) {
+		if p1.X > p2.X {
+			p1, p2 = p2, p1
+		}
+		for x := p1.X; x <= p2.X; x++ {
+			y := p1.Y + dy*(x-p1.X)/dx
+			drawCircle(img, x, y, width/2, c)
+		}
+	} else {
+		if p1.Y > p2.Y {
+			p1, p2 = p2, p1
+		}
+		for y := p1.Y; y <= p2.Y; y++ {
+			x := p1.X + dx*(y-p1.Y)/dy
+			drawCircle(img, x, y, width/2, c)
+		}
+	}
+}
+
+func drawCircle(img *image.RGBA, cx, cy, r int, c color.RGBA) {
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			if dx*dx+dy*dy <= r*r {
+				x := cx + dx
+				y := cy + dy
+				if x >= 0 && x < img.Rect.Max.X && y >= 0 && y < img.Rect.Max.Y {
+					img.Set(x, y, c)
+				}
+			}
+		}
+	}
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func drawLabel(img *image.RGBA, x, y int, text string, textColor, bgColor color.RGBA) {
+	fontSize := 20
+	boxWidth := fontSize * len(text)
+	boxHeight := fontSize
+
+	boxRect := image.Rect(x-boxWidth/2, y, x+boxWidth/2, y+boxHeight)
+	draw.Draw(img, boxRect, &image.Uniform{bgColor}, image.Point{}, draw.Src)
+
+	halfWidth := fontSize / 2
+	centerX := x - halfWidth + fontSize/4
+	centerY := y + fontSize - 2
+
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			if dx != 0 || dy != 0 {
+				px := centerX + dx
+				py := centerY + dy
+				if px >= 0 && px < img.Rect.Max.X && py >= 0 && py < img.Rect.Max.Y {
+					img.Set(px, py, textColor)
+				}
 			}
 		}
 	}
 
-	gocv.ArucoDrawDetectedMarkers(img, markerCorners, markerIds, borderColor)
-
-	buf, err := gocv.IMEncode(".png", img)
-	if err != nil {
-		return image
+	centerColor := color.RGBA{255, 255, 255, 255}
+	for i := 0; i < len(text); i++ {
+		px := x - halfWidth + i*fontSize + fontSize/2
+		for dy := -2; dy <= 2; dy++ {
+			for dx := -2; dx <= 2; dx++ {
+				if px+dx >= 0 && px+dx < img.Rect.Max.X && centerY+dy >= 0 && centerY+dy < img.Rect.Max.Y {
+					img.Set(px+dx, centerY+dy, centerColor)
+				}
+			}
+		}
 	}
-
-	return buf.GetBytes()
 }
 
 func (d *AprilTagDetector) Close() error {

@@ -399,7 +399,119 @@ REM Run with specific serial port
 ### What Needs Work 🔄
 
 - **YOLO Detector**: Returns empty array (stubbed - DET-002)
+- **Visual Verification**: No way to confirm AprilTag detection is working
 - **Full Integration**: Camera → Detection → Tracking → Planning → Control
+
+---
+
+## Visual Verification Implementation Plan
+
+### Objective
+Enable users to visually confirm AprilTag detection is working via the web UI.
+
+### Current Problem
+- DrawTags() uses GoCV IMEncode which could crash on Windows
+- No visual feedback in GUI (bounding boxes, tag IDs not shown)
+- Status endpoint returns hardcoded 0 instead of real detection counts
+
+### Implementation Steps
+
+#### Step 1: Fix DrawTags() with Pure Go Drawing
+
+**File:** `internal/detection/apriltag.go`
+
+Replace GoCV PNG encoding with pure Go `image/draw`:
+
+```go
+func (d *AprilTagDetector) DrawTags(image []byte, width, height int, tags []AprilTag) []byte {
+    // 1. Convert BGR bytes to RGBA image
+    // 2. Draw rectangles for each tag corners
+    // 3. Draw tag ID text labels
+    // 4. Encode to JPEG using image/jpeg (pure Go)
+}
+```
+
+**Deliverable:** DrawTags() works without GoCV, shows tag boundaries and IDs
+
+#### Step 2: Add Detection Status Tracking
+
+**File:** `internal/ui/webserver.go`
+
+Add real-time detection counts:
+- Track detected tag count per frame
+- Track YOLO detection count per frame
+- Return actual counts in status endpoint
+
+**Deliverable:** Status API returns real detection counts
+
+#### Step 3: Enhance Visual Overlay
+
+**File:** `internal/ui/webserver.go` + `cmd/main.go`
+
+- Draw detected tags on video stream with bounding boxes
+- Display detection counts on screen
+- Color-code by detection type (AprilTag vs YOLO)
+
+**Deliverable:** Users can see:
+- Green rectangles around detected AprilTags
+- Tag IDs displayed
+- Detection count indicator
+
+### Technical Details
+
+**Pure Go Drawing Approach:**
+```go
+func drawTagOverlay(rgba *image.RGBA, tag AprilTag) {
+    // Convert corners to image.Point
+    // Draw rectangle using image/draw
+    // Draw text label (simple approach: pixel array or separate lib)
+}
+```
+
+**Status Tracking:**
+```go
+type DetectionStats struct {
+    TagCount       int
+    YOLOCount      int
+    TotalDetections int
+}
+```
+
+### Testing Verification
+
+1. Run with demo mode (no tags expected)
+2. Run with camera pointed at AprilTags
+3. Verify bounding boxes appear around tags
+4. Verify tag IDs displayed
+5. Check status API shows non-zero detection counts
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `internal/detection/apriltag.go` | Replace GoCV encoding with pure Go |
+| `internal/ui/webserver.go` | Add detection stats tracking |
+| `cmd/main.go` | Pass detection results for visualization |
+
+### Estimated Effort
+
+- **Time**: 2-3 hours
+- **Risk**: Medium (image drawing code complexity)
+- **Lines Changed**: ~150 lines
+
+### Data Flow for Visualization
+
+```
+Camera Frame (BGR)
+    ↓
+ProcessFrame(img, frameData)
+    ↓
+Detect() → [Tag{id: 1, corners: [...]}, Tag{id: 2, ...}]
+    ↓
+DrawTags() → RGBA image with bounding boxes and labels
+    ↓
+PushFrame() → MJPEG stream with visualization
+```
 
 ### File Statistics
 

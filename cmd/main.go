@@ -358,6 +358,188 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 	return img
 }
 
+func generateDemoTags(width, height int, frameNum int) []detection.AprilTag {
+	tags := []detection.AprilTag{}
+
+	tagCount := 3
+	for i := 0; i < tagCount; i++ {
+		angle := float64(frameNum+i*100) * 0.01
+		radius := 100.0 + float64(i)*30
+		cx := float64(width)/2 + radius*float64(i-1)*0.2*float64(frameNum)*0.01
+		cy := float64(height)/2 + radius*float64(i)*0.3*float64(frameNum)*0.01
+
+		size := 60.0
+		corners := [4][2]float64{
+			{cx - size, cy - size},
+			{cx + size, cy - size},
+			{cx + size, cy + size},
+			{cx - size, cy + size},
+		}
+
+		tags = append(tags, detection.AprilTag{
+			TagID:    i + 1,
+			Family:   "tag36h11",
+			Corners:  corners,
+			CenterX:  cx,
+			CenterY:  cy,
+			Size:     size * 2,
+			Rotation: angle,
+		})
+	}
+
+	return tags
+}
+
+func drawDemoTagsOnImage(img *image.RGBA, tags []detection.AprilTag) *image.RGBA {
+	borderColor := color.RGBA{0, 255, 0, 255}
+	bgColor := color.RGBA{0, 255, 0, 200}
+	centerColor := color.RGBA{255, 255, 255, 255}
+
+	for _, tag := range tags {
+		points := make([]image.Point, 4)
+		for j := 0; j < 4; j++ {
+			points[j] = image.Point{
+				X: int(tag.Corners[j][0]),
+				Y: int(tag.Corners[j][1]),
+			}
+		}
+
+		lineWidth := 3
+		for j := 0; j < 4; j++ {
+			drawLineOnRGBA(img, points[j], points[(j+1)%4], borderColor, lineWidth)
+		}
+
+		cx := int(tag.CenterX)
+		cy := int(tag.CenterY) - 25
+
+		fontSize := 20
+		boxWidth := fontSize
+		boxHeight := fontSize
+
+		boxRect := image.Rect(cx-boxWidth/2, cy, cx+boxWidth/2, cy+boxHeight)
+		draw.Draw(img, boxRect, &image.Uniform{bgColor}, image.Point{}, draw.Src)
+
+		for dy := -2; dy <= 2; dy++ {
+			for dx := -2; dx <= 2; dx++ {
+				if cx+dx >= 0 && cx+dx < img.Rect.Max.X && cy+dy >= 0 && cy+dy < img.Rect.Max.Y {
+					img.Set(cx+dx, cy+dy, centerColor)
+				}
+			}
+		}
+	}
+
+	return img
+}
+
+func drawLineOnRGBA(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int) {
+	dx := p2.X - p1.X
+	dy := p2.Y - p1.Y
+
+	if abs(dx) > abs(dy) {
+		if p1.X > p2.X {
+			p1, p2 = p2, p1
+		}
+		for x := p1.X; x <= p2.X; x++ {
+			y := p1.Y + dy*(x-p1.X)/dx
+			drawCircleOnRGBA(img, x, y, width/2, c)
+		}
+	} else {
+		if p1.Y > p2.Y {
+			p1, p2 = p2, p1
+		}
+		for y := p1.Y; y <= p2.Y; y++ {
+			x := p1.X + dx*(y-p1.Y)/dy
+			drawCircleOnRGBA(img, x, y, width/2, c)
+		}
+	}
+}
+
+func drawCircleOnRGBA(img *image.RGBA, cx, cy, r int, c color.RGBA) {
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			if dx*dx+dy*dy <= r*r {
+				x := cx + dx
+				y := cy + dy
+				if x >= 0 && x < img.Rect.Max.X && y >= 0 && y < img.Rect.Max.Y {
+					img.Set(x, y, c)
+				}
+			}
+		}
+	}
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags []detection.AprilTag) {
+	if img == nil {
+		return
+	}
+
+	rs.frameNum++
+	timestamp := float64(time.Now().UnixNano()) / 1e9
+
+	width := img.Rect.Max.X
+	height := img.Rect.Max.Y
+
+	result := &detection.DetectionResult{
+		Tags:            demoTags,
+		YOLODetections:  []detection.YOLODetection{},
+		FusedDetections: []detection.FusedDetection{},
+		Timestamp:       timestamp,
+		FrameIdx:        rs.frameNum,
+	}
+
+	for _, tag := range demoTags {
+		bbox := detection.BoundingBox{
+			X1: int(tag.Corners[0][0]),
+			Y1: int(tag.Corners[0][1]),
+			X2: int(tag.Corners[2][0]),
+			Y2: int(tag.Corners[2][1]),
+		}
+		tagID := tag.TagID
+		result.FusedDetections = append(result.FusedDetections, detection.FusedDetection{
+			DetectionType: detection.DetectionTypeAprilTag,
+			Bbox:          &bbox,
+			TagID:         &tagID,
+			Confidence:    1.0,
+			Corners:       tag.Corners,
+			Source:        "april_tag",
+		})
+	}
+
+	trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
+	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+
+	for _, track := range trackingResult.Tracks {
+		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+			if rs.positionEst != nil {
+				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+				worldPos := rs.positionEst.PixelToWorld(px, py)
+				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+			}
+		}
+	}
+
+	overlay := rs.detectionPipe.DrawResults(img.Pix, width, height, result)
+	if overlay != nil {
+		overlayImg := decodeToImage(overlay, width, height)
+		if overlayImg != nil {
+			rs.webServer.PushFrame(overlayImg)
+		} else {
+			rs.webServer.PushFrame(img)
+		}
+	} else {
+		rs.webServer.PushFrame(img)
+	}
+
+	rs.webServer.UpdateStats(len(demoTags), 0)
+}
+
 func main() {
 	configPath := flag.String("config", "config/tracking_config.yaml", "Path to configuration file")
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")
@@ -430,12 +612,19 @@ func main() {
 	}
 
 	for *demoMode {
-		fmt.Println("Demo mode: Generating test pattern...")
+		fmt.Println("Demo mode: Generating test pattern with AprilTag visualization...")
 		rs.StartCamera()
 		frameNum := 0
 		for {
 			frame := generateTestPattern(640, 480, frameNum)
-			rs.ProcessFrame(frame, nil)
+			demoTags := generateDemoTags(640, 480, frameNum)
+			rgbaImg, ok := frame.(*image.RGBA)
+			if !ok {
+				rgbaImg = image.NewRGBA(frame.Bounds())
+				draw.Draw(rgbaImg, frame.Bounds(), frame, frame.Bounds().Min, draw.Src)
+			}
+			rgbaWithTags := drawDemoTagsOnImage(rgbaImg, demoTags)
+			rs.ProcessDemoFrame(rgbaWithTags, frameNum, demoTags)
 			frameNum++
 			time.Sleep(33 * time.Millisecond)
 		}
