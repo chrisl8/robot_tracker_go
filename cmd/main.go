@@ -1,3 +1,5 @@
+//go:build gocv
+
 package main
 
 import (
@@ -255,11 +257,18 @@ func cameraFrameToImage(frame *camera.Frame) image.Image {
 	// Handle based on channel count
 	switch frame.Channels {
 	case 3:
-		// BGR to RGB conversion - gocv returns BGR, MJPEG expects RGB
-		rgba := &image.RGBA{
-			Pix:    frame.Data,
-			Stride: frame.Width * frame.Channels,
-			Rect:   image.Rect(0, 0, frame.Width, frame.Height),
+		width := frame.Width
+		height := frame.Height
+		rgba := image.NewRGBA(image.Rect(0, 0, width, height))
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				srcIdx := y*frame.Width*3 + x*3
+				dstIdx := (y*width + x) * 4
+				rgba.Pix[dstIdx+0] = frame.Data[srcIdx+2] // R (from BGR)
+				rgba.Pix[dstIdx+1] = frame.Data[srcIdx+1] // G
+				rgba.Pix[dstIdx+2] = frame.Data[srcIdx+0] // B
+				rgba.Pix[dstIdx+3] = 255                  // A
+			}
 		}
 		return rgba
 	case 4:

@@ -91,6 +91,10 @@ func (c *IPCamera) GetURL() string {
 	return c.url
 }
 
+func (c *IPCamera) GetRawJPEG() ([]byte, error) {
+	return nil, &CameraError{Message: "IPCamera stub does not support raw JPEG"}
+}
+
 type ConnectionTimeoutError struct {
 	URL string
 }

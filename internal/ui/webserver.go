@@ -1,3 +1,5 @@
+//go:build gocv
+
 package ui
 
 import (
@@ -20,8 +22,6 @@ type WebServer struct {
 	wsUpgrader  websocket.Upgrader
 	clients     map[*websocket.Conn]bool
 	clientMutex sync.RWMutex
-	lastFrame   image.Image
-	frameMutex  sync.RWMutex
 	isRunning   bool
 	stopChan    chan struct{}
 }
@@ -218,14 +218,61 @@ func (s *WebServer) Stop() {
 	close(s.stopChan)
 }
 
-func (s *WebServer) PushFrame(frame image.Image) {
+func (s *WebServer) PushFrame(frame interface{}) {
 	if frame == nil {
 		return
 	}
 
-	buf := new(bytes.Buffer)
-	_ = jpeg.Encode(buf, frame, &jpeg.Options{Quality: 70})
-	s.stream.UpdateJPEG(buf.Bytes())
+	var jpegData []byte
+
+	switch f := frame.(type) {
+	case []byte:
+		if len(f) == 0 {
+			return
+		}
+		width, height := 1280, 720
+		if len(f) != width*height*3 {
+			return
+		}
+		img := image.NewRGBA(image.Rect(0, 0, width, height))
+		for i := 0; i < width*height; i++ {
+			b := f[i*3]
+			g := f[i*3+1]
+			r := f[i*3+2]
+			img.Pix[i*4] = r
+			img.Pix[i*4+1] = g
+			img.Pix[i*4+2] = b
+			img.Pix[i*4+3] = 255
+		}
+		buf := new(bytes.Buffer)
+		if err := jpeg.Encode(buf, img, &jpeg.Options{Quality: 85}); err != nil {
+			return
+		}
+		jpegData = buf.Bytes()
+	case *image.RGBA:
+		if f == nil || len(f.Pix) == 0 {
+			return
+		}
+		buf := new(bytes.Buffer)
+		if err := jpeg.Encode(buf, f, &jpeg.Options{Quality: 85}); err != nil {
+			return
+		}
+		jpegData = buf.Bytes()
+	default:
+		return
+	}
+
+	if len(jpegData) == 0 {
+		return
+	}
+	s.stream.UpdateJPEG(jpegData)
+}
+
+func (s *WebServer) PushRawJPEG(jpegData []byte) {
+	if len(jpegData) == 0 {
+		return
+	}
+	s.stream.UpdateJPEG(jpegData)
 }
 
 func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {

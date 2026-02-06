@@ -95,10 +95,10 @@ func (c *GoCVCamera) Start() error {
 
 func (c *GoCVCamera) Stop() {
 	c.running = false
-	if c.device.IsOpened() {
+	if c.device != nil && c.device.IsOpened() {
 		c.device.Close()
 	}
-	if c.cap.IsOpened() {
+	if c.cap != nil && c.cap.IsOpened() {
 		c.cap.Close()
 	}
 }
@@ -182,4 +182,35 @@ func (c *GoCVCamera) GetFPS() int {
 
 func (c *GoCVCamera) IsRunning() bool {
 	return c.running
+}
+
+func (c *GoCVCamera) GetRawJPEG() ([]byte, error) {
+	if !c.running {
+		return nil, &CameraError{Message: "camera not running"}
+	}
+
+	img := gocv.NewMat()
+	defer img.Close()
+
+	if c.isFile {
+		if !c.cap.Read(&img) {
+			return nil, &CameraError{Message: "failed to read frame from video"}
+		}
+	} else {
+		if !c.device.Read(&img) {
+			return nil, &CameraError{Message: "failed to read frame from camera"}
+		}
+	}
+
+	if img.Empty() {
+		return nil, &CameraError{Message: "empty frame"}
+	}
+
+	jpegBytes, err := gocv.IMEncode(".jpg", img)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode frame: %v", err)
+	}
+	defer jpegBytes.Close()
+
+	return jpegBytes.GetBytes(), nil
 }

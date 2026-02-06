@@ -15,6 +15,7 @@ type Camera interface {
 	Start() error
 	Stop()
 	GetFrame() (*Frame, error)
+	GetRawJPEG() ([]byte, error)
 	GetName() string
 	IsConnected() bool
 	GetWidth() int
