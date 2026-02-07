@@ -5,6 +5,29 @@
 - Always make a plan before doing anything.
 - Document and save everything you plan to do in the `PLAN.md` file.
 
+# Quick Start
+
+**IMPORTANT: Always use wrapper scripts for building and running the project.** These scripts automatically set up the required OpenCV environment variables.
+
+```bash
+# Build with GoCV support
+./scripts/build.sh
+
+# Run demo mode (no camera required)
+./scripts/run.sh --demo
+
+# Run with camera
+./scripts/run.sh
+
+# Run tests
+./scripts/test.sh
+
+# Install/Update OpenCV
+./scripts/install-opencv.sh
+```
+
+Do NOT manually set environment variables or run `go build` directly - always use the wrapper scripts.
+
 # Deviation Protocol
 
 If any of the following occur, STOP IMMEDIATELY and ask the user before proceeding:
@@ -157,6 +180,8 @@ Use these scripts to automatically set up the environment:
 ```
 
 ### Build Commands
+
+**Important:** Use wrapper scripts instead of manual commands. See Quick Start above.
 
 ```bash
 # Install dependencies
