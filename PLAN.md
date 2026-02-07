@@ -642,110 +642,92 @@ go test -v ./internal/position/
 
 ---
 
-## Linux Migration Plan (Phase 10)
+## Linux Migration Plan (Phase 10) - COMPLETED ✅
 
 ### Overview
 
 Migrate the project from Windows to Linux (Debian/Ubuntu) for development and deployment.
 
-### Current Status (Updated Feb 7, 2026)
+### Final Status (Updated Feb 7, 2026)
 
 | Component | Windows Status | Linux Status | Notes |
 |-----------|---------------|--------------|-------|
 | Go runtime | ✅ 1.23.2+ | ✅ 1.25.7 | Working |
 | GCC compiler | ✅ MinGW | ✅ system GCC | /usr/bin/gcc |
-| OpenCV | ✅ 4.13.0 | ✅ 4.6.0 | Installed via apt |
-| GoCV | ✅ Configured | ⚠️ Incompatible | Build fails - needs workaround |
-| Serial ports | ✅ Working | ✅ Implemented | `/dev/tty*` detection |
-| Demo mode | ✅ Working | 🔄 Needs workaround | Can't build main.go |
+| OpenCV | ✅ 4.13.0 | ✅ 4.13.0 | Built from source |
+| GoCV | ✅ Configured | ✅ Working | With wrapper scripts |
+| Serial ports | ✅ Working | ✅ Working | `/dev/tty*` detection |
+| Demo mode | ✅ Working | ✅ Working | Via wrapper scripts |
 
-### Issues Identified
+### Resolution Summary
 
 #### 1. AGENTS.md contains Windows-specific instructions - FIXED ✅
 
 **Changes made:**
-- Removed Windows MinGW/OpenCV PATH setup
-- Changed `.exe` → `robot_tracker` binary name
-- Changed `COM3` → `/dev/ttyUSB0`
+- Added Quick Start section with wrapper scripts
+- Added reminder to use wrapper scripts in Build Commands section
 
-#### 2. Serial port auto-detection not implemented - FIXED ✅
+#### 2. Serial port auto-detection - IMPLEMENTED ✅
 
 **Changes made to `internal/controller/arduino.go`:**
-- Added `path/filepath` and `strings` imports
 - Implemented `detectPorts()` function scanning `/dev/tty*`
 - Implemented `autoDetectPort()` returning first Arduino-like port
 - Implemented `ListPorts()` returning all detected ports
 
-#### 3. GoCV/OpenCV Compatibility Issue - IN PROGRESS ⚠️
+#### 3. GoCV/OpenCV Compatibility - RESOLVED ✅
 
-**Problem:** GoCV 0.43.0 was built against OpenCV 4.13.0 (Windows) but system has OpenCV 4.6.0 (Linux). The ArUco module bindings are incompatible.
+**Root cause:** The build process requires proper pkg-config file generation with correct OpenCV library names.
 
-**Error:**
-```
-aruco.h:12:13: error: 'aruco' in namespace 'cv' does not name a type
-```
+**Resolution:** The wrapper script `scripts/build.sh` properly generates the pkg-config file with correct library names (`libopencv_*.so.4.13.0`).
 
-**Solution Options:**
-1. Build OpenCV 4.13.0 from source on Linux
-2. Use GoCV with opencontrib flag
-3. Build main.go with gocv tag disabled (demo mode only)
-
-### Implementation Tasks
+### Implementation Tasks - ALL COMPLETED ✅
 
 | Task | Description | Status |
 |------|-------------|--------|
 | 10.1 | Install OpenCV development libraries | ✅ Done |
 | 10.2 | Update AGENTS.md for Linux build commands | ✅ Done |
 | 10.3 | Implement Linux serial port detection | ✅ Done |
-| 10.4 | Test demo mode without camera | ⚠️ Blocked |
-| 10.5 | Test build with GoCV tags | ❌ Failed |
-| 10.6 | Fix GoCV/OpenCV compatibility | ❌ Pending |
+| 10.4 | Test demo mode without camera | ✅ Done |
+| 10.5 | Test build with GoCV tags | ✅ Done |
+| 10.6 | Fix GoCV/OpenCV compatibility | ✅ Done |
+| 10.7 | OpenCV build script | ✅ Done |
+| 10.8 | TestOpenCVEnvironment fix | ✅ Done |
 
 ### Task Details
 
-#### 10.1-10.3: Completed ✅
+#### 10.1-10.8: All Completed ✅
 
-**Verification:**
-- OpenCV 4.6.0 installed: `pkg-config --modversion opencv4` returns "4.6.0"
-- AGENTS.md updated with Linux commands
-- Serial port detection implemented and compiles
-
-#### 10.4: Test Demo Mode - BLOCKED ⚠️
-
-**Problem:** `cmd/main.go` uses `//go:build gocv` tag but requires UI package which also uses gocv. Cannot build without tags.
-
-**Workaround:** Create simplified demo binary or fix gocv tag usage.
-
-#### 10.5: Test GoCV Build - FAILED ❌
-
+**Verification (Feb 7, 2026):**
 ```bash
-$ go build -tags=gocv -o robot_tracker ./cmd/main.go
-# gocv.io/x/gocv
-aruco.h:12:13: error: 'aruco' in namespace 'cv' does not name a type
+# Build - SUCCESS ✅
+$ ./scripts/build.sh
+[BUILD] Building robot_tracker with GoCV support...
+[BUILD] Done: robot_tracker
+
+# Demo mode - SUCCESS ✅
+$ ./robot_tracker --demo
+Demo mode: Generating test pattern with AprilTag visualization...
+Web server started on :9086
+
+# Serial ports - SUCCESS ✅
+$ ./robot_tracker --list-ports
+Available serial ports:
+  - /dev/ttyACM0
+
+# Tests - SUCCESS ✅
+$ ./scripts/test.sh
+All tests pass
 ```
 
-**Root cause:** GoCV 0.43.0 expects OpenCV 4.13.0 ArUco API which differs from OpenCV 4.6.0.
+#### Resolution
 
-#### 10.6: Fix GoCV/OpenCV Compatibility - OPTIONS
+**Key insight:** The wrapper scripts properly handle OpenCV environment setup:
 
-**Option A:** Build OpenCV 4.13.0 from source
-```bash
-# Install build dependencies
-sudo apt-get install -y cmake gcc g++ python3-dev
+1. `scripts/build.sh` generates correct pkg-config file with library names
+2. Sets `OPENCV_DIR`, `CGO_CPPFLAGS`, `CGO_LDFLAGS`, `PKG_CONFIG_PATH`
+3. Uses GoCV with `-tags=gocv` for camera support
 
-# Clone and build OpenCV 4.13.0
-git clone --branch 4.13.0 --depth=1 https://github.com/opencv/opencv.git
-cd opencv && mkdir build && cd build
-cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
-make -j$(nproc)
-sudo make install
-```
-
-**Option B:** Use system OpenCV 4.6.0 with gocv without ArUco
-- Modify AprilTag detection to use pure Go or alternative
-
-**Option C:** Run demo mode with mock camera
-- Create separate demo binary without GoCV dependency
+**Important:** Always use wrapper scripts - never run `go build` directly with manual environment variables.
 
 ### Test Results
 
@@ -778,11 +760,13 @@ $ ls /dev/tty*
 
 ### Verification Checklist
 
-- [x] OpenCV libraries installed (4.6.0)
-- [x] AGENTS.md updated with Linux commands
-- [x] Serial port detection implemented and compiles
-- [x] All tests pass (`go test ./... -v`)
-- [x] Wrapper scripts created for environment setup
+- [x] OpenCV 4.13.0 libraries installed (built from source)
+- [x] AGENTS.md updated with Quick Start and wrapper scripts
+- [x] Serial port detection implemented and working
+- [x] Build succeeds (`./scripts/build.sh`)
+- [x] Demo mode works (`./scripts/run.sh --demo`)
+- [x] All tests pass (`./scripts/test.sh`)
+- [x] Wrapper scripts handle all environment setup
 
 ### Effort Estimate (Updated)
 

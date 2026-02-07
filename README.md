@@ -188,7 +188,7 @@ go tool cover -html=coverage.out -o coverage.html
 - [x] Phase 7: Integration & Testing
 - [x] Phase 8: Web-Based Calibration
 - [x] Phase 9: Obstacle Detection (YOLO + Static Obstacles + Path Planning)
-- [x] Phase 10: Linux Migration
+- [x] Phase 10: Linux Migration (Updated Feb 7, 2026)
 
 ## License
 
