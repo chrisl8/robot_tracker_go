@@ -4,9 +4,9 @@ Go implementation of the multi-robot tracking and control system.
 
 ## Prerequisites
 
-- Go 1.21+
-- Python 3.8+ (for YOLO model export only)
-- Arduino IDE (for firmware)
+- Go 1.23.2+
+- CMake 3.16+ (for building OpenCV from source)
+- Git
 
 ## Dependencies
 
@@ -16,9 +16,32 @@ Install Go dependencies:
 go mod tidy
 ```
 
+Install OpenCV (required for camera support):
+
+### Linux (Ubuntu/Debian)
+
+**Option 1: Use provided install script (recommended)**
+
+```bash
+./scripts/install-opencv.sh
+
+# Add to ~/.bashrc for future sessions:
+echo 'export OPENCV_DIR="/usr/local"' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Option 2: Manual installation**
+
+See [scripts/install-opencv.sh](scripts/install-opencv.sh) for details.
+
+### Windows
+
+See [AGENTS.md](AGENTS.md) for Windows-specific setup instructions.
+
 ## YOLO Model Export
 
-Before running the application, export the YOLOv8 model to ONNX format:
+Before running the application with obstacle detection, export the YOLOv8 model to ONNX format:
 
 ```bash
 # Run the export script
@@ -31,52 +54,58 @@ mv yolov8n.onnx assets/
 
 ## Building
 
-### Environment
-
-You must set up the environment before building so that OpenCV can be found
-
-```powershell
-.\scripts\setup-gocv.ps1
-```
-
-### Build
-
-```powershell
-go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
-```
+### Linux
 
 ```bash
-# Build the application
-go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
+# Build with GoCV support
+go build -tags=gocv -o robot_tracker ./cmd/main.go
 
 # Build with race detector
-go build -race -o robot_tracker_race.exe ./cmd/main.go
+go build -race -o robot_tracker ./cmd/main.go
 ```
 
-## Testing
+### Windows
 
-Start with the Demo
+```powershell
+# Set up environment (run as administrator)
+.\scripts\setup-gocv.ps1
 
+# Build
+go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 ```
-.\robot_tracker.exe --demo
-```
-
-Open the website and it should show a little demo video.
 
 ## Running
 
-```bash
-# Run with auto-detected Arduino port
-./robot_tracker.exe
+### Linux
 
-# Run with specific port
-./robot_tracker.exe --port COM3
+```bash
+# Run demo mode (no camera required)
+./robot_tracker --demo
+
+# Run with camera
+./robot_tracker
+
+# Run with specific serial port
+./robot_tracker --port /dev/ttyUSB0
 
 # List available ports
-./robot_tracker.exe --list-ports
+./robot_tracker --list-ports
 
 # Use custom config
-./robot_tracker.exe --config config/custom.yaml
+./robot_tracker --config config/custom.yaml
+```
+
+### Windows
+
+```powershell
+# Run demo mode
+.\robot_tracker.exe --demo
+
+# Run with specific port
+.\robot_tracker.exe --port COM3
+
+# List available ports
+.\robot_tracker.exe --list-ports
 ```
 
 ## Project Structure
@@ -91,14 +120,16 @@ robot_tracker_go/
 │   ├── tracking/               # Multi-object tracking
 │   ├── position/               # Position estimation
 │   ├── planning/               # Path planning
-│   ├── controller/             # Arduino communication
-│   ├── ui/                     # Display and navigation
-│   └── api/                    # REST/WebSocket API
+│   ├── controller/              # Arduino communication
+│   └── ui/                     # Display and navigation
 ├── assets/
 │   └── yolov8n.onnx           # YOLO model
 ├── config/                     # Configuration files
-├── tests/                      # Unit and integration tests
-└── scripts/                    # Utility scripts
+├── scripts/
+│   ├── install-opencv.sh       # OpenCV installation script (Linux)
+│   ├── setup-gocv.ps1          # OpenCV setup script (Windows)
+│   └── export_model.sh         # YOLO model export script
+└── tests/                      # Unit and integration tests
 ```
 
 ## Configuration
@@ -133,18 +164,23 @@ go test ./... -v
 # Run with coverage
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
+
+# Run tests without GoCV (demo mode only)
+go test ./...
 ```
 
 ## Phase Status
 
 - [x] Phase 1: Foundation (Config, Serial Protocol, Arduino Controller, Command Queue)
-- [ ] Phase 2: Camera & Core Math
-- [ ] Phase 3: Detection Pipeline
-- [ ] Phase 4: Tracking
-- [ ] Phase 5: Path Planning
-- [ ] Phase 6: UI & Navigation
-- [ ] Phase 7: Web API
-- [ ] Phase 8: Integration & Testing
+- [x] Phase 2: Core Mathematics (Position types, Homography, Position Estimator)
+- [x] Phase 3: Detection Pipeline (AprilTag + YOLO)
+- [x] Phase 4: Tracking (ByteTrack, Kalman Filter, Hungarian Algorithm)
+- [x] Phase 5: Path Planning (A*, Local Planner, Coordinator, Collision Detection)
+- [x] Phase 6: Web UI (Gin Web Server, MJPEG Streaming, WebSocket Overlay)
+- [x] Phase 7: Integration & Testing
+- [x] Phase 8: Web-Based Calibration
+- [x] Phase 9: Obstacle Detection (YOLO + Static Obstacles + Path Planning)
+- [x] Phase 10: Linux Migration
 
 ## License
 

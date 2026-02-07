@@ -2,6 +2,8 @@ package controller
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go.bug.st/serial"
@@ -137,11 +139,37 @@ func (c *ArduinoController) GetPort() string {
 }
 
 func (c *ArduinoController) autoDetectPort() (string, error) {
-	return "", fmt.Errorf("port auto-detect not available on this platform")
+	ports, err := c.detectPorts()
+	if err != nil {
+		return "", err
+	}
+	if len(ports) == 0 {
+		return "", fmt.Errorf("no Arduino ports found")
+	}
+	return ports[0], nil
+}
+
+func (c *ArduinoController) detectPorts() ([]string, error) {
+	pattern := "/dev/tty*"
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	var arduinoPorts []string
+	for _, port := range matches {
+		if strings.Contains(port, "USB") || strings.Contains(port, "ACM") || strings.Contains(port, "AMA") {
+			arduinoPorts = append(arduinoPorts, port)
+		}
+	}
+	if len(arduinoPorts) == 0 {
+		arduinoPorts = matches
+	}
+	return arduinoPorts, nil
 }
 
 func (c *ArduinoController) ListPorts() []string {
-	return []string{}
+	ports, _ := c.detectPorts()
+	return ports
 }
 
 const ArduinoStartupDelay = 2 * time.Second

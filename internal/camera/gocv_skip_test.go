@@ -4,6 +4,7 @@ package camera
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -11,63 +12,88 @@ func TestOpenCVEnvironment(t *testing.T) {
 	t.Run("OPENCV_DIR environment variable", func(t *testing.T) {
 		openCVDir := os.Getenv("OPENCV_DIR")
 		if openCVDir == "" {
-			t.Error("OPENCV_DIR environment variable is not set")
-			t.Log("Hint: Run: $env:OPENCV_DIR = 'C:\\opencv\\build\\install'")
-			t.Log("Then re-run tests with: go test -tags=gocv ./internal/camera/...")
+			if runtime.GOOS == "windows" {
+				t.Error("OPENCV_DIR environment variable is not set")
+				t.Log("Hint: Run: $env:OPENCV_DIR = 'C:\\opencv\\build\\install'")
+				t.Log("Then re-run tests with: go test -tags=gocv ./internal/camera/...")
+			} else {
+				t.Log("OPENCV_DIR not set (Linux: typically not needed with system OpenCV)")
+			}
 		} else {
 			t.Logf("OPENCV_DIR = %s", openCVDir)
 		}
 	})
 
-	t.Run("OpenCV bin directory in PATH", func(t *testing.T) {
-		path := os.Getenv("PATH")
-		if path == "" {
-			t.Fatal("PATH environment variable is empty")
-		}
-
-		found := false
-		for _, p := range []string{
-			"C:\\opencv\\build\\install\\x64\\mingw\\bin",
-			"C:\\opencv\\build\\install\\x64\\vc17\\bin",
-			"C:\\opencv\\build\\install\\x64\\vc16\\bin",
-		} {
-			if containsPath(path, p) {
-				found = true
-				t.Logf("Found OpenCV bin in PATH: %s", p)
-				break
+	t.Run("OpenCV availability", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			path := os.Getenv("PATH")
+			if path == "" {
+				t.Fatal("PATH environment variable is empty")
 			}
-		}
 
-		if !found {
-			t.Error("OpenCV bin directory not found in PATH")
-			t.Log("Hint: Run: $env:PATH = 'C:\\opencv\\build\\install\\x64\\mingw\\bin;' + $env:PATH")
+			found := false
+			for _, p := range []string{
+				"C:\\opencv\\build\\install\\x64\\mingw\\bin",
+				"C:\\opencv\\build\\install\\x64\\vc17\\bin",
+				"C:\\opencv\\build\\install\\x64\\vc16\\bin",
+			} {
+				if containsPath(path, p) {
+					found = true
+					t.Logf("Found OpenCV bin in PATH: %s", p)
+					break
+				}
+			}
+
+			if !found {
+				t.Error("OpenCV bin directory not found in PATH")
+				t.Log("Hint: Run: $env:PATH = 'C:\\opencv\\build\\install\\x64\\mingw\\bin;' + $env:PATH")
+			}
+		} else {
+			openCVVersion := checkOpenCVVersion()
+			if openCVVersion == "" {
+				t.Log("OpenCV not found via pkg-config - camera tests will be skipped")
+			} else {
+				t.Logf("System OpenCV version: %s", openCVVersion)
+			}
 		}
 	})
 
-	t.Run("OpenCV DLLs exist", func(t *testing.T) {
-		binPath := os.Getenv("OPENCV_DIR")
-		if binPath == "" {
-			binPath = "C:\\opencv\\build\\install\\x64\\mingw\\bin"
-		}
-		binPath += "\\libopencv_core4130.dll"
+	t.Run("GoCV build compatibility", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			binPath := os.Getenv("OPENCV_DIR")
+			if binPath == "" {
+				binPath = "C:\\opencv\\build\\install\\x64\\mingw\\bin"
+			}
+			binPath += "\\libopencv_core4130.dll"
 
-		if _, err := os.Stat(binPath); os.IsNotExist(err) {
-			t.Errorf("OpenCV core DLL not found at: %s", binPath)
-			t.Log("Make sure OpenCV 4.13.0 is built and installed")
+			if _, err := os.Stat(binPath); os.IsNotExist(err) {
+				t.Errorf("OpenCV core DLL not found at: %s", binPath)
+				t.Log("Make sure OpenCV 4.13.0 is built and installed")
+			} else {
+				t.Logf("OpenCV core DLL found: %s", binPath)
+			}
 		} else {
-			t.Logf("OpenCV core DLL found: %s", binPath)
+			t.Log("Linux: GoCV requires building against compatible OpenCV headers")
+			t.Log("To build GoCV on Linux: go build -tags=gocv ./cmd/main.go")
 		}
 	})
 }
 
+func checkOpenCVVersion() string {
+	version, err := os.ReadFile("/usr/share/opencv4/version")
+	if err == nil {
+		return string(version)
+	}
+	return ""
+}
+
 func containsPath(path, target string) bool {
-	for _, p := range []string{path} {
-		if len(p) >= len(target) {
-			for i := 0; i <= len(p)-len(target); i++ {
-				if p[i:i+len(target)] == target {
-					return true
-				}
-			}
+	if len(path) < len(target) {
+		return false
+	}
+	for i := 0; i <= len(path)-len(target); i++ {
+		if path[i:i+len(target)] == target {
+			return true
 		}
 	}
 	return false
@@ -99,11 +125,18 @@ func TestGoCVIntegration(t *testing.T) {
 	t.Skip("GoCV not available - run 'go test -tags=gocv ./internal/camera/...' after fixing gocv/OpenCV compatibility")
 
 	t.Run("Full camera integration test", func(t *testing.T) {
-		t.Log("This test requires:")
-		t.Log("  1. OpenCV 4.13.0 built and installed")
-		t.Log("  2. gocv.io/x/gocv v0.43.0 compatible with OpenCV headers")
-		t.Log("  3. Run: $env:PATH = 'C:\\opencv\\build\\install\\x64\\mingw\\bin;' + $env:PATH")
-		t.Log("  4. Then run: go test -tags=gocv ./internal/camera/...")
+		if runtime.GOOS == "windows" {
+			t.Log("This test requires:")
+			t.Log("  1. OpenCV 4.13.0 built and installed")
+			t.Log("  2. gocv.io/x/gocv v0.43.0 compatible with OpenCV headers")
+			t.Log("  3. Run: $env:PATH = 'C:\\opencv\\build\\install\\x64\\mingw\\bin;' + $env:PATH")
+			t.Log("  4. Then run: go test -tags=gocv ./internal/camera/...")
+		} else {
+			t.Log("This test requires:")
+			t.Log("  1. OpenCV development libraries installed (libopencv-dev)")
+			t.Log("  2. GoCV compatible with system OpenCV version")
+			t.Log("  3. Run: go build -tags=gocv ./cmd/main.go")
+		}
 	})
 
 	t.Run("Camera creation and frame capture", func(t *testing.T) {

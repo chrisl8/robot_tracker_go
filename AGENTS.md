@@ -95,15 +95,56 @@ gopls MCP tools provide:
 
 ## Build Commands
 
-**IMPORTANT:** Before building on Windows, you must configure the environment for GoCV + OpenCV 4.13.0.
+**Note for AI agents:** The default shell in this environment is **bash**. Always use bash syntax.
 
-### Environment Setup
+### Linux Setup
 
-GoCV requires a C compiler and OpenCV DLLs to be in PATH:
+GoCV requires OpenCV development libraries:
 
 ```bash
-# Add MinGW GCC and OpenCV DLLs to PATH
-export PATH="/c/mingw64/bin:/c/opencv/build/install/x64/mingw/bin:$PATH"
+# Install OpenCV development libraries (Debian/Ubuntu)
+sudo apt-get update && sudo apt-get install -y libopencv-dev
+```
+
+### Build
+
+```bash
+# Build with GoCV support
+go build -tags=gocv -o robot_tracker ./cmd/main.go
+```
+
+### Run without camera
+
+```bash
+./robot_tracker --demo
+```
+
+### Run WITH camera
+
+```bash
+./robot_tracker
+```
+
+### Build Commands
+
+```bash
+# Install dependencies
+go mod tidy
+
+# Build the application
+go build -tags=gocv -o robot_tracker ./cmd/main.go
+
+# Build with race detector
+go build -race -o robot_tracker ./cmd/main.go
+
+# Run the application
+./robot_tracker
+
+# Run with specific serial port (Linux)
+./robot_tracker --port /dev/ttyUSB0
+
+# List available serial ports
+./robot_tracker --list-ports
 ```
 
 ### Build
