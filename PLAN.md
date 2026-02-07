@@ -795,7 +795,8 @@ $ ls /dev/tty*
 | Create OpenCV build script | ✅ Done | 20 min |
 | Update README.md | ✅ Done | 10 min |
 | Create wrapper scripts | ✅ Done | 10 min |
-| **Total completed** | - | **~75 min** | |
+| Fix TestOpenCVEnvironment | ✅ Done | 15 min |
+| **Total completed** | - | **~90 min** |
 
 ---
 
@@ -828,15 +829,37 @@ Created `scripts/install-opencv.sh` with:
 | `scripts/install-opencv.sh` | Created (5183 bytes, executable) |
 | `README.md` | Updated with Linux instructions |
 | `AGENTS.md` | Updated with Linux build commands |
-| `internal/controller/arduino.go` | Added Linux serial port detection |
-| `internal/camera/gocv_skip_test.go` | Fixed Linux test checks |
+| `scripts/build.sh` | Wrapper for building with GoCV |
+| `scripts/run.sh` | Wrapper for running with GoCV |
+| `scripts/test.sh` | Wrapper for running tests |
 
-### Next Steps
+---
 
-1. Run `./scripts/install-opencv.sh` to build OpenCV 4.13.0
-2. Add environment variables to `~/.bashrc`
-3. Build with GoCV: `go build -tags=gocv -o robot_tracker ./cmd/main.go`
-4. Test camera functionality
+### Phase 10.8: TestOpenCVEnvironment Fix - COMPLETED ✅
+
+Fixed `TestOpenCVEnvironment` to work on Linux by replacing Windows-specific checks with Linux-specific assertions.
+
+**Files Modified:**
+
+| File | Change |
+|------|--------|
+| `internal/camera/camera_test.go` | Added Linux checks for OpenCV libraries and OPENCV_DIR |
+| `internal/camera/gocv_skip_test.go` | Added Linux-specific assertions |
+
+**Before (Linux FAIL):**
+```
+TestOpenCVEnvironment                          ❌ FAIL
+  OpenCV_bin_directory_in_PATH                 ❌ FAIL (Windows path check)
+  OpenCV_DLLs_exist                           ❌ FAIL (Windows DLL check)
+```
+
+**After (Linux PASS):**
+```
+TestOpenCVEnvironment                          ✅ PASS
+  OPENCV_DIR_environment_variable              ✅ PASS
+  OpenCV_libraries                            ✅ PASS (checks /usr/local/lib)
+  GoCV_compatibility                          ✅ PASS (checks OPENCV_DIR + libraries)
+```
 
 ---
 

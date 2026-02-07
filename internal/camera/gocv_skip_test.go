@@ -4,6 +4,7 @@ package camera
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -49,11 +50,13 @@ func TestOpenCVEnvironment(t *testing.T) {
 				t.Log("Hint: Run: $env:PATH = 'C:\\opencv\\build\\install\\x64\\mingw\\bin;' + $env:PATH")
 			}
 		} else {
-			openCVVersion := checkOpenCVVersion()
-			if openCVVersion == "" {
-				t.Log("OpenCV not found via pkg-config - camera tests will be skipped")
+			// Check for OpenCV libraries on Linux
+			libs, err := filepath.Glob("/usr/local/lib/libopencv_*.so*")
+			if err != nil || len(libs) == 0 {
+				t.Error("OpenCV libraries not found in /usr/local/lib")
+				t.Log("Install with: ./scripts/install-opencv.sh")
 			} else {
-				t.Logf("System OpenCV version: %s", openCVVersion)
+				t.Logf("Found %d OpenCV libraries in /usr/local/lib", len(libs))
 			}
 		}
 	})
@@ -73,8 +76,22 @@ func TestOpenCVEnvironment(t *testing.T) {
 				t.Logf("OpenCV core DLL found: %s", binPath)
 			}
 		} else {
-			t.Log("Linux: GoCV requires building against compatible OpenCV headers")
-			t.Log("To build GoCV on Linux: go build -tags=gocv ./cmd/main.go")
+			// Check OPENCV_DIR is set for GoCV
+			openCVDir := os.Getenv("OPENCV_DIR")
+			if openCVDir == "" {
+				t.Error("OPENCV_DIR not set")
+				t.Log("Required: export OPENCV_DIR=/usr/local")
+			} else {
+				t.Logf("OPENCV_DIR = %s", openCVDir)
+			}
+
+			// Verify libraries exist
+			libPath := filepath.Join(openCVDir, "lib", "libopencv_core.so")
+			if _, err := os.Stat(libPath); os.IsNotExist(err) {
+				t.Errorf("OpenCV core library not found: %s", libPath)
+			} else {
+				t.Logf("OpenCV core library found: %s", libPath)
+			}
 		}
 	})
 }
