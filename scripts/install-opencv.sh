@@ -15,10 +15,8 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-check_prerequisites() {
-    log_info "Checking prerequisites..."
+verify_build_tools() {
     local missing=()
-
     for cmd in cmake git make g++; do
         if ! command -v $cmd &> /dev/null; then
             missing+=($cmd)
@@ -26,8 +24,8 @@ check_prerequisites() {
     done
 
     if [ ${#missing[@]} -ne 0 ]; then
-        log_error "Missing required tools: ${missing[*]}"
-        log_info "Install with: sudo apt-get install build-essential cmake git"
+        log_error "Missing required build tools: ${missing[*]}"
+        log_info "These should have been installed by install_dependencies()"
         exit 1
     fi
 }
@@ -35,31 +33,54 @@ check_prerequisites() {
 install_dependencies() {
     log_info "Installing system dependencies..."
 
-    if dpkg -l | grep -q "^ii.*libjasper-dev"; then
-        log_info "Dependencies already installed"
-        return 0
+    if command -v cmake &> /dev/null && \
+       command -v git &> /dev/null; then
+        log_info "Build tools already installed"
+    else
+        log_info "Installing build tools..."
+        sudo apt-get update
+        sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            pkg-config
     fi
 
-    sudo apt-get update
-    sudo apt-get install -y \
-        build-essential \
-        cmake \
-        git \
-        pkg-config \
-        libgtk2.0-dev \
-        libavcodec-dev \
-        libavformat-dev \
-        libswscale-dev \
-        libtbb-dev \
-        libjpeg-dev \
-        libpng-dev \
-        libtiff-dev \
-        libjasper-dev \
-        libdc1394-dev \
-        python3-dev \
-        python3-numpy \
-        libvtk9-dev \
+    verify_build_tools
+
+    log_info "Installing OpenCV dependencies..."
+
+    local packages=(
+        libgtk2.0-dev
+        libavcodec-dev
+        libavformat-dev
+        libswscale-dev
+        libtbb-dev
+        libjpeg-dev
+        libpng-dev
+        libtiff-dev
+        libdc1394-dev
+        python3-dev
+        python3-numpy
         libeigen3-dev
+    )
+
+    # libjasper-dev is not available in Ubuntu 24.04+
+    # It's optional for OpenCV (used for JPEG-2000 support)
+    if apt-cache show libjasper-dev &>/dev/null; then
+        packages+=(libjasper-dev)
+    else
+        log_warn "libjasper-dev not available (optional, skipping)"
+    fi
+
+    # libvtk9-dev can fail on minimal systems, make it optional
+    if apt-cache show libvtk9-dev &>/dev/null; then
+        packages+=(libvtk9-dev)
+    else
+        log_warn "libvtk9-dev not available (optional, skipping)"
+    fi
+
+    sudo apt-get install -y "${packages[@]}"
 }
 
 download_sources() {
@@ -69,14 +90,19 @@ download_sources() {
 
     if [ -d "opencv-${OPENCV_VERSION}" ]; then
         log_info "OpenCV source already downloaded"
-        return 0
+    else
+        log_info "Downloading OpenCV ${OPENCV_VERSION}..."
+        wget -O opencv-${OPENCV_VERSION}.tar.gz \
+            https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz
+        tar xzf opencv-${OPENCV_VERSION}.tar.gz
+        rm opencv-${OPENCV_VERSION}.tar.gz
     fi
 
-    wget -O opencv-${OPENCV_VERSION}.tar.gz \
-        https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz
-
-    tar xzf opencv-${OPENCV_VERSION}.tar.gz
-    rm opencv-${OPENCV_VERSION}.tar.gz
+    if [ -d "${BUILD_DIR}" ]; then
+        log_info "Build directory already exists, skipping configure"
+        return 1  # Signal to skip configure step
+    fi
+    return 0  # Signal to continue with configure
 }
 
 configure_cmake() {
@@ -175,10 +201,14 @@ main() {
     log_info "OpenCV ${OPENCV_VERSION} Build Script"
     log_info "==================================="
 
-    check_prerequisites
     install_dependencies
-    download_sources
-    configure_cmake
+
+    if download_sources; then
+        configure_cmake
+    else
+        log_info "Using existing build directory, skipping configure"
+    fi
+
     build_opencv
     install_opencv
     verify_installation
