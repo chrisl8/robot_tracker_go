@@ -55,7 +55,7 @@ The plan specifies [X approach], but I've encountered [issue]. I see two options
 
 # Go Code Exploration Preferences
 
-When exploring or analyzing Go code, **always prefer using gopls MCP server (local-gopls-mcp) tools** over local grep, find, or codebase_search tools.
+When exploring or analyzing Go code, **always prefer using gopls MCP server tools** over local grep, find, or codebase_search tools.
 
 ## Tool Priority for Go Code
 

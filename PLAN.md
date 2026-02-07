@@ -642,6 +642,178 @@ go test -v ./internal/position/
 
 ---
 
+## Linux Migration Plan (Phase 10)
+
+### Overview
+
+Migrate the project from Windows to Linux (Debian/Ubuntu) for development and deployment.
+
+### Current Status
+
+| Component | Windows Status | Linux Status |
+|-----------|---------------|--------------|
+| Go runtime | ✅ 1.23.2+ | ✅ 1.25.7 |
+| GCC compiler | ✅ MinGW | ✅ system GCC |
+| GoCV | ✅ Configured | ❌ OpenCV libraries missing |
+| Serial ports | ✅ Working | ❌ Auto-detect not implemented |
+| Demo mode | ✅ Working | ✅ Should work (no GoCV) |
+
+### Issues Identified
+
+#### 1. AGENTS.md contains Windows-specific instructions
+
+**Problem:** Build commands reference Windows paths and `.exe` extension.
+
+**Affected sections:**
+- Lines 98-107: Windows MinGW/OpenCV PATH setup
+- Lines 109-115: Windows build command
+- Lines 114, 120-127, 139-148: `.exe` binary name
+- Line 145: `COM3` serial port format
+
+**Solution:** Update AGENTS.md with Linux-specific build commands.
+
+#### 2. Serial port auto-detection not implemented
+
+**Problem:** `internal/controller/arduino.go:139-145` contains stub implementations:
+
+```go
+func (c *ArduinoController) autoDetectPort() (string, error) {
+    return "", fmt.Errorf("port auto-detect not available on this platform")
+}
+
+func (c *ArduinoController) ListPorts() []string {
+    return []string{}
+}
+```
+
+**Solution:** Implement Linux serial port detection using `/dev/tty*` patterns.
+
+#### 3. OpenCV not installed
+
+**Problem:** GoCV requires OpenCV shared libraries to be installed on the system.
+
+**Solution:** Install `libopencv-dev` package on Debian/Ubuntu.
+
+### Implementation Tasks
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 10.1 | Install OpenCV development libraries | ❌ Pending |
+| 10.2 | Update AGENTS.md for Linux build commands | ❌ Pending |
+| 10.3 | Implement Linux serial port detection | ❌ Pending |
+| 10.4 | Test demo mode without camera | ❌ Pending |
+| 10.5 | Test build with GoCV tags | ❌ Pending |
+| 10.6 | Test with real camera if available | ❌ Pending |
+
+### Task Details
+
+#### 10.1: Install OpenCV Development Libraries
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libopencv-dev
+```
+
+#### 10.2: Update AGENTS.md
+
+Replace Windows-specific sections with Linux commands:
+
+```bash
+# Install OpenCV development libraries
+sudo apt-get install -y libopencv-dev
+
+# Build with GoCV support
+go build -tags=gocv -o robot_tracker ./cmd/main.go
+
+# Run demo mode (no camera required)
+./robot_tracker --demo
+
+# Run with camera
+./robot_tracker
+
+# Run with specific serial port (Linux)
+./robot_tracker --port /dev/ttyUSB0
+
+# List available serial ports
+./robot_tracker --list-ports
+```
+
+#### 10.3: Implement Linux Serial Port Detection
+
+Modify `internal/controller/arduino.go`:
+
+```go
+import (
+    "path/filepath"
+    "strings"
+    "os"
+)
+
+// Add to ArduinoController:
+func (c *ArduinoController) autoDetectPort() (string, error) {
+    ports, err := c.detectLinuxPorts()
+    if err != nil {
+        return "", err
+    }
+    if len(ports) == 0 {
+        return "", fmt.Errorf("no Arduino ports found")
+    }
+    return ports[0], nil
+}
+
+func (c *ArduinoController) detectLinuxPorts() ([]string, error) {
+    pattern := "/dev/tty[A-Za-z]*"
+    matches, err := filepath.Glob(pattern)
+    if err != nil {
+        return nil, err
+    }
+    var arduinoPorts []string
+    for _, port := range matches {
+        if strings.Contains(port, "USB") || strings.Contains(port, "ACM") {
+            arduinoPorts = append(arduinoPorts, port)
+        }
+    }
+    if len(arduinoPorts) == 0 {
+        arduinoPorts = matches
+    }
+    return arduinoPorts, nil
+}
+
+func (c *ArduinoController) ListPorts() []string {
+    ports, _ := c.detectLinuxPorts()
+    return ports
+}
+```
+
+#### 10.4-10.6: Testing
+
+| Test | Command | Expected Result |
+|------|---------|-----------------|
+| Demo mode | `./robot_tracker --demo` | Test pattern generates, web UI accessible |
+| Build with tags | `go build -tags=gocv -o robot_tracker ./cmd/main.go` | Binary builds successfully |
+| Camera mode | `./robot_tracker` | Camera captures and streams |
+
+### Verification Checklist
+
+- [ ] OpenCV libraries installed (`pkg-config --modversion opencv4` returns version)
+- [ ] AGENTS.md updated with Linux commands
+- [ ] Serial port auto-detection works
+- [ ] Demo mode runs without GoCV
+- [ ] Full build with `-tags=gocv` succeeds
+- [ ] Tests pass (`go test ./... -v`)
+
+### Effort Estimate
+
+| Task | Time |
+|------|------|
+| Install OpenCV | 5 min |
+| Update AGENTS.md | 10 min |
+| Implement serial detection | 30 min |
+| Testing | 20 min |
+| **Total** | **~1 hour** |
+
+---
+
 ## References
 
 - Original Python implementation: `C:\Dev\robot_tracker\`
