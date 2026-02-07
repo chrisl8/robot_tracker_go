@@ -97,32 +97,63 @@ gopls MCP tools provide:
 
 **Note for AI agents:** The default shell in this environment is **bash**. Always use bash syntax.
 
-### Linux Setup
+### Environment Setup
 
-GoCV requires OpenCV development libraries:
+GoCV requires OpenCV libraries. Always set these environment variables before running Go commands:
 
 ```bash
-# Install OpenCV development libraries (Debian/Ubuntu)
-sudo apt-get update && sudo apt-get install -y libopencv-dev
+# Set up OpenCV environment (required for GoCV)
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+# Install OpenCV if not already installed
+./scripts/install-opencv.sh
 ```
+
+**Important:** Always include environment setup in all build and run commands. See wrapper scripts below for convenience.
 
 ### Build
 
 ```bash
-# Build with GoCV support
+# With environment setup
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 go build -tags=gocv -o robot_tracker ./cmd/main.go
 ```
 
 ### Run without camera
 
 ```bash
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 ./robot_tracker --demo
 ```
 
 ### Run WITH camera
 
 ```bash
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 ./robot_tracker
+```
+
+### Wrapper Scripts (Recommended)
+
+Use these scripts to automatically set up the environment:
+
+```bash
+# Build with GoCV
+./scripts/build.sh
+
+# Run demo mode
+./scripts/run.sh --demo
+
+# Run with camera
+./scripts/run.sh
+
+# Run tests
+./scripts/test.sh
 ```
 
 ### Build Commands
@@ -131,7 +162,9 @@ go build -tags=gocv -o robot_tracker ./cmd/main.go
 # Install dependencies
 go mod tidy
 
-# Build the application
+# Build with GoCV support (with environment setup)
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 go build -tags=gocv -o robot_tracker ./cmd/main.go
 
 # Build with race detector

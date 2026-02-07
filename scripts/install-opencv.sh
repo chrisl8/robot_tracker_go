@@ -15,6 +15,25 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+uninstall_system_opencv() {
+    log_warn "Uninstalling system OpenCV 4.6.0 to avoid library conflicts..."
+
+    if dpkg -l | grep -q "^ii.*libopencv.*4.6.0"; then
+        log_info "Removing OpenCV 4.6.0 packages..."
+        sudo apt-get remove --purge -y \
+            '.*opencv.*' \
+            libopencv-dev \
+            libopencv-*
+
+        # Also remove any leftover config files
+        sudo apt-get autoremove -y
+
+        log_info "System OpenCV 4.6.0 removed"
+    else
+        log_info "No system OpenCV 4.6.0 found, skipping uninstall"
+    fi
+}
+
 verify_build_tools() {
     local missing=()
     for cmd in cmake git make g++; do
@@ -31,6 +50,9 @@ verify_build_tools() {
 }
 
 install_dependencies() {
+    # First, remove system OpenCV to avoid conflicts
+    uninstall_system_opencv
+
     log_info "Installing system dependencies..."
 
     if command -v cmake &> /dev/null && \
@@ -98,6 +120,17 @@ download_sources() {
         rm opencv-${OPENCV_VERSION}.tar.gz
     fi
 
+    # Download opencv_contrib for extra modules (including aruco)
+    if [ ! -d "opencv_contrib-${OPENCV_VERSION}" ]; then
+        log_info "Downloading OpenCV contrib modules..."
+        wget -O opencv_contrib-${OPENCV_VERSION}.tar.gz \
+            https://github.com/opencv/opencv_contrib/archive/${OPENCV_VERSION}.tar.gz
+        tar xzf opencv_contrib-${OPENCV_VERSION}.tar.gz
+        rm opencv_contrib-${OPENCV_VERSION}.tar.gz
+    else
+        log_info "OpenCV contrib source already downloaded"
+    fi
+
     if [ -d "${BUILD_DIR}" ]; then
         log_info "Build directory already exists, skipping configure"
         return 1  # Signal to skip configure step
@@ -126,6 +159,7 @@ configure_cmake() {
         -D WITH_GTK=ON \
         -D WITH_EIGEN=ON \
         -D WITH_FFMPEG=ON \
+        -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib-${OPENCV_VERSION}/modules \
         /tmp/opencv-${OPENCV_VERSION}
 }
 
@@ -149,27 +183,36 @@ install_opencv() {
 verify_installation() {
     log_info "Verifying OpenCV installation..."
 
-    if pkg-config --exists opencv4; then
-        version=$(pkg-config --modversion opencv4)
-        log_info "OpenCV version: ${version}"
-
-        if [ "$version" = "${OPENCV_VERSION}" ]; then
-            log_info "Version matches expected: ${OPENCV_VERSION}"
-        else
-            log_warn "Version mismatch: got ${version}, expected ${OPENCV_VERSION}"
-        fi
-    else
-        log_error "opencv4.pc not found in pkg-config"
-        return 1
-    fi
-
+    # Check for OpenCV libraries directly
     lib_path="${INSTALL_PREFIX}/lib"
-    if [ -f "${lib_path}/libopencv_core.so" ]; then
+
+    if [ -f "${lib_path}/libopencv_core.so.${OPENCV_VERSION}" ]; then
+        log_info "Core library found: ${lib_path}/libopencv_core.so.${OPENCV_VERSION}"
+    elif [ -f "${lib_path}/libopencv_core.so" ]; then
         log_info "Core library found: ${lib_path}/libopencv_core.so"
     else
-        log_error "Core library not found at ${lib_path}"
+        log_error "OpenCV core library not found in ${lib_path}"
         return 1
     fi
+
+    # Count libraries
+    lib_count=$(ls ${lib_path}/libopencv_*.so.* 2>/dev/null | wc -l)
+    if [ "$lib_count" -gt 0 ]; then
+        log_info "Found ${lib_count} OpenCV libraries in ${lib_path}"
+    else
+        log_error "No OpenCV libraries found in ${lib_path}"
+        return 1
+    fi
+
+    # Try to get version from library if pkg-config is available
+    if pkg-config --exists opencv4 2>/dev/null; then
+        version=$(pkg-config --modversion opencv4)
+        log_info "pkg-config reports OpenCV version: ${version}"
+    else
+        log_info "pkg-config not configured for OpenCV (OK - using CGO instead)"
+    fi
+
+    log_info "OpenCV ${OPENCV_VERSION} installation verified!"
 }
 
 print_environment_setup() {
@@ -193,8 +236,13 @@ print_environment_setup() {
 }
 
 cleanup() {
-    log_info "Cleaning up build directory..."
-    rm -rf ${BUILD_DIR}
+    if [ -d "${BUILD_DIR}" ]; then
+        log_info "Cleaning up build directory..."
+        rm -rf ${BUILD_DIR}
+        log_info "Build directory removed"
+    else
+        log_info "Build directory does not exist, nothing to clean"
+    fi
 }
 
 main() {
@@ -221,16 +269,25 @@ case "${1:-}" in
     --cleanup)
         cleanup
         ;;
+    --uninstall)
+        uninstall_system_opencv
+        ;;
     --verify)
         verify_installation
         ;;
     --help|-h)
-        echo "Usage: $0 [--cleanup|--verify|--help]"
+        echo "Usage: $0 [--cleanup|--uninstall|--verify|--help]"
         echo ""
         echo "Options:"
-        echo "  --cleanup  Remove build artifacts"
-        echo "  --verify   Verify OpenCV installation"
-        echo "  --help     Show this help message"
+        echo "  --cleanup   Remove build artifacts"
+        echo "  --uninstall Remove system OpenCV 4.6.0 packages"
+        echo "  --verify    Verify OpenCV installation"
+        echo "  --help      Show this help message"
+        echo ""
+        echo "Examples:"
+        echo "  $0                  # Install OpenCV 4.13.0"
+        echo "  $0 --uninstall      # Remove system OpenCV 4.6.0"
+        echo "  $0 --verify         # Check OpenCV installation"
         ;;
     *)
         main

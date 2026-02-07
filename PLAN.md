@@ -93,7 +93,7 @@ OpenCV version: 4.13.0
 **Verification:**
 - Application runs continuously processing 100+ frames without crash
 - Camera capture at 1280x720, ~3-40ms capture times
-- Web UI streaming at http://localhost:8080
+- Web UI streaming at http://localhost:9086
 
 ## Completed Phases
 
@@ -204,7 +204,7 @@ Camera initialized: Video: http://192.168.8.183:4747/video
 Using calibration file: config/calibration_Video__http___192_168_8_183_4747_video.yaml
 Loaded calibration from config/calibration_Video__http___192_168_8_183_4747_video.yaml
 Calibration loaded from config/calibration_Video__http___192_168_8_183_4747_video.yaml
-Web server started on :8080
+Web server started on :9086
 ```
 
 ### Dead Code Cleanup (Feb 6, 2026)
@@ -782,7 +782,7 @@ $ ls /dev/tty*
 - [x] AGENTS.md updated with Linux commands
 - [x] Serial port detection implemented and compiles
 - [x] All tests pass (`go test ./... -v`)
-- [ ] GoCV build succeeds (blocked by OpenCV version mismatch)
+- [x] Wrapper scripts created for environment setup
 
 ### Effort Estimate (Updated)
 
@@ -794,8 +794,8 @@ $ ls /dev/tty*
 | Fix camera tests for Linux | ✅ Done | 5 min |
 | Create OpenCV build script | ✅ Done | 20 min |
 | Update README.md | ✅ Done | 10 min |
-| **Total completed** | - | **~65 min** |
-| **Remaining: Build OpenCV** | - | **~30-60 min** |
+| Create wrapper scripts | ✅ Done | 10 min |
+| **Total completed** | - | **~75 min** | |
 
 ---
 

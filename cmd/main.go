@@ -150,7 +150,7 @@ func (rs *RobotSystem) Initialize() error {
 	rs.commandQueue.Start()
 	log.Printf("Command queue started")
 
-	rs.webServer = ui.NewWebServer(":8080")
+	rs.webServer = ui.NewWebServer(":9086")
 	if rs.cam != nil {
 		rs.webServer.SetCameraName(rs.cam.GetName())
 	}
@@ -159,7 +159,7 @@ func (rs *RobotSystem) Initialize() error {
 		log.Printf("Calibration loaded from %s", calibrationPath)
 	}
 	rs.webServer.Start()
-	log.Printf("Web UI started at http://localhost:8080")
+	log.Printf("Web UI started at http://localhost:9086")
 
 	rs.loadStaticObstacles()
 
@@ -713,7 +713,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 func main() {
 	configPath := flag.String("config", "config/tracking_config.yaml", "Path to configuration file")
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")
-	flag.String("web-port", ":8080", "Web server port")
+	flag.String("web-port", ":9086", "Web server port")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
 	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")

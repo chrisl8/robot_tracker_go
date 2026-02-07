@@ -191,7 +191,7 @@ go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 ./robot_tracker.exe --camera-id 0
 
 # Access UI
-# Open browser to http://localhost:8080
+# Open browser to http://localhost:9086
 ```
 
 ## Key Design Decisions

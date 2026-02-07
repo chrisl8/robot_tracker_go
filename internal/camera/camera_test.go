@@ -173,15 +173,15 @@ func TestCameraConfig(t *testing.T) {
 	t.Run("Config with custom values", func(t *testing.T) {
 		config := CameraConfig{
 			Name:    "ip_camera",
-			URL:     "http://192.168.1.100:8080/video",
+			URL:     "http://192.168.1.100:9086/video",
 			Width:   1280,
 			Height:  720,
 			FPS:     60,
 			Backend: "IP",
 		}
 
-		if config.URL != "http://192.168.1.100:8080/video" {
-			t.Errorf("Config.URL = %s, want http://192.168.1.100:8080/video", config.URL)
+		if config.URL != "http://192.168.1.100:9086/video" {
+			t.Errorf("Config.URL = %s, want http://192.168.1.100:9086/video", config.URL)
 		}
 		if config.Width != 1280 {
 			t.Errorf("Config.Width = %d, want 1280", config.Width)
@@ -286,7 +286,7 @@ func TestIPCameraConfig(t *testing.T) {
 			url  string
 			want string
 		}{
-			{"HTTP URL", "http://192.168.1.100:8080/video", "http://192.168.1.100:8080/video"},
+			{"HTTP URL", "http://192.168.1.100:9086/video", "http://192.168.1.100:9086/video"},
 			{"RTSP URL", "rtsp://192.168.1.100:554/stream", "rtsp://192.168.1.100:554/stream"},
 			{"HTTPS URL", "https://camera.local/video", "https://camera.local/video"},
 		}

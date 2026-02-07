@@ -5,3 +5,4 @@ robot_tracker_test.exe
 diagnostics/gocv_final.exe
 diagnostics/test_cgo.exe
 diagnostics/test_gocv_simple.exe
+robot_tracker

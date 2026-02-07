@@ -54,15 +54,19 @@ mv yolov8n.onnx assets/
 
 ## Building
 
-### Linux
+### Linux (Recommended: use wrapper scripts)
 
 ```bash
-# Build with GoCV support
-go build -tags=gocv -o robot_tracker ./cmd/main.go
+# Build with GoCV support (automatically sets environment)
+./scripts/build.sh
 
 # Build with race detector
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 go build -race -o robot_tracker ./cmd/main.go
 ```
+
+**Note:** The wrapper scripts (`build.sh`, `run.sh`, `test.sh`) automatically set up the OpenCV environment (`OPENCV_DIR`, `LD_LIBRARY_PATH`, `PKG_CONFIG_PATH`). No need to modify `.bashrc`.
 
 ### Windows
 
@@ -76,24 +80,26 @@ go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 
 ## Running
 
-### Linux
+### Linux (Recommended: use wrapper scripts)
 
 ```bash
 # Run demo mode (no camera required)
-./robot_tracker --demo
+./scripts/run.sh --demo
 
 # Run with camera
-./robot_tracker
+./scripts/run.sh
 
 # Run with specific serial port
-./robot_tracker --port /dev/ttyUSB0
+./scripts/run.sh --port /dev/ttyUSB0
 
 # List available ports
-./robot_tracker --list-ports
+./scripts/run.sh --list-ports
 
 # Use custom config
-./robot_tracker --config config/custom.yaml
+./scripts/run.sh --config config/custom.yaml
 ```
+
+**Note:** Wrapper scripts automatically set `OPENCV_DIR` and `LD_LIBRARY_PATH`.
 
 ### Windows
 
@@ -158,15 +164,17 @@ Format: `{command}\r\n` (e.g., `F\r\n`)
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (automatically sets environment)
+./scripts/test.sh
+
+# Run all tests manually
+export OPENCV_DIR="/usr/local"
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 go test ./... -v
 
 # Run with coverage
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
-
-# Run tests without GoCV (demo mode only)
-go test ./...
 ```
 
 ## Phase Status
