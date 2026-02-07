@@ -254,7 +254,7 @@ The Python version has a complete dynamic obstacle pipeline:
 3. **YOLO-to-Obstacle conversion** - converts bounding boxes to circular obstacles
 4. **Integration in main.py** - filters YOLO detections, creates DynamicObstacles
 
-### Current Status (After Commit daac606)
+### Current Status (After Commit da1cf96)
 
 | Component | Status | Notes |
 |-----------|--------|-------|
@@ -263,61 +263,93 @@ The Python version has a complete dynamic obstacle pipeline:
 | `Planner.ComputeVelocityWithDynamicObstacles()` | ✅ Done | `internal/planning/planner.go:52-64` |
 | YOLO-to-Obstacle converter | ✅ Done | `internal/detection/dynamic_obstacle.go` |
 | Tests (11 cases) | ✅ Done | All passing |
-| **ProcessFrame integration** | ⚠️ Partial | Creates obstacles but discards them |
-| **Actual avoidance using obstacles** | ❌ Missing | No code passes obstacles to planner |
+| Self-test mode | ✅ Done | `./robot_tracker.exe --self-test` |
+| Demo-YOLO mode | ✅ Done | `./robot_tracker.exe --demo-yolo` |
+| **Static Obstacle UI** | 🔄 In Progress | API + Backend done, UI remaining |
 
-### Gaps Identified
+### What's Been Completed
 
-1. **Dynamic obstacles are created but never used** - `cmd/main.go:266` has `_ = dynamicObstacles`
-2. **Hardcoded obstacle classes** - Should use `cfg.LocalPlanning.ObstacleClasses`
-3. **Hardcoded confidence threshold** - Should use `cfg.LocalPlanning.MinConfidence`
+**Phase 9.5-9.6: Dynamic Obstacle Integration**
+- ✅ `RobotSystem` stores `DynamicObstacles` and `StaticObstacles`
+- ✅ `ProcessFrame()` calls `ComputeVelocityWithDynamicObstacles()`
+- ✅ Configuration loaded from YAML (`ObstacleClasses`, `MinConfidence`)
+- ✅ `classesToMap()` helper function
 
----
+**Phase 9.7: Static Obstacle UI (In Progress)**
 
-## Remaining Implementation
+Completed:
+| Component | File | Status |
+|----------|------|--------|
+| Config types | `internal/config/config.go` | ✅ |
+| `SaveObstacles()` function | `internal/position/estimator.go` | ✅ |
+| API types | `internal/ui/types.go` | ✅ |
+| API endpoints | `internal/ui/webserver.go` | ✅ |
+| RobotSystem integration | `cmd/main.go` | ✅ |
 
-### Phase 9.5: Fix Dynamic Obstacle Integration
-
-**Goal:** Actually use the dynamic obstacles in the planning/avoidance loop.
-
-**Current Issue:** `cmd/main.go:266` discards obstacles: `_ = dynamicObstacles`
-
-**Changes:**
-1. Add `DynamicObstacles []*planning.DynamicObstacle` to `RobotSystem` struct
-2. Store obstacles after conversion
-3. Call `planner.ComputeVelocityWithDynamicObstacles()` with obstacles
-4. Track robot IDs from AprilTag detections
-
-**Files Modified:**
-| File | Change |
-|------|--------|
-| `cmd/main.go` | Store and use dynamic obstacles in planning |
-
----
-
-### Phase 9.6: Load Configuration from YAML
-
-**Goal:** Replace hardcoded values with configuration.
-
-**Current Issues:**
-- `cmd/main.go:223-225`: Hardcoded obstacle classes
-- `cmd/main.go:231`: Hardcoded confidence threshold (0.5)
-
-**Changes:**
-1. Add helper `classesToMap()` function
-2. Load from `rs.cfg.LocalPlanning.ObstacleClasses`
-3. Load `rs.cfg.LocalPlanning.MinConfidence`
-
-**Files Modified:**
-| File | Change |
-|------|--------|
-| `cmd/main.go` | Use config values instead of hardcoded |
+Remaining:
+| Component | Status |
+|-----------|--------|
+| Web UI drawing canvas | ❌ Pending |
+| Obstacle panel (list, delete, save) | ❌ Pending |
+| Keyboard shortcuts (Z, C, S) | ❌ Pending |
+| Draw obstacles on video | ❌ Pending |
+| `SetStaticObstacles()` in planner | ❌ Pending |
+| Sample YAML file | ❌ Pending |
 
 ---
 
-### Phase 9.7: Static (Manual) Obstacle UI (Optional)
+## Phase 9.7: Static Obstacle UI - Implementation Status
 
-**Goal:** Allow users to draw obstacles on video and persist them.
+### Completed Tasks
+
+1. **Configuration Types** (`internal/config/config.go`)
+   - `StaticObstacleConfig` struct
+   - `StaticObstacle` JSON types
+   - YAML serialization helpers
+
+2. **SaveObstacles** (`internal/position/estimator.go`)
+   - Writes obstacles to YAML format
+   - Matches Python version's structure
+
+3. **API Types** (`internal/ui/types.go`)
+   - `AddObstacleRequest`
+   - `UpdateObstacleRequest`
+   - `ObstacleResponse`
+   - `ObstaclesListResponse`
+
+4. **API Endpoints** (`internal/ui/webserver.go`)
+   | Method | Path | Handler |
+   |--------|------|---------|
+   | GET | `/api/obstacles` | `handleObstaclesList` |
+   | POST | `/api/obstacles` | `handleObstacleAdd` |
+   | DELETE | `/api/obstacles/:id` | `handleObstacleDelete` |
+   | PUT | `/api/obstacles/:id` | `handleObstacleUpdate` |
+   | POST | `/api/obstacles/clear` | `handleObstaclesClear` |
+   | POST | `/api/obstacles/save` | `handleObstaclesSave` |
+
+5. **RobotSystem Integration** (`cmd/main.go`)
+   - Added `StaticObstacles []planning.Obstacle` field
+   - `loadStaticObstacles()` function loads from YAML
+   - Sets obstacles on web server at startup
+
+### Remaining Tasks
+
+| Task | Description | Status |
+|------|------------|--------|
+| 9.7.6-9.7.9 | Web UI drawing canvas, panel, shortcuts | ❌ Pending |
+| 9.7.10 | Draw static obstacles on video | ❌ Pending |
+| 9.7.11 | `SetStaticObstacles()` in planner | ❌ Pending |
+| 9.7.12 | Sample YAML file | ❌ Pending |
+
+### Effort Estimate
+
+| Phase | Tasks | Time |
+|-------|-------|------|
+| 9.7.6-9.7.9 | Web UI components | ~2.5 hours |
+| 9.7.10-9.7.12 | Backend remaining | ~30 min |
+| **Total remaining** | - | **~3 hours** |
+
+---
 
 **What's Missing:**
 - API endpoints for obstacle CRUD (`/api/obstacles`)

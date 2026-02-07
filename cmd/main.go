@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"robot_tracker_go/internal/camera"
 	"robot_tracker_go/internal/config"
 	"robot_tracker_go/internal/controller"
@@ -37,6 +39,7 @@ type RobotSystem struct {
 	cameraRunning    bool
 	frameNum         int
 	DynamicObstacles []*planning.DynamicObstacle
+	StaticObstacles  []planning.Obstacle
 	CurrentRobotID   int
 	CurrentGoal      [2]float64
 }
@@ -158,7 +161,110 @@ func (rs *RobotSystem) Initialize() error {
 	rs.webServer.Start()
 	log.Printf("Web UI started at http://localhost:8080")
 
+	rs.loadStaticObstacles()
+
 	return nil
+}
+
+func (rs *RobotSystem) loadStaticObstacles() {
+	if rs.cfg == nil || rs.cfg.Obstacles.Path == "" {
+		log.Printf("No obstacle path configured")
+		return
+	}
+
+	data, err := os.ReadFile(rs.cfg.Obstacles.Path)
+	if err != nil {
+		log.Printf("No obstacles file found at %s", rs.cfg.Obstacles.Path)
+		return
+	}
+
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		log.Printf("Warning: Failed to parse obstacles file: %v", err)
+		return
+	}
+
+	obstaclesData, ok := config["obstacles"]
+	if !ok {
+		return
+	}
+
+	obstaclesList, ok := obstaclesData.([]interface{})
+	if !ok {
+		return
+	}
+
+	for _, obsData := range obstaclesList {
+		obs, ok := obsData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		pixels, ok := obs["pixels"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		world, _ := obs["world"].(map[string]interface{})
+
+		var pixelsTL [2]int
+		var pixelsBR [2]int
+		var worldTL [2]float64
+		var worldBR [2]float64
+
+		if tl, ok := pixels["top_left"].([]interface{}); ok && len(tl) >= 2 {
+			pixelsTL[0] = int(toFloat64(tl[0]))
+			pixelsTL[1] = int(toFloat64(tl[1]))
+		}
+		if br, ok := pixels["bottom_right"].([]interface{}); ok && len(br) >= 2 {
+			pixelsBR[0] = int(toFloat64(br[0]))
+			pixelsBR[1] = int(toFloat64(br[1]))
+		}
+
+		if world != nil {
+			if tl, ok := world["top_left"].([]interface{}); ok && len(tl) >= 2 {
+				worldTL[0] = toFloat64(tl[0])
+				worldTL[1] = toFloat64(tl[1])
+			}
+			if br, ok := world["bottom_right"].([]interface{}); ok && len(br) >= 2 {
+				worldBR[0] = toFloat64(br[0])
+				worldBR[1] = toFloat64(br[1])
+			}
+		}
+
+		name := "obstacle"
+		if n, ok := obs["name"].(string); ok {
+			name = n
+		}
+
+		rs.StaticObstacles = append(rs.StaticObstacles, planning.Obstacle{
+			Name:              name,
+			WorldTopLeft:      worldTL,
+			WorldBottomRight:  worldBR,
+			PixelsTopLeft:     pixelsTL,
+			PixelsBottomRight: pixelsBR,
+		})
+	}
+
+	if len(rs.StaticObstacles) > 0 {
+		log.Printf("Loaded %d static obstacles from %s", len(rs.StaticObstacles), rs.cfg.Obstacles.Path)
+		rs.webServer.SetObstacles(rs.StaticObstacles)
+	}
+}
+
+func toFloat64(v interface{}) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case float32:
+		return float64(val)
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	default:
+		return 0
+	}
 }
 
 func (rs *RobotSystem) StartCamera() error {

@@ -256,6 +256,25 @@ func (e *PositionEstimator) ClearObstacles() {
 	e.obstacles = make([]Obstacle, 0)
 }
 
+func (e *PositionEstimator) SaveObstacles(path string, obstacles []Obstacle) error {
+	yamlContent := "version: 1\nobstacles:\n"
+
+	for i, obs := range obstacles {
+		yamlContent += fmt.Sprintf("  - name: %q\n", obs.Name)
+		yamlContent += fmt.Sprintf("    pixels:\n")
+		yamlContent += fmt.Sprintf("      top_left: [%d, %d]\n", obs.PixelsTopLeft[0], obs.PixelsTopLeft[1])
+		yamlContent += fmt.Sprintf("      bottom_right: [%d, %d]\n", obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
+		yamlContent += fmt.Sprintf("    world:\n")
+		yamlContent += fmt.Sprintf("      top_left: [%.4f, %.4f]\n", obs.WorldTopLeft.X, obs.WorldTopLeft.Y)
+		yamlContent += fmt.Sprintf("      bottom_right: [%.4f, %.4f]\n", obs.WorldBottomRight.X, obs.WorldBottomRight.Y)
+		if i < len(obstacles)-1 {
+			yamlContent += "\n"
+		}
+	}
+
+	return os.WriteFile(path, []byte(yamlContent), 0644)
+}
+
 func (e *PositionEstimator) GetHomography() *Homography {
 	return e.homography
 }

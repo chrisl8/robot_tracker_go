@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/hybridgroup/mjpeg"
 	"gopkg.in/yaml.v3"
+	"robot_tracker_go/internal/planning"
 	"robot_tracker_go/internal/position"
 )
 
@@ -47,6 +48,11 @@ type WebServer struct {
 	detectedTags    []DetectedTagInfo
 	detectedTagsMut sync.RWMutex
 	lastTagUpdate   time.Time
+
+	obstaclesMutex sync.RWMutex
+	obstacles      []planning.Obstacle
+	obstaclesSaved bool
+	obstaclesPath  string
 }
 
 type OverlayMessage struct {
@@ -162,6 +168,12 @@ func (s *WebServer) setupRoutes() {
 	s.engine.POST("/api/command", s.handleCommand)
 	s.engine.POST("/api/destination", s.handleDestination)
 	s.engine.GET("/api/status", s.handleStatus)
+	s.engine.GET("/api/obstacles", s.handleObstaclesList)
+	s.engine.POST("/api/obstacles", s.handleObstacleAdd)
+	s.engine.DELETE("/api/obstacles/:id", s.handleObstacleDelete)
+	s.engine.PUT("/api/obstacles/:id", s.handleObstacleUpdate)
+	s.engine.POST("/api/obstacles/clear", s.handleObstaclesClear)
+	s.engine.POST("/api/obstacles/save", s.handleObstaclesSave)
 	s.engine.GET("/api/calibration/status", s.handleCalibrationStatus)
 	s.engine.POST("/api/calibration/start", s.handleCalibrationStart)
 	s.engine.GET("/api/calibration/detected-tags", s.handleCalibrationDetectedTags)
@@ -571,4 +583,185 @@ func distPoints(p1, p2 [2]float64) float64 {
 	dx := p2[0] - p1[0]
 	dy := p2[1] - p1[1]
 	return math.Sqrt(dx*dx + dy*dy)
+}
+
+func (s *WebServer) GetObstaclesPath() string {
+	if s.obstaclesPath != "" {
+		return s.obstaclesPath
+	}
+	if s.cameraName != "" {
+		sanitized := sanitizeCameraName(s.cameraName)
+		return fmt.Sprintf("config/obstacles_%s.yaml", sanitized)
+	}
+	return "config/obstacles.yaml"
+}
+
+func (s *WebServer) SetObstaclesPath(path string) {
+	s.obstaclesPath = path
+}
+
+func (s *WebServer) handleObstaclesList(c *gin.Context) {
+	s.obstaclesMutex.RLock()
+	defer s.obstaclesMutex.RUnlock()
+
+	obstacles := make([]ObstacleResponse, 0, len(s.obstacles))
+	for _, obs := range s.obstacles {
+		obstacles = append(obstacles, ObstacleResponse{
+			ID:               obs.Name,
+			Name:             obs.Name,
+			PixelTopLeft:     obs.PixelsTopLeft,
+			PixelBottomRight: obs.PixelsBottomRight,
+			WorldTopLeft:     obs.WorldTopLeft,
+			WorldBottomRight: obs.WorldBottomRight,
+			Clearance:        0.02,
+		})
+	}
+
+	c.JSON(http.StatusOK, ObstaclesListResponse{
+		Obstacles: obstacles,
+		Count:     len(obstacles),
+		Saved:     s.obstaclesSaved,
+	})
+}
+
+func (s *WebServer) handleObstacleAdd(c *gin.Context) {
+	var req AddObstacleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.obstaclesMutex.Lock()
+	defer s.obstaclesMutex.Unlock()
+
+	newObs := planning.Obstacle{
+		Name:              fmt.Sprintf("obstacle_%d", len(s.obstacles)+1),
+		PixelsTopLeft:     req.PixelTopLeft,
+		PixelsBottomRight: req.PixelBottomRight,
+		WorldTopLeft:      [2]float64{float64(req.PixelTopLeft[0]) / 100, float64(req.PixelTopLeft[1]) / 100},
+		WorldBottomRight:  [2]float64{float64(req.PixelBottomRight[0]) / 100, float64(req.PixelBottomRight[1]) / 100},
+	}
+
+	if req.Name != "" {
+		newObs.Name = req.Name
+	}
+
+	s.obstacles = append(s.obstacles, newObs)
+	s.obstaclesSaved = false
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": len(s.obstacles)})
+}
+
+func (s *WebServer) handleObstacleDelete(c *gin.Context) {
+	id := c.Param("id")
+
+	s.obstaclesMutex.Lock()
+	defer s.obstaclesMutex.Unlock()
+
+	newObs := make([]planning.Obstacle, 0, len(s.obstacles))
+	for _, obs := range s.obstacles {
+		if obs.Name != id {
+			newObs = append(newObs, obs)
+		}
+	}
+	s.obstacles = newObs
+	s.obstaclesSaved = false
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": len(s.obstacles)})
+}
+
+func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
+	id := c.Param("id")
+	var req UpdateObstacleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.obstaclesMutex.Lock()
+	defer s.obstaclesMutex.Unlock()
+
+	for i, obs := range s.obstacles {
+		if obs.Name == id {
+			s.obstacles[i] = planning.Obstacle{
+				Name:              id,
+				PixelsTopLeft:     req.PixelTopLeft,
+				PixelsBottomRight: req.PixelBottomRight,
+				WorldTopLeft:      [2]float64{float64(req.PixelTopLeft[0]) / 100, float64(req.PixelTopLeft[1]) / 100},
+				WorldBottomRight:  [2]float64{float64(req.PixelBottomRight[0]) / 100, float64(req.PixelBottomRight[1]) / 100},
+			}
+			s.obstaclesSaved = false
+			break
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
+}
+
+func (s *WebServer) handleObstaclesClear(c *gin.Context) {
+	s.obstaclesMutex.Lock()
+	defer s.obstaclesMutex.Unlock()
+
+	s.obstacles = make([]planning.Obstacle, 0)
+	s.obstaclesSaved = false
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "count": 0})
+}
+
+func (s *WebServer) handleObstaclesSave(c *gin.Context) {
+	s.obstaclesMutex.RLock()
+	obstacles := s.obstacles
+	s.obstaclesMutex.RUnlock()
+
+	path := s.GetObstaclesPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.saveObstaclesToFile(path, obstacles); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.obstaclesMutex.Lock()
+	s.obstaclesSaved = true
+	s.obstaclesMutex.Unlock()
+
+	c.JSON(http.StatusOK, SaveObstaclesResponse{
+		Success: true,
+		Message: fmt.Sprintf("Saved %d obstacles to %s", len(obstacles), path),
+	})
+}
+
+func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstacle) error {
+	yamlContent := "version: 1\nobstacles:\n"
+
+	for i, obs := range obstacles {
+		yamlContent += fmt.Sprintf("  - name: %q\n", obs.Name)
+		yamlContent += fmt.Sprintf("    pixels:\n")
+		yamlContent += fmt.Sprintf("      top_left: [%d, %d]\n", obs.PixelsTopLeft[0], obs.PixelsTopLeft[1])
+		yamlContent += fmt.Sprintf("      bottom_right: [%d, %d]\n", obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
+		yamlContent += fmt.Sprintf("    world:\n")
+		yamlContent += fmt.Sprintf("      top_left: [%.4f, %.4f]\n", obs.WorldTopLeft[0], obs.WorldTopLeft[1])
+		yamlContent += fmt.Sprintf("      bottom_right: [%.4f, %.4f]\n", obs.WorldBottomRight[0], obs.WorldBottomRight[1])
+		if i < len(obstacles)-1 {
+			yamlContent += "\n"
+		}
+	}
+
+	return os.WriteFile(path, []byte(yamlContent), 0644)
+}
+
+func (s *WebServer) GetObstacles() []planning.Obstacle {
+	s.obstaclesMutex.RLock()
+	defer s.obstaclesMutex.RUnlock()
+	return s.obstacles
+}
+
+func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
+	s.obstaclesMutex.Lock()
+	s.obstacles = obstacles
+	s.obstaclesMutex.Unlock()
 }

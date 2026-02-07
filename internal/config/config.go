@@ -83,6 +83,45 @@ type YOLOConfig struct {
 type ObstaclesConfig struct {
 	CollisionMargin float64 `yaml:"collision_margin"`
 	Path            string  `yaml:"path"`
+	Enabled         bool    `yaml:"enabled"`
+	DisplayColor    string  `yaml:"display_color"`
+}
+
+type StaticObstacleConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	DisplayColor string `yaml:"display_color"`
+}
+
+type StaticObstacle struct {
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	PixelTopLeft     [2]int     `json:"pixel_top_left"`
+	PixelBottomRight [2]int     `json:"pixel_bottom_right"`
+	WorldTopLeft     [2]float64 `json:"world_top_left"`
+	WorldBottomRight [2]float64 `json:"world_bottom_right"`
+	Clearance        float64    `json:"clearance"`
+}
+
+type ObstaclesYAML struct {
+	Version   int                `yaml:"version"`
+	Obstacles []ObstacleYAMLItem `yaml:"obstacles"`
+}
+
+type ObstacleYAMLItem struct {
+	Name      string       `yaml:"name"`
+	Pixels    PixelBoxYAML `yaml:"pixels"`
+	World     WorldBoxYAML `yaml:"world"`
+	Clearance float64      `yaml:"clearance"`
+}
+
+type PixelBoxYAML struct {
+	TopLeft     [2]int `yaml:"top_left"`
+	BottomRight [2]int `yaml:"bottom_right"`
+}
+
+type WorldBoxYAML struct {
+	TopLeft     [2]float64 `yaml:"top_left"`
+	BottomRight [2]float64 `yaml:"bottom_right"`
 }
 
 type PositionConfig struct {
