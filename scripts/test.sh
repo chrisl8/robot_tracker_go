@@ -4,23 +4,49 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+VERBOSE=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--verbose]"
+            echo ""
+            echo "Options:"
+            echo "  --verbose, -v  Enable verbose test output"
+            echo "  --help, -h     Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--verbose]"
+            exit 1
+            ;;
+    esac
+done
+
 echo "[TEST] Running Vue UI tests..."
 
 # Run Vue tests if ui directory exists
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
-    cd ui
+    cd "$SCRIPT_DIR/../ui"
     npm install 2>/dev/null || true
+    npm outdated
 
     # Run unit tests
     echo "[TEST] Running Vue unit tests..."
     npm run test:run
 
-    # Integration tests require a running backend with proper config
-    # Skip by default as the backend has issues running in demo mode
-    echo "[TEST] Skipping integration tests (requires working backend)"
-    echo "[TEST] To run integration tests: cd ui && npm run test:integration"
+    # Run integration tests
+    echo "[TEST] Running Playwright integration tests..."
+    npm run test:integration
 
-    cd ..
+
+    cd "$SCRIPT_DIR/.."
     echo "[TEST] Vue UI tests passed"
 else
     echo "[TEST] Warning: ui/ directory not found, skipping Vue tests"
@@ -65,6 +91,12 @@ export CGO_LDFLAGS="-L/usr/local/lib $OPENCV_LIBS -Wl,-rpath,/usr/local/lib"
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 
 # Run Go tests
-go test ./... -v
+if [ "$VERBOSE" = true ]; then
+    echo "[TEST] Running Go tests (verbose)..."
+    go test ./... -v
+else
+    echo "[TEST] Running Go tests..."
+    go test ./...
+fi
 
 echo "[TEST] Done"

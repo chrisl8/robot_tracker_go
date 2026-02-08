@@ -22,7 +22,7 @@ The build script automatically builds both the Vue 3 UI and the Go backend.
 ./scripts/run.sh
 
 # Run tests
-./scripts/test.sh
+./scripts/test.sh --verbose
 
 # Install/Update OpenCV
 ./scripts/install-opencv.sh
@@ -186,7 +186,7 @@ Use these scripts to automatically set up the environment:
 ./scripts/run.sh
 
 # Run tests
-./scripts/test.sh
+./scripts/test.sh --verbose
 ```
 
 ### Build Commands
@@ -261,7 +261,7 @@ go build -race -o robot_tracker_race.exe ./cmd/main.go
 
 ```bash
 # Run all tests (Vue unit + Go tests)
-./scripts/test.sh
+./scripts/test.sh --verbose
 
 # Run Vue UI tests only
 cd ui && npm run test
@@ -280,9 +280,6 @@ npm run test:integration
 
 # Run Vue integration tests with UI
 npm run test:integration:ui
-
-# Skip integration tests (CI)
-SKIP_INTEGRATION_TESTS=true ./scripts/test.sh
 
 # Run all Go tests
 go test ./... -v
