@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useDraggable } from '@vueuse/core'
 import { useUIStore } from '@/stores/uiStore'
+import tagDiagramUrl from '@/assets/april-tag-how-to-measure-for-website.png?url'
 
 const uiStore = useUIStore()
 
@@ -186,11 +187,11 @@ watch(isOpen, (open) => {
 
                         <div class="measurement-guide">
                             <h4>How to Measure</h4>
-                            <div class="tag-diagram">
-                                <div class="tag-preview"></div>
-                                <div class="measurement-arrow"></div>
-                                <div class="measurement-label">15cm</div>
-                            </div>
+                            <img
+                                :src="tagDiagramUrl"
+                                alt="How to measure AprilTag size"
+                                class="tag-diagram"
+                            />
                             <div class="measurement-note">
                                 Measure the black border of the tag (not including white margin).
                             </div>
@@ -422,63 +423,11 @@ watch(isOpen, (open) => {
 }
 
 .tag-diagram {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-
-.tag-preview {
-    width: 100px;
-    height: 100px;
-    position: relative;
-    border: 8px solid white;
-    background: black;
-    flex-shrink: 0;
-}
-
-.tag-preview::after {
-    content: 'DATA';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
-    font-size: 10px;
-    font-weight: bold;
-}
-
-.measurement-arrow {
-    flex: 1;
-    position: relative;
-    height: 30px;
-}
-
-.measurement-arrow::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 2px;
-    background: #4ecca3;
-}
-
-.measurement-arrow::after {
-    content: '▼';
-    position: absolute;
-    left: 50%;
-    bottom: 0;
-    transform: translateX(-50%);
-    color: #4ecca3;
-    font-size: 12px;
-}
-
-.measurement-label {
-    text-align: center;
-    color: #4ecca3;
-    font-weight: bold;
-    font-size: 0.9rem;
+    width: 100%;
+    max-width: 300px;
+    height: auto;
+    display: block;
+    margin: 0 auto 12px;
 }
 
 .measurement-note {
