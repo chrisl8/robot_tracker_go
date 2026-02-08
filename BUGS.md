@@ -325,6 +325,58 @@ Camera interface methods return empty values on failure, no error propagation.
 
 ---
 
+### UI-003: Obstacle Drawing Disappears If User Pauses
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Medium |
+| **Impact** | Box being drawn disappears if user takes too long |
+| **Component** | `internal/ui/index.go` |
+
+**Symptom:**
+When drawing an obstacle box, if the user pauses for a moment (e.g., thinking about where to position the box), the box disappears from the overlay even though the mouse button is still held down.
+
+**Root Cause:**
+Canvas API behavior - setting `overlay.width` or `overlay.height` always clears the canvas:
+1. `syncCanvasSize()` runs every second via `setInterval(syncCanvasSize, 1000)`
+2. When it sets `overlay.width = rect.width` (even to the same value), the canvas is automatically cleared
+3. This happens regardless of whether the user is actively drawing
+4. The drawing rectangle is lost when the canvas is cleared
+
+**Fix:**
+Modified `syncCanvasSize()` to only update dimensions when they've actually changed:
+```javascript
+// Before (buggy):
+function syncCanvasSize() {
+    var rect = video.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+        overlay.width = rect.width;
+        overlay.height = rect.height;
+    }
+}
+
+// After (fixed):
+function syncCanvasSize() {
+    var rect = video.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+        if (overlay.width !== rect.width || overlay.height !== rect.height) {
+            overlay.width = rect.width;
+            overlay.height = rect.height;
+            if (currentDraw) {
+                redrawOverlay();
+            }
+        }
+    }
+}
+```
+
+**Code Changes:**
+1. Added dimension change check before setting `overlay.width/height`
+2. Added `redrawOverlay()` call after dimension change to restore drawing state
+
+---
+
 ## LOW
 
 ### DOC-001: API Documentation Incomplete

@@ -849,6 +849,42 @@ TestOpenCVEnvironment                          ✅ PASS
 
 ---
 
+## Recent Bug Fixes
+
+### UI-003: Obstacle Drawing Disappears If User Pauses - FIXED ✅ (Feb 7, 2026)
+
+**Problem:** When drawing an obstacle box, if the user pauses for a moment (e.g., thinking about where to position the box), the box disappears from the overlay even though the mouse button is still held down.
+
+**Root Cause:** Three issues:
+1. The `redrawOverlay()` function clears and redraws the entire canvas whenever obstacles are updated via WebSocket messages, potentially interfering with active drawing
+2. The `mouseleave` handler on the overlay element cleared drawing state when the mouse cursor left the overlay, even if the mouse button was still held down
+3. Even with `currentDraw` and `lastDrawnRect`, WebSocket-driven redraws during active drawing could cause timing issues
+
+**Solution:**
+1. Added `isDrawing` flag - true between mousedown and mouseup
+2. Added `lastDrawnRect` variable to persist drawing rectangle
+3. Added `isMouseDown` global tracking via window-level listeners
+4. Modified `redrawOverlay()` to skip full redraw when `isDrawing` is true - just clear and draw the current box
+5. Removed `overlay.addEventListener('mouseleave', ...)` handler - users can drag outside the video area and come back
+
+**Files Modified:**
+
+| File | Change |
+|------|--------|
+| `internal/ui/index.go:899-903` | Added `isDrawing`, `lastDrawnRect`, `isMouseDown` variables |
+| `internal/ui/index.go:1160-1171` | Set `isDrawing = true` on mousedown |
+| `internal/ui/index.go:1206-1210` | Set `isDrawing = false` on mouseup |
+| `internal/ui/index.go:1226-1231` | Added window-level mouse event listeners for global mouse state |
+| `internal/ui/index.go:1517-1528` | Added `drawObstacleRect()` helper function |
+| `internal/ui/index.go:1530-1533` | Modified `redrawOverlay()` to short-circuit when `isDrawing` is true |
+| `internal/ui/index.go` | **Removed `overlay.addEventListener('mouseleave', ...)` handler** |
+
+**Verification:**
+- Build succeeds: `./scripts/build.sh` ✅
+- Tests pass: `./scripts/test.sh` ✅
+
+---
+
 ## References
 
 - Original Python implementation: `C:\Dev\robot_tracker\`

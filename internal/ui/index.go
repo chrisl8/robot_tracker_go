@@ -166,7 +166,7 @@ const indexHTML = `<!DOCTYPE html>
             left: 0;
             width: 100%;
             height: 100%;
-            pointer-events: none;
+            pointer-events: auto;
         }
         .loading {
             position: absolute;
@@ -899,6 +899,9 @@ const indexHTML = `<!DOCTYPE html>
         var drawMode = false;
         var drawStart = null;
         var currentDraw = null;
+        var lastDrawnRect = null;
+        var isMouseDown = false;
+        var isDrawing = false;
 
         ws.onopen = function() {
             loading.style.display = 'none';
@@ -1057,8 +1060,13 @@ const indexHTML = `<!DOCTYPE html>
         function syncCanvasSize() {
             var rect = video.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-                overlay.width = rect.width;
-                overlay.height = rect.height;
+                if (overlay.width !== rect.width || overlay.height !== rect.height) {
+                    overlay.width = rect.width;
+                    overlay.height = rect.height;
+                    if (currentDraw) {
+                        redrawOverlay();
+                    }
+                }
             }
         }
 
@@ -1143,6 +1151,7 @@ const indexHTML = `<!DOCTYPE html>
             drawMode = !drawMode;
             drawStart = null;
             currentDraw = null;
+            lastDrawnRect = null;
             redrawOverlay();
             var btn = document.getElementById('drawObstacleBtn');
             if (btn) {
@@ -1154,36 +1163,45 @@ const indexHTML = `<!DOCTYPE html>
 
         overlay.addEventListener('mousedown', function(e) {
             if (!drawMode) return;
+            e.preventDefault();
+
             var rect = overlay.getBoundingClientRect();
-            drawStart = [e.clientX - rect.left, e.clientY - rect.top];
+            var scaleX = overlay.width / rect.width;
+            var scaleY = overlay.height / rect.height;
+            drawStart = [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
             currentDraw = {
                 x1: drawStart[0], y1: drawStart[1],
                 x2: drawStart[0], y2: drawStart[1]
             };
+            isDrawing = true;
             redrawOverlay();
         });
 
         overlay.addEventListener('mousemove', function(e) {
             if (!drawMode || !drawStart) return;
             var rect = overlay.getBoundingClientRect();
-            currentDraw.x2 = e.clientX - rect.left;
-            currentDraw.y2 = e.clientY - rect.top;
+            var scaleX = overlay.width / rect.width;
+            var scaleY = overlay.height / rect.height;
+            currentDraw.x2 = (e.clientX - rect.left) * scaleX;
+            currentDraw.y2 = (e.clientY - rect.top) * scaleY;
             redrawOverlay();
         });
 
         overlay.addEventListener('mouseup', function(e) {
             if (!drawMode || !drawStart) return;
             var rect = overlay.getBoundingClientRect();
-            var x2 = e.clientX - rect.left;
-            var y2 = e.clientY - rect.top;
+            var scaleX = overlay.width / rect.width;
+            var scaleY = overlay.height / rect.height;
+            var x2 = (e.clientX - rect.left) * scaleX;
+            var y2 = (e.clientY - rect.top) * scaleY;
 
             var topLeft = [
-                Math.min(drawStart[0], x2),
-                Math.min(drawStart[1], y2)
+                Math.round(Math.min(drawStart[0], x2)),
+                Math.round(Math.min(drawStart[1], y2))
             ];
             var bottomRight = [
-                Math.max(drawStart[0], x2),
-                Math.max(drawStart[1], y2)
+                Math.round(Math.max(drawStart[0], x2)),
+                Math.round(Math.max(drawStart[1], y2))
             ];
 
             if (bottomRight[0] - topLeft[0] > 10 && bottomRight[1] - topLeft[1] > 10) {
@@ -1192,21 +1210,23 @@ const indexHTML = `<!DOCTYPE html>
 
             drawStart = null;
             currentDraw = null;
+            lastDrawnRect = null;
+            isMouseDown = false;
+            isDrawing = false;
             redrawOverlay();
-        });
-
-        overlay.addEventListener('mouseleave', function() {
-            if (drawMode && drawStart) {
-                drawStart = null;
-                currentDraw = null;
-                redrawOverlay();
-            }
         });
 
         video.onload = syncCanvasSize;
         video.onloadeddata = syncCanvasSize;
         window.addEventListener('resize', syncCanvasSize);
         setInterval(syncCanvasSize, 1000);
+
+        window.addEventListener('mousedown', function(e) {
+            isMouseDown = true;
+        });
+        window.addEventListener('mouseup', function(e) {
+            isMouseDown = false;
+        });
 
         var buttons = document.querySelectorAll('.btn');
         for (var i = 0; i < buttons.length; i++) {
@@ -1260,6 +1280,8 @@ const indexHTML = `<!DOCTYPE html>
         }
 
         overlay.addEventListener('click', function(e) {
+            if (drawMode) return;
+
             var rect = overlay.getBoundingClientRect();
             var x = Math.round((e.clientX - rect.left) * (overlay.width / rect.width));
             var y = Math.round((e.clientY - rect.top) * (overlay.height / rect.height));
@@ -1497,6 +1519,19 @@ const indexHTML = `<!DOCTYPE html>
             return closest;
         }
 
+        function drawObstacleRect(rect) {
+            var w = rect.x2 - rect.x1;
+            var h = rect.y2 - rect.y1;
+            ctx.strokeStyle = '#ffa500';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(rect.x1, rect.y1, w, h);
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = 'rgba(255, 165, 0, 0.2)';
+            ctx.fillRect(rect.x1, rect.y1, w, h);
+        }
+
         function redrawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
@@ -1525,16 +1560,7 @@ const indexHTML = `<!DOCTYPE html>
             });
 
             if (currentDraw) {
-                var w = currentDraw.x2 - currentDraw.x1;
-                var h = currentDraw.y2 - currentDraw.y1;
-                ctx.strokeStyle = '#ffa500';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([5, 5]);
-                ctx.strokeRect(currentDraw.x1, currentDraw.y1, w, h);
-                ctx.setLineDash([]);
-
-                ctx.fillStyle = 'rgba(255, 165, 0, 0.2)';
-                ctx.fillRect(currentDraw.x1, currentDraw.y1, w, h);
+                drawObstacleRect(currentDraw);
             }
 
             detectedTags.forEach(function(tag) {

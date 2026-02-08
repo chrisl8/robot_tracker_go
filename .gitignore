@@ -6,3 +6,5 @@ diagnostics/gocv_final.exe
 diagnostics/test_cgo.exe
 diagnostics/test_gocv_simple.exe
 robot_tracker
+config/calibration_*
+config/obstacles_*
