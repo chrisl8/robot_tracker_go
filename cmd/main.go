@@ -151,6 +151,11 @@ func (rs *RobotSystem) Initialize() error {
 	log.Printf("Command queue started")
 
 	rs.webServer = ui.NewWebServer(":9086")
+
+	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+		rs.planner.SetObstacles(obstacles)
+	}
+
 	if rs.cam != nil {
 		rs.webServer.SetCameraName(rs.cam.GetName())
 	}

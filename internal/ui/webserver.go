@@ -53,6 +53,8 @@ type WebServer struct {
 	obstacles      []planning.Obstacle
 	obstaclesSaved bool
 	obstaclesPath  string
+
+	OnObstaclesChanged func([]planning.Obstacle)
 }
 
 type OverlayMessage struct {
@@ -63,6 +65,12 @@ type OverlayMessage struct {
 	Status      *StatusMessage            `json:"status,omitempty"`
 	Command     *CommandMessage           `json:"command,omitempty"`
 	Calibration *CalibrationStatusMessage `json:"calibration,omitempty"`
+	Obstacles   *ObstaclesMessage         `json:"obstacles,omitempty"`
+}
+
+type ObstaclesMessage struct {
+	Obstacles []ObstacleResponse `json:"obstacles"`
+	Count     int                `json:"count"`
 }
 
 type BBoxMessage struct {
@@ -244,6 +252,32 @@ func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
 		client.WriteJSON(msg)
 	}
 	s.clientMutex.RUnlock()
+}
+
+func (s *WebServer) BroadcastObstacles() {
+	s.obstaclesMutex.RLock()
+	defer s.obstaclesMutex.RUnlock()
+
+	obstacles := make([]ObstacleResponse, 0, len(s.obstacles))
+	for _, obs := range s.obstacles {
+		obstacles = append(obstacles, ObstacleResponse{
+			ID:               obs.Name,
+			Name:             obs.Name,
+			PixelTopLeft:     obs.PixelsTopLeft,
+			PixelBottomRight: obs.PixelsBottomRight,
+			WorldTopLeft:     obs.WorldTopLeft,
+			WorldBottomRight: obs.WorldBottomRight,
+			Clearance:        0.02,
+		})
+	}
+
+	s.BroadcastOverlay(OverlayMessage{
+		Type: "obstacles",
+		Obstacles: &ObstaclesMessage{
+			Obstacles: obstacles,
+			Count:     len(obstacles),
+		},
+	})
 }
 
 func (s *WebServer) handleCommand(c *gin.Context) {
@@ -632,7 +666,6 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 	}
 
 	s.obstaclesMutex.Lock()
-	defer s.obstaclesMutex.Unlock()
 
 	newObs := planning.Obstacle{
 		Name:              fmt.Sprintf("obstacle_%d", len(s.obstacles)+1),
@@ -649,6 +682,16 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 	s.obstacles = append(s.obstacles, newObs)
 	s.obstaclesSaved = false
 
+	s.obstaclesMutex.Unlock()
+	s.BroadcastObstacles()
+
+	if s.OnObstaclesChanged != nil {
+		s.obstaclesMutex.RLock()
+		obstacles := s.obstacles
+		s.obstaclesMutex.RUnlock()
+		s.OnObstaclesChanged(obstacles)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": len(s.obstacles)})
 }
 
@@ -656,7 +699,6 @@ func (s *WebServer) handleObstacleDelete(c *gin.Context) {
 	id := c.Param("id")
 
 	s.obstaclesMutex.Lock()
-	defer s.obstaclesMutex.Unlock()
 
 	newObs := make([]planning.Obstacle, 0, len(s.obstacles))
 	for _, obs := range s.obstacles {
@@ -666,6 +708,16 @@ func (s *WebServer) handleObstacleDelete(c *gin.Context) {
 	}
 	s.obstacles = newObs
 	s.obstaclesSaved = false
+
+	s.obstaclesMutex.Unlock()
+	s.BroadcastObstacles()
+
+	if s.OnObstaclesChanged != nil {
+		s.obstaclesMutex.RLock()
+		obstacles := s.obstacles
+		s.obstaclesMutex.RUnlock()
+		s.OnObstaclesChanged(obstacles)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": len(s.obstacles)})
 }
@@ -679,7 +731,6 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 	}
 
 	s.obstaclesMutex.Lock()
-	defer s.obstaclesMutex.Unlock()
 
 	for i, obs := range s.obstacles {
 		if obs.Name == id {
@@ -690,9 +741,19 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 				WorldTopLeft:      [2]float64{float64(req.PixelTopLeft[0]) / 100, float64(req.PixelTopLeft[1]) / 100},
 				WorldBottomRight:  [2]float64{float64(req.PixelBottomRight[0]) / 100, float64(req.PixelBottomRight[1]) / 100},
 			}
-			s.obstaclesSaved = false
 			break
 		}
+	}
+	s.obstaclesSaved = false
+
+	s.obstaclesMutex.Unlock()
+	s.BroadcastObstacles()
+
+	if s.OnObstaclesChanged != nil {
+		s.obstaclesMutex.RLock()
+		obstacles := s.obstacles
+		s.obstaclesMutex.RUnlock()
+		s.OnObstaclesChanged(obstacles)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
@@ -700,10 +761,16 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 
 func (s *WebServer) handleObstaclesClear(c *gin.Context) {
 	s.obstaclesMutex.Lock()
-	defer s.obstaclesMutex.Unlock()
 
 	s.obstacles = make([]planning.Obstacle, 0)
 	s.obstaclesSaved = false
+
+	s.obstaclesMutex.Unlock()
+	s.BroadcastObstacles()
+
+	if s.OnObstaclesChanged != nil {
+		s.OnObstaclesChanged([]planning.Obstacle{})
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "count": 0})
 }
@@ -728,6 +795,8 @@ func (s *WebServer) handleObstaclesSave(c *gin.Context) {
 	s.obstaclesMutex.Lock()
 	s.obstaclesSaved = true
 	s.obstaclesMutex.Unlock()
+
+	s.BroadcastObstacles()
 
 	c.JSON(http.StatusOK, SaveObstaclesResponse{
 		Success: true,
@@ -764,4 +833,8 @@ func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
 	s.obstaclesMutex.Lock()
 	s.obstacles = obstacles
 	s.obstaclesMutex.Unlock()
+
+	if s.OnObstaclesChanged != nil {
+		s.OnObstaclesChanged(obstacles)
+	}
 }

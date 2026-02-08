@@ -16,7 +16,7 @@ Go implementation of the multi-robot tracking and control system, migrated from 
 | Phase 6 | ✅ Complete    | Web UI (Gin Web Server, MJPEG Streaming, WebSocket Overlay)             |
 | Phase 7 | ✅ Complete    | Integration & Testing                                                   |
 | Phase 8 | ✅ Complete    | Web-Based Calibration (Auto-detect, guide user, save to file)          |
-| Phase 9 | 🔄 In Progress | Obstacle Detection (YOLO + Static Obstacles + Path Planning)            |
+| Phase 9 | ✅ Complete   | Obstacle Detection (YOLO + Static Obstacles + Path Planning)             |
 
 ## Architecture
 
@@ -289,55 +289,57 @@ Completed:
 Remaining:
 | Component | Status |
 |-----------|--------|
-| Web UI drawing canvas | ❌ Pending |
-| Obstacle panel (list, delete, save) | ❌ Pending |
-| Keyboard shortcuts (Z, C, S) | ❌ Pending |
-| Draw obstacles on video | ❌ Pending |
-| `SetStaticObstacles()` in planner | ❌ Pending |
-| Sample YAML file | ❌ Pending |
+| Web UI drawing canvas | ✅ Complete |
+| Obstacle panel (list, delete, save) | ✅ Complete |
+| Keyboard shortcuts (Z, C, S) | ✅ Complete |
+| Draw obstacles on video | ✅ Complete |
+| `SetStaticObstacles()` in planner | ✅ Complete |
+| Sample YAML file | ✅ Complete |
 
 ---
 
-## Phase 9.7: Static Obstacle UI - Implementation Status
+## Phase 9.7: Static Obstacle UI - COMPLETED ✅
 
-### Completed Tasks
+### Overview
 
-1. **Configuration Types** (`internal/config/config.go`)
-   - `StaticObstacleConfig` struct
-   - `StaticObstacle` JSON types
-   - YAML serialization helpers
+Phase 9.7 adds user-facing UI components for defining, viewing, and managing static obstacles.
 
-2. **SaveObstacles** (`internal/position/estimator.go`)
-   - Writes obstacles to YAML format
-   - Matches Python version's structure
+### Features Implemented
 
-3. **API Types** (`internal/ui/types.go`)
-   - `AddObstacleRequest`
-   - `UpdateObstacleRequest`
-   - `ObstacleResponse`
-   - `ObstaclesListResponse`
+1. **Obstacle Drawing UI**
+   - Click "Obstacles" button in header to toggle panel
+   - Click "Draw Obstacle" to enter draw mode
+   - Click and drag on video to draw rectangle
+   - Press Z to cancel drawing
 
-4. **API Endpoints** (`internal/ui/webserver.go`)
-   | Method | Path | Handler |
-   |--------|------|---------|
-   | GET | `/api/obstacles` | `handleObstaclesList` |
-   | POST | `/api/obstacles` | `handleObstacleAdd` |
-   | DELETE | `/api/obstacles/:id` | `handleObstacleDelete` |
-   | PUT | `/api/obstacles/:id` | `handleObstacleUpdate` |
-   | POST | `/api/obstacles/clear` | `handleObstaclesClear` |
-   | POST | `/api/obstacles/save` | `handleObstaclesSave` |
+2. **Obstacle Management**
+   - List of defined obstacles with delete buttons
+   - "Clear All" button to remove all obstacles
+   - "Save" button to persist to YAML
 
-5. **RobotSystem Integration** (`cmd/main.go`)
-   - Added `StaticObstacles []planning.Obstacle` field
-   - `loadStaticObstacles()` function loads from YAML
-   - Sets obstacles on web server at startup
+3. **Keyboard Shortcuts**
+   - Z - Cancel current drawing
+   - C - Clear all obstacles (with confirmation)
 
-### Remaining Tasks
+4. **Visual Feedback**
+   - Red dashed rectangles for obstacles on video
+   - Orange rectangle while dragging
+   - Obstacle panel with list of obstacles
 
-| Task | Description | Status |
-|------|------------|--------|
-| 9.7.6-9.7.9 | Web UI drawing canvas, panel, shortcuts | ❌ Pending |
-| 9.7.10 | Draw static obstacles on video | ❌ Pending |
+5. **Backend Integration**
+   - API endpoints for CRUD operations
+   - WebSocket broadcasting of obstacle changes
+   - Planner integration via callback
+   - YAML persistence
+
+### Files Modified
+
+| File | Changes |
+|------|--------|
+| `internal/ui/webserver.go` | Added `ObstaclesMessage` type, `BroadcastObstacles()` method, callback mechanism |
+| `internal/ui/index.go` | Added obstacle state, drawing handlers, panel UI, keyboard shortcuts |
+| `cmd/main.go` | Connected webServer callback to planner |
+| `config/obstacles.yaml` | Sample file created |
 | 9.7.11 | `SetStaticObstacles()` in planner | ❌ Pending |
 | 9.7.12 | Sample YAML file | ❌ Pending |
 

@@ -86,6 +86,57 @@ const indexHTML = `<!DOCTYPE html>
             0%, 100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4); }
             50% { box-shadow: 0 0 0 6px rgba(233, 69, 96, 0); }
         }
+        .obstacle-toggle {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid #ff6b6b;
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+        .obstacle-toggle:hover {
+            background: rgba(255, 107, 107, 0.3);
+        }
+        .obstacle-list {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .obstacle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            background: rgba(255, 107, 107, 0.1);
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+        .obstacle-item:hover {
+            background: rgba(255, 107, 107, 0.2);
+        }
+        .obstacle-item button {
+            background: transparent;
+            border: none;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0 4px;
+        }
+        .obstacle-item button:hover {
+            color: #ff4444;
+        }
+        .obstacle-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .obstacle-controls .btn {
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 0.8rem;
+        }
         .main { display: flex; flex: 1; overflow: hidden; }
         .video-container {
             flex: 1;
@@ -653,6 +704,7 @@ const indexHTML = `<!DOCTYPE html>
                 <span>FPS: <span class="value" id="fps">0</span></span>
                 <span>Tracks: <span class="value" id="trackCount">0</span></span>
                 <span id="calibrationBadge" class="calibration-badge not-calibrated" onclick="openCalibration()">Not Calibrated</span>
+                <button class="obstacle-toggle" onclick="toggleObstaclePanel()" title="Toggle Obstacle Panel">Obstacles</button>
                 <span id="arduinoStatus" class="disconnected">Arduino: <span class="value" id="arduino">Disconnected</span></span>
             </div>
         </div>
@@ -790,6 +842,17 @@ const indexHTML = `<!DOCTYPE html>
                     <div class="no-tracks">Waiting for detections...</div>
                 </div>
             </div>
+            <div class="panel" id="obstaclePanel" style="display: none;">
+                <h3>Static Obstacles</h3>
+                <div class="obstacle-list" id="obstacleList">
+                    <div class="no-tracks">No obstacles defined</div>
+                </div>
+                <div class="obstacle-controls">
+                    <button id="drawObstacleBtn" class="btn btn-secondary" onclick="toggleDrawMode()">Draw Obstacle</button>
+                    <button id="clearObstaclesBtn" class="btn btn-danger" onclick="clearObstacles()">Clear All</button>
+                    <button id="saveObstaclesBtn" class="btn btn-primary" onclick="saveObstacles()">Save</button>
+                </div>
+            </div>
             <div class="panel" id="instructionsPanel">
                 <h3>Instructions</h3>
                 <div class="instructions calibration-needed" id="instructionsContent">
@@ -832,6 +895,10 @@ const indexHTML = `<!DOCTYPE html>
         var calibrationMode = false;
         var detectedTags = [];
         var selectedTagId = null;
+        var obstacles = [];
+        var drawMode = false;
+        var drawStart = null;
+        var currentDraw = null;
 
         ws.onopen = function() {
             loading.style.display = 'none';
@@ -887,6 +954,12 @@ const indexHTML = `<!DOCTYPE html>
                         } else if (calib.state === 'not_calibrated') {
                             updateCalibrationBadge(false);
                         }
+                    }
+                    break;
+                case 'obstacles':
+                    if (data.obstacles) {
+                        obstacles = data.obstacles.obstacles || [];
+                        redrawOverlay();
                     }
                     break;
             }
@@ -989,6 +1062,147 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
 
+        function loadObstacles() {
+            fetch('/api/obstacles')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    obstacles = data.obstacles || [];
+                    redrawOverlay();
+                })
+                .catch(function(err) {
+                    console.error('Failed to load obstacles:', err);
+                });
+        }
+
+        function addObstacle(topLeft, bottomRight) {
+            var name = 'obstacle_' + (obstacles.length + 1);
+            fetch('/api/obstacles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pixel_top_left: topLeft,
+                    pixel_bottom_right: bottomRight,
+                    name: name,
+                    clearance: 0.02
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                loadObstacles();
+            })
+            .catch(function(err) {
+                console.error('Failed to add obstacle:', err);
+            });
+        }
+
+        function deleteObstacle(id) {
+            fetch('/api/obstacles/' + encodeURIComponent(id), { method: 'DELETE' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    loadObstacles();
+                })
+                .catch(function(err) {
+                    console.error('Failed to delete obstacle:', err);
+                });
+        }
+
+        function clearObstacles() {
+            fetch('/api/obstacles/clear', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    loadObstacles();
+                })
+                .catch(function(err) {
+                    console.error('Failed to clear obstacles:', err);
+                });
+        }
+
+        function saveObstacles() {
+            fetch('/api/obstacles/save', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    showToast(data.message || 'Obstacles saved');
+                    loadObstacles();
+                })
+                .catch(function(err) {
+                    console.error('Failed to save obstacles:', err);
+                });
+        }
+
+        function toggleObstaclePanel() {
+            var panel = document.getElementById('obstaclePanel');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                loadObstacles();
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
+        function toggleDrawMode() {
+            drawMode = !drawMode;
+            drawStart = null;
+            currentDraw = null;
+            redrawOverlay();
+            var btn = document.getElementById('drawObstacleBtn');
+            if (btn) {
+                btn.textContent = drawMode ? 'Cancel Drawing' : 'Draw Obstacle';
+                btn.classList.toggle('btn-danger', drawMode);
+            }
+            showToast(drawMode ? 'Click and drag on video to draw obstacle' : 'Drawing cancelled');
+        }
+
+        overlay.addEventListener('mousedown', function(e) {
+            if (!drawMode) return;
+            var rect = overlay.getBoundingClientRect();
+            drawStart = [e.clientX - rect.left, e.clientY - rect.top];
+            currentDraw = {
+                x1: drawStart[0], y1: drawStart[1],
+                x2: drawStart[0], y2: drawStart[1]
+            };
+            redrawOverlay();
+        });
+
+        overlay.addEventListener('mousemove', function(e) {
+            if (!drawMode || !drawStart) return;
+            var rect = overlay.getBoundingClientRect();
+            currentDraw.x2 = e.clientX - rect.left;
+            currentDraw.y2 = e.clientY - rect.top;
+            redrawOverlay();
+        });
+
+        overlay.addEventListener('mouseup', function(e) {
+            if (!drawMode || !drawStart) return;
+            var rect = overlay.getBoundingClientRect();
+            var x2 = e.clientX - rect.left;
+            var y2 = e.clientY - rect.top;
+
+            var topLeft = [
+                Math.min(drawStart[0], x2),
+                Math.min(drawStart[1], y2)
+            ];
+            var bottomRight = [
+                Math.max(drawStart[0], x2),
+                Math.max(drawStart[1], y2)
+            ];
+
+            if (bottomRight[0] - topLeft[0] > 10 && bottomRight[1] - topLeft[1] > 10) {
+                addObstacle(topLeft, bottomRight);
+            }
+
+            drawStart = null;
+            currentDraw = null;
+            redrawOverlay();
+        });
+
+        overlay.addEventListener('mouseleave', function() {
+            if (drawMode && drawStart) {
+                drawStart = null;
+                currentDraw = null;
+                redrawOverlay();
+            }
+        });
+
         video.onload = syncCanvasSize;
         video.onloadeddata = syncCanvasSize;
         window.addEventListener('resize', syncCanvasSize);
@@ -1015,6 +1229,22 @@ const indexHTML = `<!DOCTYPE html>
         };
 
         document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            if (e.key.toLowerCase() === 'z' && drawMode) {
+                e.preventDefault();
+                toggleDrawMode();
+                return;
+            }
+
+            if (e.key.toLowerCase() === 'c' && obstacles.length > 0) {
+                e.preventDefault();
+                if (confirm('Clear all obstacles?')) {
+                    clearObstacles();
+                }
+                return;
+            }
+
             if (keyMap[e.key]) {
                 e.preventDefault();
                 sendCommand(keyMap[e.key]);
@@ -1269,6 +1499,43 @@ const indexHTML = `<!DOCTYPE html>
 
         function redrawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            obstacles.forEach(function(obs) {
+                if (obs.pixel_top_left && obs.pixel_bottom_right) {
+                    var x1 = obs.pixel_top_left[0];
+                    var y1 = obs.pixel_top_left[1];
+                    var x2 = obs.pixel_bottom_right[0];
+                    var y2 = obs.pixel_bottom_right[1];
+                    var width = x2 - x1;
+                    var height = y2 - y1;
+
+                    ctx.strokeStyle = '#ff6b6b';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeRect(x1, y1, width, height);
+                    ctx.setLineDash([]);
+
+                    ctx.fillStyle = '#ff6b6b';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.fillText('OBSTACLE', x1, y1 - 5);
+
+                    ctx.fillStyle = 'rgba(255, 107, 107, 0.1)';
+                    ctx.fillRect(x1, y1, width, height);
+                }
+            });
+
+            if (currentDraw) {
+                var w = currentDraw.x2 - currentDraw.x1;
+                var h = currentDraw.y2 - currentDraw.y1;
+                ctx.strokeStyle = '#ffa500';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(currentDraw.x1, currentDraw.y1, w, h);
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = 'rgba(255, 165, 0, 0.2)';
+                ctx.fillRect(currentDraw.x1, currentDraw.y1, w, h);
+            }
 
             detectedTags.forEach(function(tag) {
                 if (tag.corners) {
