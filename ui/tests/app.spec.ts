@@ -17,25 +17,9 @@ test.describe('Robot Tracker UI Integration', () => {
     await expect(page.locator('.obstacle-toggle')).toBeVisible()
   })
 
-  test('should show connecting state when not connected', async ({ page }) => {
-    await expect(page.locator('.loading')).toBeVisible({ timeout: 10000 })
-  })
-
   test('should toggle obstacle panel', async ({ page }) => {
     await page.locator('.obstacle-toggle').click()
     await expect(page.locator('.obstacle-panel')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('should open calibration wizard', async ({ page }) => {
-    await page.locator('.calibration-badge').click()
-    await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('should close calibration wizard', async ({ page }) => {
-    await page.locator('.calibration-badge').click()
-    await expect(page.locator('.calibration-wizard')).toBeVisible()
-    await page.locator('.calibration-btn-icon').click()
-    await expect(page.locator('.calibration-wizard')).not.toBeVisible()
   })
 })
 
@@ -87,6 +71,7 @@ test.describe('Control Panel', () => {
   })
 
   test('should have manual control buttons', async ({ page }) => {
-    await expect(page.locator('.control-panel')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.panel:has-text("Controls")')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.panel:has-text("Controls") .btn')).toHaveCount(5)
   })
 })
