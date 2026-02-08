@@ -34,7 +34,7 @@ echo "[TEST] Running Vue UI tests..."
 # Run Vue tests if ui directory exists
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     cd "$SCRIPT_DIR/../ui"
-    npm install 2>/dev/null || true
+    npm update 2>/dev/null || true
     npm outdated || true
 
     # Run unit tests
