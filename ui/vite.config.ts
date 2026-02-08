@@ -26,5 +26,6 @@ export default defineConfig({
     outDir: '../internal/ui/static',
     emptyOutDir: true,
     sourcemap: false,
+    chunkSizeWarningLimit: 2000,
   },
 })
