@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useDraggable } from '@vueuse/core'
 import { useUIStore } from '@/stores/uiStore'
 
 const uiStore = useUIStore()
@@ -7,13 +8,27 @@ const uiStore = useUIStore()
 const isOpen = computed(() => uiStore.panels.calibrationOpen)
 const detectedTags = computed(() => uiStore.detectedTags)
 
+const dialogRef = ref<HTMLElement | null>(null)
+const handleRef = ref<HTMLElement | null>(null)
+
+const initialX = window.innerWidth / 2 - 260
+const initialY = window.innerHeight / 2 - 300
+
+const { x, y } = useDraggable(dialogRef, {
+    initialValue: { x: initialX, y: initialY },
+    handle: handleRef,
+    onEnd: () => {
+        if (pinned.value) {
+            lastPosition.value = { x: x.value, y: y.value }
+        }
+    }
+})
+
 const step = ref(1)
 const tagSize = ref(0.15)
 const selectedTagId = ref<number | null>(null)
 const pinned = ref(false)
-const position = ref({ x: '50%', y: '50%' })
-const isDragging = ref(false)
-const dragOffset = ref({ x: 0, y: 0 })
+const lastPosition = ref({ x: initialX, y: initialY })
 
 const tagSizePresets = [
     { label: '10cm', value: 0.10 },
@@ -91,39 +106,23 @@ function cancelCalibration(): void {
 
 function togglePin(): void {
     pinned.value = !pinned.value
-}
-
-// Dragging
-function startDrag(event: MouseEvent): void {
-    if (!pinned.value) {
-        isDragging.value = true
-        const target = event.currentTarget as HTMLElement
-        const rect = target.getBoundingClientRect()
-        dragOffset.value = {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top
-        }
+    if (pinned.value) {
+        lastPosition.value = { x: x.value, y: y.value }
     }
 }
 
-function onDrag(event: MouseEvent): void {
-    if (isDragging.value && !pinned.value) {
-        position.value = {
-            x: `${event.clientX - dragOffset.value.x}px`,
-            y: `${event.clientY - dragOffset.value.y}px`
-        }
-    }
-}
-
-function stopDrag(): void {
-    isDragging.value = false
-}
-
-// Watch for opened state
 watch(isOpen, (open) => {
     if (open) {
         step.value = 1
         selectedTagId.value = null
+        if (pinned.value) {
+            x.value = lastPosition.value.x
+            y.value = lastPosition.value.y
+        } else {
+            x.value = initialX
+            y.value = initialY
+        }
+        lastPosition.value = { x: x.value, y: y.value }
     }
 })
 </script>
@@ -133,14 +132,12 @@ watch(isOpen, (open) => {
         <div v-if="isOpen" class="calibration-wizard">
             <div class="calibration-overlay" @click="close"></div>
             <div
+                ref="dialogRef"
                 class="calibration-content"
                 :class="{ pinned }"
-                :style="{ left: position.x, top: position.y }"
-                @mousemove="onDrag"
-                @mouseup="stopDrag"
-                @mouseleave="stopDrag"
+                :style="{ left: `${pinned ? lastPosition.x : x}px`, top: `${pinned ? lastPosition.y : y}px` }"
             >
-                <div class="calibration-header" @mousedown="startDrag">
+                <div ref="handleRef" class="calibration-header">
                     <h2>Calibration</h2>
                     <div class="calibration-actions">
                         <button
@@ -158,7 +155,6 @@ watch(isOpen, (open) => {
                 </div>
 
                 <div class="calibration-body">
-                    <!-- Step 1: Enter tag size -->
                     <div v-if="step === 1" class="calibration-step active">
                         <h2>Step 1: Enter Tag Size</h2>
 
@@ -207,7 +203,6 @@ watch(isOpen, (open) => {
                         </div>
                     </div>
 
-                    <!-- Step 2: Select tag -->
                     <div v-else-if="step === 2" class="calibration-step active">
                         <h2>Step 2: Select Detected Tag</h2>
 
@@ -271,10 +266,7 @@ watch(isOpen, (open) => {
 }
 
 .calibration-content {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    position: fixed;
     background: #16213e;
     border-radius: 12px;
     padding: 0;
@@ -286,10 +278,6 @@ watch(isOpen, (open) => {
     z-index: 2;
 }
 
-.calibration-content.pinned {
-    transform: none;
-}
-
 .calibration-header {
     display: flex;
     justify-content: space-between;
@@ -299,6 +287,7 @@ watch(isOpen, (open) => {
     cursor: move;
     background: #1a1a2e;
     border-radius: 12px 12px 0 0;
+    user-select: none;
 }
 
 .calibration-header h2 {
