@@ -1,0 +1,49 @@
+// Color Palette
+$background: #1a1a2e;
+$surface: #16213e;
+$surface-light: #1a1a2e;
+$primary: #4ecca3;
+$primary-dim: rgba(78, 204, 163, 0.2);
+$primary-hover: rgba(78, 204, 163, 0.3);
+$danger: #e94560;
+$danger-dim: rgba(233, 69, 96, 0.2);
+$danger-hover: rgba(233, 69, 96, 0.3);
+$warning: #ffc107;
+$info: #00bcd4;
+$info-dim: rgba(0, 188, 212, 0.1);
+$obstacle: #ff6b6b;
+$obstacle-dim: rgba(255, 107, 107, 0.1);
+$obstacle-hover: rgba(255, 107, 107, 0.2);
+$obstacle-border: rgba(255, 107, 107, 0.3);
+$drawing: #ffa500;
+$drawing-dim: rgba(255, 165, 0, 0.2);
+$border: #0f3460;
+$text: #eee;
+$text-dim: #888;
+$text-muted: #666;
+$text-light: #aaa;
+
+// Spacing
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 12px;
+$spacing-lg: 16px;
+$spacing-xl: 24px;
+
+// Border Radius
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius-lg: 8px;
+$radius-xl: 12px;
+
+// Shadows
+$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+$shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+$shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+
+// Element Plus Theme Overrides
+$el-color-primary: $primary;
+$el-color-success: $primary;
+$el-color-danger: $danger;
+$el-color-warning: $warning;
+$el-color-info: $info;

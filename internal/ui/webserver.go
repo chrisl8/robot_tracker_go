@@ -170,6 +170,7 @@ func corsMiddleware() gin.HandlerFunc {
 }
 
 func (s *WebServer) setupRoutes() {
+	s.engine.StaticFS("/static", http.FS(StaticFiles))
 	s.engine.GET("/", s.handleIndex)
 	s.engine.GET("/stream", s.handleMJPEG)
 	s.engine.GET("/ws", s.handleWebSocket)
@@ -190,11 +191,15 @@ func (s *WebServer) setupRoutes() {
 }
 
 func (s *WebServer) handleIndex(c *gin.Context) {
-	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
-	c.String(http.StatusOK, indexHTML)
+	data, err := StaticFiles.ReadFile("static/index.html")
+	if err != nil {
+		c.String(500, "Failed to load index.html: %v", err)
+		return
+	}
+	c.Data(200, "text/html; charset=utf-8", data)
 }
 
 func (s *WebServer) handleMJPEG(c *gin.Context) {

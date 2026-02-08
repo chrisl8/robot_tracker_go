@@ -885,8 +885,153 @@ TestOpenCVEnvironment                          ✅ PASS
 
 ---
 
+## Phase 11: Vue 3 UI Migration (COMPLETED ✅ - Feb 8, 2026)
+
+### Overview
+
+Migrated the web UI from embedded vanilla JavaScript (1687 lines in `internal/ui/index.go`) to a modern Vue 3 + TypeScript + Pinia architecture.
+
+### Goals Achieved
+
+1. **Type Safety** - TypeScript throughout the frontend ✅
+2. **Maintainability** - Component-based architecture ✅
+3. **State Management** - Pinia stores for reactive state ✅
+4. **Developer Experience** - Vue 3 Composition API with TypeScript ✅
+5. **Performance** - Vite build system with code splitting ✅
+
+### Vue 3 Architecture
+
+```
+ui/
+├── src/
+│   ├── main.ts              # App entry point
+│   ├── App.vue              # Root component
+│   ├── index.scss           # Global styles
+│   ├── types/               # TypeScript type definitions
+│   │   ├── api.ts          # WebSocket message types
+│   │   ├── robot.ts        # Track and robot types
+│   │   ├── obstacle.ts     # Obstacle types
+│   │   └── ui.ts           # Toast, panel, keyboard types
+│   ├── stores/             # Pinia state management
+│   │   ├── robotStore.ts   # Tracks and status state
+│   │   ├── obstacleStore.ts # Obstacles and drawing state
+│   │   └── uiStore.ts      # Panels, toasts, calibration state
+│   ├── composables/        # Vue composables
+│   │   ├── useWebSocket.ts # WebSocket connection with auto-reconnect
+│   │   └── useCanvas.ts    # Canvas rendering with reactive state
+│   ├── components/          # Vue components
+│   │   ├── App.vue         # Root with layout
+│   │   ├── VideoOverlay.vue # Canvas for obstacles/tracks
+│   │   ├── StatusBar.vue   # FPS and statistics
+│   │   ├── ControlPanel.vue # Manual robot controls
+│   │   ├── TrackList.vue   # Detected targets list
+│   │   ├── ObstaclePanel.vue # Obstacle management
+│   │   ├── CalibrationWizard.vue # Calibration modal
+│   │   └── ToastContainer.vue # Toast notifications
+│   └── styles/             # SCSS styles
+│       ├── variables.scss  # Design tokens
+│       └── overrides.scss  # Component overrides
+├── package.json            # Vue + Vite + Pinia
+├── tsconfig.json           # TypeScript configuration
+├── vite.config.ts          # Vite build configuration
+└── index.html             # HTML entry point
+```
+
+### Files Created
+
+| File | Description |
+|------|-------------|
+| `ui/package.json` | Vue 3 + Element Plus + Pinia + Vite |
+| `ui/tsconfig.json` | TypeScript configuration |
+| `ui/vite.config.ts` | Vite build with proxy to Go backend |
+| `ui/index.html` | HTML entry point |
+| `ui/src/main.ts` | App entry point |
+| `ui/src/App.vue` | Root component |
+| `ui/src/types/*.ts` | TypeScript types (4 files) |
+| `ui/src/stores/*.ts` | Pinia stores (3 files) |
+| `ui/src/composables/*.ts` | Vue composables (2 files) |
+| `ui/src/components/*.vue` | Vue components (8 files) |
+| `ui/src/styles/*.scss` | SCSS styles (2 files) |
+
+### Backend Changes
+
+| File | Change |
+|------|--------|
+| `internal/ui/embed.go` | Created - embeds static Vue build |
+| `internal/ui/webserver.go` | Modified - serves static files |
+| `internal/ui/index.go` | **Deleted** - replaced by Vue build (1687 lines removed) |
+
+### Build Output
+
+Vue build outputs to `internal/ui/static/`:
+```
+internal/ui/static/
+├── index.html              # SPA entry
+├── favicon.svg            # Favicon
+└── assets/
+    ├── index-*.js        # JavaScript bundle (999 KB)
+    └── index-*.css       # Stylesheet (373 KB)
+```
+
+### Errors Fixed During Build
+
+1. `App.vue` - Removed unused imports (VideoOverlay, CalibrationState)
+2. `App.vue` - Fixed useWebSocket URL parameter (function → string)
+3. `App.vue` - Added missing useCanvas import
+4. `CalibrationWizard.vue` - Removed unused calibrationState import
+5. `uiStore.ts` - Added missing ToastType import
+6. `index.scss` - Fixed @use import paths with `as *`
+7. `overrides.scss` - Fixed lighten() function syntax
+
+### Build Verification
+
+```
+$ cd ui && npm run build
+✓ 1476 modules transformed.
+../internal/ui/static/index.html                   0.47 kB │ gzip:   0.32 kB
+../internal/ui/static/assets/index-BXEyFMNU.css  372.80 kB │ gzip:  52.24 kB
+../internal/ui/static/assets/index-B3IVuUu1.js   999.10 kB │ gzip: 328.06 kB
+✓ built in 7.57s
+```
+
+### Running the Vue UI
+
+```bash
+# Build Vue project
+cd ui && npm install && npm run build
+
+# Build Go application
+cd .. && ./scripts/build.sh
+
+# Run with demo mode
+./scripts/run.sh --demo
+
+# Access at http://localhost:9086
+```
+
+### Phase 11 Status
+
+| Task | Status |
+|------|--------|
+| Create Vue 3 project structure | ✅ Done |
+| Create TypeScript types | ✅ Done |
+| Create Pinia stores | ✅ Done |
+| Create Vue composables | ✅ Done |
+| Create Vue components | ✅ Done |
+| Delete old index.go | ✅ Done |
+| Create embed.go | ✅ Done |
+| Fix TypeScript errors | ✅ Done |
+| Fix SASS errors | ✅ Done |
+| **Build Vue project** | ✅ **Done** |
+
+---
+
 ## References
 
 - Original Python implementation: `C:\Dev\robot_tracker\`
 - GoCV documentation: https://gocv.io/
 - AprilTag library: https://github.com/AprilRobotics/apriltag
+- Vue 3: https://vuejs.org/
+- TypeScript: https://www.typescriptlang.org/
+- Pinia: https://pinia.vuejs.org/
+- Vite: https://vitejs.dev/
