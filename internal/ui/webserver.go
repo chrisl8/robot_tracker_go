@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"io/fs"
 	"log"
 	"math"
 	"net/http"
@@ -170,7 +171,12 @@ func corsMiddleware() gin.HandlerFunc {
 }
 
 func (s *WebServer) setupRoutes() {
-	s.engine.StaticFS("/static", http.FS(StaticFiles))
+	staticFS, err := fs.Sub(StaticFiles, "static")
+	if err != nil {
+		log.Printf("Warning: Failed to create static FS sub-directory: %v", err)
+	} else {
+		s.engine.GET("/assets/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
+	}
 	s.engine.GET("/", s.handleIndex)
 	s.engine.GET("/stream", s.handleMJPEG)
 	s.engine.GET("/ws", s.handleWebSocket)

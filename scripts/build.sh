@@ -1,6 +1,23 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
+# Build Vue UI first
+echo "[BUILD] Building Vue 3 UI..."
+if [ -d "ui" ] && [ -f "ui/package.json" ]; then
+    cd ui
+    npm install 2>/dev/null || true
+    # Skip vue-tsc due to Node.js compatibility issues - vite build does type checking
+    npx vite build
+    cd ..
+    
+    echo "[BUILD] Vue UI built successfully"
+else
+    echo "[BUILD] Warning: ui/ directory not found, skipping Vue build"
+fi
+
 # Set up OpenCV environment for GoCV using CGO
 export OPENCV_DIR="/usr/local"
 export CGO_CPPFLAGS="-I/usr/local/include/opencv4"

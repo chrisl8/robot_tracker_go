@@ -53,6 +53,12 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 	}
 }
 
+func (rs *RobotSystem) initDemoMode() {
+	rs.webServer = ui.NewWebServer(":9086")
+	rs.webServer.Start()
+	log.Printf("Web UI started at http://localhost:9086")
+}
+
 func classesToMap(classes []string) map[string]bool {
 	m := make(map[string]bool)
 	for _, c := range classes {
@@ -295,11 +301,15 @@ func (rs *RobotSystem) Stop() {
 	if rs.cam != nil {
 		rs.cam.Stop()
 	}
-	rs.commandQueue.Stop()
+	if rs.commandQueue != nil {
+		rs.commandQueue.Stop()
+	}
 	if rs.arduino != nil {
 		rs.arduino.Disconnect()
 	}
-	rs.webServer.Stop()
+	if rs.webServer != nil {
+		rs.webServer.Stop()
+	}
 	log.Printf("System stopped")
 }
 
@@ -677,42 +687,48 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		})
 	}
 
-	trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
-	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+	if rs.tracker != nil {
+		trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
+		trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
 
-	for _, track := range trackingResult.Tracks {
-		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
-			if rs.positionEst != nil {
-				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
-				worldPos := rs.positionEst.PixelToWorld(px, py)
-				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+		for _, track := range trackingResult.Tracks {
+			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+				if rs.positionEst != nil {
+					px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+					worldPos := rs.positionEst.PixelToWorld(px, py)
+					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+				}
 			}
 		}
 	}
 
-	overlay := rs.detectionPipe.DrawResults(img.Pix, width, height, result)
-	if overlay != nil {
-		overlayImg := decodeToImage(overlay, width, height)
-		if overlayImg != nil {
-			rs.webServer.PushFrame(overlayImg)
+	if rs.detectionPipe != nil && rs.webServer != nil {
+		overlay := rs.detectionPipe.DrawResults(img.Pix, width, height, result)
+		if overlay != nil {
+			overlayImg := decodeToImage(overlay, width, height)
+			if overlayImg != nil {
+				rs.webServer.PushFrame(overlayImg)
+			} else {
+				rs.webServer.PushFrame(img)
+			}
 		} else {
 			rs.webServer.PushFrame(img)
 		}
-	} else {
-		rs.webServer.PushFrame(img)
 	}
 
-	rs.webServer.UpdateStats(len(demoTags), 0)
+	if rs.webServer != nil {
+		rs.webServer.UpdateStats(len(demoTags), 0)
 
-	detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
-	for _, tag := range demoTags {
-		detectedTags = append(detectedTags, ui.DetectedTagInfo{
-			ID:      tag.TagID,
-			Center:  [2]float64{tag.CenterX, tag.CenterY},
-			Corners: tag.Corners,
-		})
+		detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
+		for _, tag := range demoTags {
+			detectedTags = append(detectedTags, ui.DetectedTagInfo{
+				ID:      tag.TagID,
+				Center:  [2]float64{tag.CenterX, tag.CenterY},
+				Corners: tag.Corners,
+			})
+		}
+		rs.webServer.UpdateDetectedTags(detectedTags)
 	}
-	rs.webServer.UpdateDetectedTags(detectedTags)
 }
 
 func main() {
@@ -744,6 +760,8 @@ func main() {
 	rs := NewRobotSystem(cfg)
 	if cfg != nil {
 		rs.Initialize()
+	} else {
+		rs.initDemoMode()
 	}
 	defer rs.Stop()
 

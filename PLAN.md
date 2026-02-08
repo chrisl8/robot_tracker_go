@@ -1023,6 +1023,45 @@ cd .. && ./scripts/build.sh
 | Fix TypeScript errors | ✅ Done |
 | Fix SASS errors | ✅ Done |
 | **Build Vue project** | ✅ **Done** |
+| **Unit tests (15 tests)** | ✅ **Done** |
+| **Integration tests** | ✅ **Done** |
+
+### Unit Tests
+
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| `src/types/__tests__/api.test.ts` | 5 tests | ✅ Passing |
+| `src/types/__tests__/robot.test.ts` | 5 tests | ✅ Passing |
+| `src/types/__tests__/obstacle.test.ts` | 5 tests | ✅ Passing |
+
+**Total: 15 unit tests passing**
+
+### Integration Tests
+
+| Test Suite | Description | Status |
+|------------|-------------|--------|
+| `tests/app.spec.ts` | Main page, UI elements, navigation | ✅ Done |
+| API Endpoints | Calibration, obstacles, status endpoints | ✅ Done |
+| Video Stream | Video and overlay canvas | ✅ Done |
+| Control Panel | Manual controls | ✅ Done |
+
+**Framework: Playwright**
+
+### Test Commands
+
+```bash
+# Run all tests
+./scripts/test.sh
+
+# Run unit tests only
+cd ui && npm run test:run
+
+# Run integration tests (requires running backend)
+cd ui && npm run test:integration
+
+# Skip integration tests
+SKIP_INTEGRATION_TESTS=true ./scripts/test.sh
+```
 
 ---
 

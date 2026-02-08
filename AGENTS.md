@@ -9,8 +9,10 @@
 
 **IMPORTANT: Always use wrapper scripts for building and running the project.** These scripts automatically set up the required OpenCV environment variables.
 
+The build script automatically builds both the Vue 3 UI and the Go backend.
+
 ```bash
-# Build with GoCV support
+# Build Vue UI and Go backend (with GoCV support)
 ./scripts/build.sh
 
 # Run demo mode (no camera required)
@@ -24,6 +26,9 @@
 
 # Install/Update OpenCV
 ./scripts/install-opencv.sh
+
+# Build only the Vue UI (optional)
+cd ui && npm run build
 ```
 
 Do NOT manually set environment variables or run `go build` directly - always use the wrapper scripts.
@@ -138,8 +143,13 @@ export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 ### Build
 
+**Note:** The wrapper script `./scripts/build.sh` automatically builds both the Vue 3 UI and the Go backend.
+
 ```bash
-# With environment setup
+# Build Vue UI and Go backend (recommended - uses wrapper script)
+./scripts/build.sh
+
+# Manual build (requires manual environment setup)
 export OPENCV_DIR="/usr/local"
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 go build -tags=gocv -o robot_tracker ./cmd/main.go
@@ -187,7 +197,7 @@ Use these scripts to automatically set up the environment:
 # Install dependencies
 go mod tidy
 
-# Build with GoCV support (with environment setup)
+# Build the application (Vue UI is built automatically by scripts/build.sh)
 export OPENCV_DIR="/usr/local"
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 go build -tags=gocv -o robot_tracker ./cmd/main.go
@@ -250,23 +260,47 @@ go build -race -o robot_tracker_race.exe ./cmd/main.go
 ## Testing Commands
 
 ```bash
-# Run all tests
+# Run all tests (Vue unit + Go tests)
+./scripts/test.sh
+
+# Run Vue UI tests only
+cd ui && npm run test
+
+# Run Vue UI tests once (CI mode)
+npm run test:run
+
+# Run Vue UI tests with UI
+npm run test:ui
+
+# Run Vue UI tests with coverage
+npm run test:coverage
+
+# Run Vue integration tests (requires running backend)
+npm run test:integration
+
+# Run Vue integration tests with UI
+npm run test:integration:ui
+
+# Skip integration tests (CI)
+SKIP_INTEGRATION_TESTS=true ./scripts/test.sh
+
+# Run all Go tests
 go test ./... -v
 
-# Run tests with coverage
+# Run Go tests with coverage
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
 
-# Run a single test file
+# Run a single Go test file
 go test -v ./internal/controller/
 
-# Run a single test function
+# Run a single Go test function
 go test -v -run TestSerialProtocol_EncodeCommand ./internal/controller/
 
-# Run tests matching pattern
+# Run Go tests matching pattern
 go test -v -run "TestSerialProtocol" ./internal/controller/
 
-# Run all tests in internal packages
+# Run all Go tests in internal packages
 go test -v ./internal/...
 ```
 

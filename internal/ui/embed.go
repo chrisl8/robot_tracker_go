@@ -2,5 +2,5 @@ package ui
 
 import "embed"
 
-//go:embed static/*
+//go:embed static/* static/*/*
 var StaticFiles embed.FS

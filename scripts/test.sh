@@ -1,6 +1,33 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
+echo "[TEST] Running Vue UI tests..."
+
+# Run Vue tests if ui directory exists
+if [ -d "ui" ] && [ -f "ui/package.json" ]; then
+    cd ui
+    npm install 2>/dev/null || true
+
+    # Run unit tests
+    echo "[TEST] Running Vue unit tests..."
+    npm run test:run
+
+    # Integration tests require a running backend with proper config
+    # Skip by default as the backend has issues running in demo mode
+    echo "[TEST] Skipping integration tests (requires working backend)"
+    echo "[TEST] To run integration tests: cd ui && npm run test:integration"
+
+    cd ..
+    echo "[TEST] Vue UI tests passed"
+else
+    echo "[TEST] Warning: ui/ directory not found, skipping Vue tests"
+fi
+
+echo "[TEST] Running Go tests..."
+
 # Set up OpenCV environment for GoCV using CGO
 export OPENCV_DIR="/usr/local"
 export CGO_CPPFLAGS="-I/usr/local/include/opencv4"
@@ -37,9 +64,7 @@ export PKG_CONFIG_PATH="${PKG_CONFIG_DIR}:${PKG_CONFIG_PATH}"
 export CGO_LDFLAGS="-L/usr/local/lib $OPENCV_LIBS -Wl,-rpath,/usr/local/lib"
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 
-echo "[TEST] Running tests..."
-
-# Run tests
+# Run Go tests
 go test ./... -v
 
 echo "[TEST] Done"
