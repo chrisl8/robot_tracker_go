@@ -21,6 +21,26 @@ test.describe('Robot Tracker UI Integration', () => {
     await page.locator('.obstacle-toggle').click()
     await expect(page.locator('.obstacle-panel')).toBeVisible({ timeout: 5000 })
   })
+
+  test('should open calibration wizard when clicking Not Calibrated badge', async ({ page }) => {
+    await page.locator('.calibration-badge.not-calibrated').click()
+    await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('.calibration-step.active h2')).toContainText('Step 1: Enter Tag Size')
+  })
+
+  test('should close calibration wizard when clicking overlay', async ({ page }) => {
+    await page.locator('.calibration-badge.not-calibrated').click()
+    await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
+    await page.locator('.calibration-overlay').click({ position: { x: 10, y: 10 } })
+    await expect(page.locator('.calibration-wizard')).toBeHidden({ timeout: 3000 })
+  })
+
+  test('should show detected tags step when clicking Detect Tags', async ({ page }) => {
+    await page.locator('.calibration-badge.not-calibrated').click()
+    await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
+    await page.locator('.calibration-btn.primary:has-text("Detect Tags")').click()
+    await expect(page.locator('.calibration-step.active h2')).toContainText('Step 2: Select Detected Tag')
+  })
 })
 
 test.describe('API Endpoints', () => {

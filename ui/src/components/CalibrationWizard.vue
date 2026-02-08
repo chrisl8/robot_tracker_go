@@ -252,17 +252,12 @@ watch(isOpen, (open) => {
 
 <style scoped>
 .calibration-wizard {
-    display: none;
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     z-index: 1000;
-}
-
-.calibration-wizard.active {
-    display: block;
 }
 
 .calibration-overlay {
@@ -272,6 +267,7 @@ watch(isOpen, (open) => {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.7);
+    z-index: 1;
 }
 
 .calibration-content {
@@ -287,6 +283,7 @@ watch(isOpen, (open) => {
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    z-index: 2;
 }
 
 .calibration-content.pinned {

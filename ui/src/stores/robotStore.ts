@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Track, RobotStatus, WebSocketMessage } from '@/types/api'
+import { useUIStore } from './uiStore'
 
 export const useRobotStore = defineStore('robot', () => {
     // State
@@ -23,6 +24,7 @@ export const useRobotStore = defineStore('robot', () => {
 
     // Actions
     function handleWebSocketMessage(data: WebSocketMessage): void {
+        const uiStore = useUIStore()
         switch (data.type) {
             case 'track':
                 updateTrack(data.track)
@@ -32,6 +34,11 @@ export const useRobotStore = defineStore('robot', () => {
                 break
             case 'status':
                 status.value = data.status
+                break
+            case 'calibration':
+                if (data.calibration) {
+                    uiStore.setCalibrationState(data.calibration.state, data.calibration.message)
+                }
                 break
         }
     }

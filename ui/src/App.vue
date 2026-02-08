@@ -96,7 +96,7 @@ onUnmounted(() => {
                 <div
                     class="calibration-badge"
                     :class="uiStore.calibration.state === 'calibrated' ? 'calibrated' : 'not-calibrated'"
-                    @click="uiStore.openCalibration"
+                    @click="uiStore.openCalibration()"
                 >
                     {{ uiStore.calibration.state === 'calibrated' ? 'Calibrated' : 'Not Calibrated' }}
                 </div>
