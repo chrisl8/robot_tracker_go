@@ -18,6 +18,7 @@ export const useUIStore = defineStore('ui', () => {
     })
 
     const detectedTags = ref<DetectedTagInfo[]>([])
+    const selectedCalibrationTagId = ref<number | null>(null)
 
     const keyboard = ref<KeyboardState>({
         w: false,
@@ -80,6 +81,10 @@ export const useUIStore = defineStore('ui', () => {
         detectedTags.value = tags
     }
 
+    function setSelectedCalibrationTag(tagId: number | null): void {
+        selectedCalibrationTagId.value = tagId
+    }
+
     // Actions - Keyboard
     function setKey(key: keyof KeyboardState, pressed: boolean): void {
         keyboard.value[key] = pressed
@@ -104,6 +109,7 @@ export const useUIStore = defineStore('ui', () => {
         toasts,
         calibration,
         detectedTags,
+        selectedCalibrationTagId,
         keyboard,
         // Panel actions
         toggleObstaclePanel,
@@ -117,6 +123,7 @@ export const useUIStore = defineStore('ui', () => {
         // Calibration actions
         setCalibrationState,
         setDetectedTags,
+        setSelectedCalibrationTag,
         // Keyboard actions
         setKey,
         resetKeyboard

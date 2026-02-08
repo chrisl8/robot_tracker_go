@@ -1,6 +1,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, type Ref } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
+import { useUIStore } from '@/stores/uiStore'
 import { getTrackColor } from '@/types/robot'
 
 export interface CanvasPoint {
@@ -11,19 +12,53 @@ export interface CanvasPoint {
 export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const robotStore = useRobotStore()
     const obstacleStore = useObstacleStore()
+    const uiStore = useUIStore()
 
     const canvas = ref<HTMLCanvasElement | null>(null)
     const context = ref<CanvasRenderingContext2D | null>(null)
     const dimensions = ref({ width: 0, height: 0 })
+    const videoScale = ref({ x: 1, y: 1, offsetX: 0, offsetY: 0 })
 
     const ctx = computed(() => context.value)
+
+    function updateVideoScale(): void {
+        const video = document.getElementById('video') as HTMLVideoElement | HTMLImageElement | null
+        if (!video) return
+
+        const naturalWidth = 'videoWidth' in video ? (video as HTMLVideoElement).videoWidth : ('naturalWidth' in video ? (video as HTMLImageElement).naturalWidth : 0)
+        const naturalHeight = 'videoHeight' in video ? (video as HTMLVideoElement).videoHeight : ('naturalHeight' in video ? (video as HTMLImageElement).naturalHeight : 0)
+
+        if (naturalWidth === 0 || naturalHeight === 0) return
+
+        const displayedWidth = video.clientWidth
+        const displayedHeight = video.clientHeight
+
+        const scaleX = displayedWidth / naturalWidth
+        const scaleY = displayedHeight / naturalHeight
+
+        const videoRect = video.getBoundingClientRect()
+        const canvasEl = canvas.value
+        if (canvasEl) {
+            const canvasRect = canvasEl.getBoundingClientRect()
+            videoScale.value = {
+                x: scaleX,
+                y: scaleY,
+                offsetX: videoRect.left - canvasRect.left,
+                offsetY: videoRect.top - canvasRect.top
+            }
+        } else {
+            videoScale.value = { x: scaleX, y: scaleY, offsetX: 0, offsetY: 0 }
+        }
+    }
 
     // Watch for changes and redraw
     watch(
         () => [
             robotStore.tracks,
             obstacleStore.obstacles,
-            obstacleStore.drawRect
+            obstacleStore.drawRect,
+            uiStore.selectedCalibrationTagId,
+            uiStore.detectedTags
         ],
         () => {
             render()
@@ -60,10 +95,12 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
     function render(): void {
         if (!ctx.value) return
+        updateVideoScale()
         clear()
         renderObstacles()
         renderDrawingBox()
         renderTracks()
+        renderCalibrationTag()
     }
 
     function renderObstacles(): void {
@@ -111,6 +148,51 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         // Draw fill
         ctx.value.fillStyle = 'rgba(255, 165, 0, 0.2)'
         ctx.value.fillRect(drawRect.x1, drawRect.y1, width, height)
+    }
+
+    function renderCalibrationTag(): void {
+        const selectedTagId = uiStore.selectedCalibrationTagId
+        const detectedTags = uiStore.detectedTags
+
+        if (!ctx.value || selectedTagId === null || detectedTags.length === 0) return
+
+        const selectedTag = detectedTags.find((tag) => tag.id === selectedTagId)
+        if (!selectedTag || !selectedTag.corners || selectedTag.corners.length !== 4) return
+
+        const corners = selectedTag.corners
+
+        const scale = videoScale.value
+        const scaledCorners = corners.map((corner: [number, number]) => [
+            corner[0] * scale.x + scale.offsetX,
+            corner[1] * scale.y + scale.offsetY
+        ])
+
+        ctx.value.strokeStyle = '#00bcd4'
+        ctx.value.lineWidth = 3
+        ctx.value.setLineDash([])
+        ctx.value.beginPath()
+        ctx.value.moveTo(scaledCorners[0][0], scaledCorners[0][1])
+        ctx.value.lineTo(scaledCorners[1][0], scaledCorners[1][1])
+        ctx.value.lineTo(scaledCorners[2][0], scaledCorners[2][1])
+        ctx.value.lineTo(scaledCorners[3][0], scaledCorners[3][1])
+        ctx.value.closePath()
+        ctx.value.stroke()
+
+        ctx.value.fillStyle = 'rgba(0, 188, 212, 0.2)'
+        ctx.value.fill()
+
+        const centerX = (scaledCorners[0][0] + scaledCorners[2][0]) / 2
+        const centerY = (scaledCorners[0][1] + scaledCorners[2][1]) / 2
+        ctx.value.fillStyle = '#00bcd4'
+        ctx.value.fillRect(centerX - 30, centerY - 25, 60, 20)
+
+        ctx.value.fillStyle = '#1a1a2e'
+        ctx.value.font = 'bold 12px sans-serif'
+        ctx.value.textAlign = 'center'
+        ctx.value.textBaseline = 'middle'
+        ctx.value.fillText(`Tag ${selectedTagId}`, centerX, centerY - 15)
+        ctx.value.textAlign = 'left'
+        ctx.value.textBaseline = 'alphabetic'
     }
 
     function renderTracks(): void {
@@ -169,9 +251,9 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     onMounted(() => {
         initialize()
 
-        // Set up resize observer
         resizeObserver = new ResizeObserver(() => {
             syncDimensions()
+            updateVideoScale()
             render()
         })
 
@@ -179,10 +261,15 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         if (wrapper) {
             resizeObserver.observe(wrapper)
         }
+
+        window.addEventListener('resize', updateVideoScale)
+        window.addEventListener('load', updateVideoScale)
     })
 
     onUnmounted(() => {
         resizeObserver?.disconnect()
+        window.removeEventListener('resize', updateVideoScale)
+        window.removeEventListener('load', updateVideoScale)
     })
 
     return {

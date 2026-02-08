@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -53,10 +54,37 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 	}
 }
 
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "unknown"
+	}
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() && ipNet.IP.To4() != nil {
+			return ipNet.IP.String()
+		}
+	}
+	return "unknown"
+}
+
+func getHostname() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return hostname
+}
+
+func getWebUIURLs(port string) string {
+	localIP := getLocalIP()
+	hostname := getHostname()
+	return fmt.Sprintf("Web UI started at http://localhost:%s http://%s:%s http://%s:%s", port, localIP, port, hostname, port)
+}
+
 func (rs *RobotSystem) initDemoMode() {
 	rs.webServer = ui.NewWebServer(":9086")
 	rs.webServer.Start()
-	log.Printf("Web UI started at http://localhost:9086")
+	log.Print(getWebUIURLs("9086"))
 }
 
 func classesToMap(classes []string) map[string]bool {
@@ -170,7 +198,7 @@ func (rs *RobotSystem) Initialize() error {
 		log.Printf("Calibration loaded from %s", calibrationPath)
 	}
 	rs.webServer.Start()
-	log.Printf("Web UI started at http://localhost:9086")
+	log.Print(getWebUIURLs("9086"))
 
 	rs.loadStaticObstacles()
 
@@ -738,6 +766,7 @@ func main() {
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
 	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
+	verbose := flag.Bool("verbose", false, "Enable verbose output (frame logging)")
 	flag.Parse()
 
 	if *listPorts {
@@ -806,8 +835,10 @@ func main() {
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
-				log.Printf("Frame %d: %dx%d, %d bytes, channels=%d (capture time: %v)",
-					frameNum, frame.Width, frame.Height, len(frame.Data), frame.Channels, time.Since(startTime))
+				if *verbose {
+					log.Printf("Frame %d: %dx%d, %d bytes, channels=%d (capture time: %v)",
+						frameNum, frame.Width, frame.Height, len(frame.Data), frame.Channels, time.Since(startTime))
+				}
 				img := cameraFrameToImage(frame)
 				if img == nil {
 					log.Printf("Failed to convert frame to image")

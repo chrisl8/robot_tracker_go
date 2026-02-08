@@ -575,7 +575,6 @@ func (s *WebServer) Start() {
 			log.Printf("HTTP server error: %v", err)
 		}
 	}()
-	log.Printf("Web server started on %s", s.addr)
 }
 
 func (s *WebServer) Stop() {

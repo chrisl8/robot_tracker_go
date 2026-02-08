@@ -7,6 +7,10 @@ const uiStore = useUIStore()
 
 const isOpen = computed(() => uiStore.panels.calibrationOpen)
 const detectedTags = computed(() => uiStore.detectedTags)
+const selectedTagId = computed({
+    get: () => uiStore.selectedCalibrationTagId,
+    set: (value) => uiStore.setSelectedCalibrationTag(value)
+})
 
 const dialogRef = ref<HTMLElement | null>(null)
 const handleRef = ref<HTMLElement | null>(null)
@@ -26,7 +30,6 @@ const { x, y } = useDraggable(dialogRef, {
 
 const step = ref(1)
 const tagSize = ref(0.15)
-const selectedTagId = ref<number | null>(null)
 const pinned = ref(false)
 const lastPosition = ref({ x: initialX, y: initialY })
 
@@ -49,11 +52,11 @@ function openStep2(): void {
 }
 
 function selectTag(tagId: number): void {
-    selectedTagId.value = tagId
+    uiStore.setSelectedCalibrationTag(tagId)
 }
 
 function isTagSelected(tagId: number): boolean {
-    return selectedTagId.value === tagId
+    return uiStore.selectedCalibrationTagId === tagId
 }
 
 async function fetchDetectedTags(): Promise<void> {
@@ -67,7 +70,7 @@ async function fetchDetectedTags(): Promise<void> {
 }
 
 async function computeCalibration(): Promise<void> {
-    if (selectedTagId.value === null) {
+    if (uiStore.selectedCalibrationTagId === null) {
         uiStore.showToast('Please select a tag', 'warning')
         return
     }
@@ -77,7 +80,7 @@ async function computeCalibration(): Promise<void> {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                tag_id: selectedTagId.value,
+                tag_id: uiStore.selectedCalibrationTagId,
                 tag_size: tagSize.value
             })
         })
@@ -114,7 +117,7 @@ function togglePin(): void {
 watch(isOpen, (open) => {
     if (open) {
         step.value = 1
-        selectedTagId.value = null
+        uiStore.setSelectedCalibrationTag(null)
         if (pinned.value) {
             x.value = lastPosition.value.x
             y.value = lastPosition.value.y
@@ -232,7 +235,7 @@ watch(isOpen, (open) => {
                             </button>
                             <button
                                 class="calibration-btn primary"
-                                :disabled="selectedTagId === null"
+                                :disabled="uiStore.selectedCalibrationTagId === null"
                                 @click="computeCalibration"
                             >
                                 Use Selected Tag
