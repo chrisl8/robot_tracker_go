@@ -1,3 +1,4 @@
+@use 'sass:color';
 @use 'variables.scss' as *;
 
 // Reset and Base Styles
@@ -242,7 +243,7 @@ body {
   justify-content: center;
 
   &:hover {
-    background: lighten($border, 10%);
+    background: color.adjust($border, $lightness: 10%);
     transform: translateY(-1px);
   }
 
@@ -258,7 +259,7 @@ body {
     background: $danger;
 
     &:hover {
-      background: lighten($danger, 10%);
+      background: color.adjust($danger, $lightness: 10%);
     }
   }
 
@@ -267,7 +268,7 @@ body {
     color: $background;
 
     &:hover {
-      background-color: lighten($primary, 10%);
+      background-color: color.adjust($primary, $lightness: 10%);
     }
   }
 }
@@ -305,7 +306,7 @@ body {
   transition: background 0.2s;
 
   &:hover {
-    background: lighten($surface, 5%);
+    background: color.adjust($surface, $lightness: 5%);
   }
 }
 
@@ -371,7 +372,7 @@ body {
     background: $danger-dim;
 
     li {
-      color: lighten($danger, 20%);
+      color: color.adjust($danger, $lightness: 20%);
     }
 
     .warning {
@@ -456,7 +457,7 @@ body {
     padding: 0 $spacing-xs;
 
     &:hover {
-      color: darken($obstacle, 10%);
+      color: color.adjust($obstacle, $lightness: -10%);
     }
   }
 }
@@ -611,7 +612,7 @@ body {
   transition: all 0.2s;
 
   &:hover {
-    background: lighten($border, 10%);
+    background: color.adjust($border, $lightness: 10%);
     color: $text;
   }
 
@@ -708,12 +709,12 @@ body {
     color: $background;
 
     &:hover {
-      background: lighten($primary, 10%);
+      background: color.adjust($primary, $lightness: 10%);
       transform: translateY(-1px);
     }
 
     &:disabled {
-      background: darken($primary, 30%);
+      background: color.adjust($primary, $lightness: -30%);
       color: $text-muted;
       cursor: not-allowed;
       transform: none;
@@ -725,7 +726,7 @@ body {
     color: $text;
 
     &:hover {
-      background: lighten($border, 10%);
+      background: color.adjust($border, $lightness: 10%);
     }
   }
 }
@@ -752,7 +753,7 @@ body {
   border: 2px solid transparent;
 
   &:hover {
-    background: lighten($surface, 5%);
+    background: color.adjust($surface, $lightness: 5%);
   }
 
   &.selected {
