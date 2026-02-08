@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
 # Set up OpenCV environment for GoCV using CGO
 export OPENCV_DIR="/usr/local"
 export CGO_CPPFLAGS="-I/usr/local/include/opencv4"

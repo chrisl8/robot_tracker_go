@@ -16,6 +16,7 @@ const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
 
 const videoRef = ref<HTMLImageElement | null>(null)
+void videoRef // videoRef is only used for Vue template binding
 const overlayRef = ref<HTMLCanvasElement | null>(null)
 const streamUrl = '/stream'
 
