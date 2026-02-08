@@ -35,7 +35,7 @@ echo "[TEST] Running Vue UI tests..."
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     cd "$SCRIPT_DIR/../ui"
     npm install 2>/dev/null || true
-    npm outdated
+    npm outdated || true
 
     # Run unit tests
     echo "[TEST] Running Vue unit tests..."
