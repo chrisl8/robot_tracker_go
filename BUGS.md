@@ -115,73 +115,119 @@ func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 
 ---
 
-### DET-002: Stubbed YOLO Detector
+### DET-002: YOLO Detector - RESOLVED (Feb 9, 2026)
 
 | Field | Value |
 |-------|-------|
-| **Status** | Open |
-| **Severity** | Critical |
-| **Impact** | No obstacle detection, path planning has no input |
+| **Status** | Resolved |
+| **Severity** | Critical (was) |
+| **Impact** | None - Fully implemented |
 | **Component** | `internal/detection/yolo.go` |
 
-**Symptom:**
-`Detect()` method returns empty slice for all inputs.
+**Resolution (Feb 9, 2026):**
 
-**Root Cause:**
-YOLO detector is stubbed - returns empty array without processing.
+YOLO detector is fully implemented and working. The bug entry was stale documentation.
+
+**Implementation Details:**
+- **Model**: `assets/yolov8n.onnx` (12.8 MB)
+- **Backend**: Uses GoCV's ONNX support (`gocv.ReadNetFromONNX`)
+- **Input Size**: 640x640 (configurable)
+- **Confidence Threshold**: 0.5 (configurable)
+- **IOU Threshold**: 0.45 (configurable)
+- **Relevant Classes**: person, backpack, umbrella, handbag, cup, bowl, potted plant, chair, dining table, laptop, keyboard, cell phone
 
 **Code Location:**
 ```go
-// internal/detection/yolo.go:50-58
-func (d *YOLODetector) Detect(frame *gocv.Mat) []Detection {
-    // Stub: returns empty slice
-    return []Detection{}
+// internal/detection/yolo.go:24-84
+func NewYOLODetector(config *YOLOConfig) (*YOLODetector, error) {
+    // Loads ONNX model, sets up preprocessing, returns configured detector
+    net := gocv.ReadNetFromONNX(config.ModelPath)
+    // ...
+}
+
+// internal/detection/yolo.go:91-154
+func (d *YOLODetector) Detect(imageBytes []byte, width, height int) []YOLODetection {
+    // Full implementation: preprocess, inference, NMS, filtering
+    // Returns actual YOLODetection results
 }
 ```
 
-**Fix Required:**
-1. Use ONNX Runtime Go for inference
-2. Load YOLOv8n.onnx model from assets/
-3. Implement preprocessing and postprocessing
+**Files:**
+| File | Purpose |
+|------|---------|
+| `internal/detection/yolo.go` | Full implementation (361 lines) |
+| `internal/detection/yolo_stub.go` | Stub only for `!gocv` builds (CI/headless) |
+| `assets/yolov8n.onnx` | YOLOv8n model file |
+| `config/tracking_config.yaml` | YOLO configuration |
+
+**Verification:**
+- Model file exists: ✅
+- Implementation complete: ✅
+- Tests passing: ✅
+- Demo mode works: ✅
 
 ---
 
 ## HIGH
 
-### PIPELINE-001: No Camera → Detection → Tracking Integration
+### PIPELINE-001: Pipeline Integration - RESOLVED (Feb 9, 2026)
 
 | Field | Value |
 |-------|-------|
-| **Status** | Open |
-| **Severity** | High |
-| **Impact** | Complete pipeline not connected in main.go |
+| **Status** | Resolved |
+| **Severity** | High (was) |
+| **Impact** | None - Pipeline fully connected |
 | **Component** | `cmd/main.go` |
 
-**Symptom:**
-main.go:
-- Creates test pattern generator (demo mode)
-- Initializes Arduino controller
-- Starts web server
-- Does NOT capture frames from camera
-- Does NOT run detection pipeline
-- Does NOT update tracking
+**Resolution (Feb 9, 2026):**
 
-**Target Integration:**
+This entry was stale documentation. The pipeline is fully connected and operational.
+
+**Implementation (`cmd/main.go:435-516`):**
+
 ```go
-// In main loop (goroutine):
-for {
-    frame := camera.Capture()
-    detections := detectionPipeline.Run(frame)
-    tracking.Update(detections)
-    positions := positionEstimator.Estimate(detections)
-    planner.Update(positions)
-    commands := executor.ComputeCommands(planner.GetVelocities())
-    controller.SendCommands(commands)
+func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
+    // 1. Detection Pipeline
+    detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
+
+    // 2. Dynamic Obstacles from YOLO
+    rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
+        detectionResult.YOLODetections, rs.positionEst, relevantClasses, minConfidence)
+
+    // 3. Tracking Update
+    trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+
+    // 4. Robot State & Planner Update
+    for i := range trackingResult.Tracks {
+        // ... update robot state ...
+        rs.planner.AddRobot(track.TrackID, worldPos, 0.18)
+    }
+
+    // 5. Broadcast tracks to UI
+    rs.webServer.BroadcastTracks(trackingResult.Tracks)
+
+    // 6. Compute Velocity with Obstacles
+    velocity, _ := rs.planner.ComputeVelocityWithDynamicObstacles(...)
+
+    // 7. Draw results and push to web UI
+    overlay := rs.detectionPipe.DrawResults(...)
+    rs.webServer.PushRawJPEG(overlay)
 }
 ```
 
-**Fix Required:**
-Connect the pipeline components once detection is implemented.
+**RobotSystem struct (`cmd/main.go:31-47`):**
+```go
+type RobotSystem struct {
+    cfg           *config.Config
+    cam           camera.Camera
+    detectionPipe *detection.DetectionPipeline  // ✅ Connected
+    tracker       tracking.Tracker              // ✅ Connected
+    planner       *planning.Planner              // ✅ Connected
+    positionEst   *position.PositionEstimator   // ✅ Connected
+    arduino       *controller.ArduinoController // ✅ Connected
+    // ...
+}
+```
 
 ---
 
