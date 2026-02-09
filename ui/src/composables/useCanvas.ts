@@ -30,8 +30,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             return { x: Math.round(canvasX), y: Math.round(canvasY) }
         }
         return {
-            x: Math.round(canvasX / scale.x),
-            y: Math.round(canvasY / scale.y)
+            x: Math.round((canvasX - scale.offsetX) / scale.x),
+            y: Math.round((canvasY - scale.offsetY) / scale.y)
         }
     }
 
@@ -41,8 +41,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             return { x: naturalX, y: naturalY }
         }
         return {
-            x: naturalX * scale.x,
-            y: naturalY * scale.y
+            x: naturalX * scale.x + scale.offsetX,
+            y: naturalY * scale.y + scale.offsetY
         }
     }
 
@@ -61,7 +61,19 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const scaleX = displayedWidth / naturalWidth
         const scaleY = displayedHeight / naturalHeight
 
-        videoScale.value = { x: scaleX, y: scaleY, offsetX: 0, offsetY: 0 }
+        const videoRect = video.getBoundingClientRect()
+        const canvasEl = canvas.value
+        if (canvasEl) {
+            const canvasRect = canvasEl.getBoundingClientRect()
+            videoScale.value = {
+                x: scaleX,
+                y: scaleY,
+                offsetX: videoRect.left - canvasRect.left,
+                offsetY: videoRect.top - canvasRect.top
+            }
+        } else {
+            videoScale.value = { x: scaleX, y: scaleY, offsetX: 0, offsetY: 0 }
+        }
     }
 
     // Watch for changes and redraw
