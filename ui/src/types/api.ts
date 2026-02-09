@@ -74,6 +74,7 @@ export type WebSocketMessage =
     | BBoxMessage
     | CalibrationMessage
     | CalibrationTagsMessage
+    | DestinationMessage
 
 export interface TrackMessage {
     type: 'track'
@@ -138,4 +139,24 @@ export type RobotCommand = 'F' | 'B' | 'L' | 'R' | 'S'
 
 export interface CommandRequest {
     command: RobotCommand
+}
+
+// Destination types
+export interface Destination {
+    id: string
+    robot_id: number
+    x: number
+    y: number
+}
+
+export interface DestinationMessage {
+    type: 'destination'
+    destination: Destination & { valid: boolean }
+}
+
+// API Request types
+export interface DestinationRequest {
+    robot_id: number
+    x: number
+    y: number
 }

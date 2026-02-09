@@ -16,17 +16,6 @@ import (
 	"robot_tracker_go/internal/ui"
 )
 
-type DemoObstacle struct {
-	name       string
-	className  string
-	x, y       int
-	width      int
-	height     int
-	confidence float64
-	moving     bool
-	vx, vy     int
-}
-
 var demoObstacles = []DemoObstacle{
 	{"Person 1", "person", 400, 300, 80, 120, 0.92, true, 2, 1},
 	{"Cup", "cup", 800, 200, 40, 40, 0.88, false, 0, 0},
@@ -243,6 +232,11 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 		updateDemoObstacles()
 		rgbaWithTags := drawDemoTagsOnImage(rgbaImg, demoTags)
 		drawDemoObstaclesOnImage(rgbaWithTags, demoObstacles)
+
+		detectionObstacles := convertDemoObstaclesToDetection(demoObstacles)
+		if rs.detectionPipe != nil {
+			rs.detectionPipe.SetObstacles(detectionObstacles)
+		}
 
 		fakeYOLO := demoObstaclesToYOLO()
 

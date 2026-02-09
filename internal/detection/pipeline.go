@@ -1,8 +1,11 @@
 package detection
 
+import "log"
+
 func NewDetectionPipeline(yoloConfig *YOLOConfig, tagConfig AprilTagConfig) *DetectionPipeline {
 	pipeline := &DetectionPipeline{
-		yoloEnabled: false,
+		yoloEnabled:    false,
+		obstacleDrawer: NewObstacleDrawer(),
 	}
 
 	tagDetector, err := NewAprilTagDetector(tagConfig)
@@ -149,12 +152,26 @@ func (p *DetectionPipeline) tagToBbox(tag AprilTag) *BoundingBox {
 func (p *DetectionPipeline) DrawResults(image []byte, width, height int, result *DetectionResult) []byte {
 	output := image
 
+	log.Printf("DRAW_RESULTS: Called frame=%dx%d tags=%d yolo=%d stored_obstacles=%d",
+		width, height, len(result.Tags), len(result.YOLODetections), len(p.obstacles))
+
 	if len(result.Tags) > 0 {
+		log.Printf("DRAW_RESULTS: Drawing %d tags", len(result.Tags))
 		output = p.tagDetector.DrawTags(output, width, height, result.Tags)
 	}
 
 	if len(result.YOLODetections) > 0 && p.yoloDetector != nil {
+		log.Printf("DRAW_RESULTS: Drawing %d YOLO detections", len(result.YOLODetections))
 		output = p.yoloDetector.DrawDetections(output, width, height, result.YOLODetections)
+	}
+
+	if len(p.obstacles) > 0 && p.obstacleDrawer != nil {
+		log.Printf("DRAW_RESULTS: Drawing %d stored obstacles", len(p.obstacles))
+		output = p.obstacleDrawer.DrawObstacles(output, width, height, p.obstacles)
+	} else if len(p.obstacles) > 0 {
+		log.Printf("DRAW_RESULTS: obstacleDrawer is nil, skipping obstacles!")
+	} else {
+		log.Printf("DRAW_RESULTS: No stored obstacles")
 	}
 
 	return output

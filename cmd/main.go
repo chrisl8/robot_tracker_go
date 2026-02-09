@@ -138,8 +138,42 @@ func getWebUIURLs(port string) string {
 
 func (rs *RobotSystem) initDemoMode() {
 	rs.webServer = ui.NewWebServer(":9086")
+
+	tagConfig := detection.AprilTagConfig{
+		Family:       "tag36h11",
+		QuadDecimate: 2.0,
+	}
+	rs.detectionPipe = detection.NewDetectionPipeline(nil, tagConfig)
+	log.Printf("Demo mode: Detection pipeline initialized (YOLO disabled)")
+
 	rs.webServer.Start()
 	log.Print(getWebUIURLs("9086"))
+
+	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+		log.Printf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
+		rs.planner.SetObstacles(obstacles)
+
+		detectionObstacles := make([]detection.Obstacle, len(obstacles))
+		for i, obs := range obstacles {
+			log.Printf("DEBUG: Converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
+				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
+			detectionObstacles[i] = detection.Obstacle{
+				ID:               obs.Name,
+				PixelTopLeft:     [2]int{obs.PixelsTopLeft[0], obs.PixelsTopLeft[1]},
+				PixelBottomRight: [2]int{obs.PixelsBottomRight[0], obs.PixelsBottomRight[1]},
+				WorldTopLeft:     obs.WorldTopLeft,
+				WorldBottomRight: obs.WorldBottomRight,
+				Clearance:        0.05,
+			}
+		}
+		rs.detectionPipe.SetObstacles(detectionObstacles)
+		log.Printf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
+	}
+
+	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+		log.Printf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
+			robotID, int(pixelPos[0]), int(pixelPos[1]))
+	}
 }
 
 func classesToMap(classes []string) map[string]bool {
@@ -242,7 +276,35 @@ func (rs *RobotSystem) Initialize() error {
 	rs.webServer = ui.NewWebServer(":9086")
 
 	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+		log.Printf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planner.SetObstacles(obstacles)
+
+		detectionObstacles := make([]detection.Obstacle, len(obstacles))
+		for i, obs := range obstacles {
+			log.Printf("DEBUG: Initialize() converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
+				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
+			detectionObstacles[i] = detection.Obstacle{
+				ID:               obs.Name,
+				PixelTopLeft:     [2]int{obs.PixelsTopLeft[0], obs.PixelsTopLeft[1]},
+				PixelBottomRight: [2]int{obs.PixelsBottomRight[0], obs.PixelsBottomRight[1]},
+				WorldTopLeft:     obs.WorldTopLeft,
+				WorldBottomRight: obs.WorldBottomRight,
+				Clearance:        0.05,
+			}
+		}
+		rs.detectionPipe.SetObstacles(detectionObstacles)
+		log.Printf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
+	}
+
+	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+		if rs.positionEst == nil || !rs.positionEst.IsCalibrated() {
+			log.Printf("Cannot set destination: not calibrated")
+			return
+		}
+		worldPos := rs.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
+		rs.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
+		log.Printf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
+			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
 	if rs.cam != nil {
@@ -357,7 +419,7 @@ func (rs *RobotSystem) loadStaticObstacles() {
 	}
 
 	if len(rs.StaticObstacles) > 0 {
-		log.Printf("Loaded %d static obstacles from %s", len(rs.StaticObstacles), obstaclesPath)
+		log.Printf("Loaded %d static obstacles from %s, calling SetObstacles", len(rs.StaticObstacles), obstaclesPath)
 		rs.webServer.SetObstacles(rs.StaticObstacles)
 	}
 }

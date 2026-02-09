@@ -13,6 +13,18 @@ function getTrackLabel(track: { id: number; tag_id?: number }): string {
     }
     return `Track #${track.id}`
 }
+
+function selectTrack(track: { id: number }): void {
+    robotStore.selectTrack(track.id)
+}
+
+function isSelected(trackId: number): boolean {
+    return robotStore.selectedTrackId === trackId
+}
+
+function hasDestination(trackId: number): boolean {
+    return robotStore.destination?.robot_id === trackId
+}
 </script>
 
 <template>
@@ -26,6 +38,8 @@ function getTrackLabel(track: { id: number; tag_id?: number }): string {
                 v-for="track in tracks"
                 :key="track.id"
                 class="track-item"
+                :class="{ selected: isSelected(track.id), 'has-destination': hasDestination(track.id) }"
+                @click="selectTrack(track)"
             >
                 <div
                     class="track-color"
@@ -37,6 +51,8 @@ function getTrackLabel(track: { id: number; tag_id?: number }): string {
                     <div class="track-label">
                         {{ getTrackLabel(track) }}
                         <span v-if="track.tag_id" class="track-tag">Tag</span>
+                        <span v-if="isSelected(track.id)" class="track-selected">Selected</span>
+                        <span v-if="hasDestination(track.id)" class="track-destination">Goal</span>
                     </div>
                     <div class="track-conf">
                         {{ (track.confidence * 100).toFixed(0) }}% confidence
@@ -82,6 +98,15 @@ h3 {
     background: #1a2a4e;
 }
 
+.track-item.selected {
+    background: #2a3a5e;
+    border: 1px solid #ffffff;
+}
+
+.track-item.has-destination {
+    border-left: 3px solid #9333ea;
+}
+
 .track-color {
     width: 36px;
     height: 36px;
@@ -112,6 +137,24 @@ h3 {
     padding: 2px 6px;
     border-radius: 4px;
     color: #888;
+}
+
+.track-selected {
+    font-size: 0.7rem;
+    background: #ffffff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #1a1a2e;
+    font-weight: bold;
+}
+
+.track-destination {
+    font-size: 0.7rem;
+    background: #9333ea;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: white;
+    font-weight: bold;
 }
 
 .track-conf {

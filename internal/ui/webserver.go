@@ -17,13 +17,14 @@ import (
 	"sync"
 	"time"
 
+	"robot_tracker_go/internal/planning"
+	"robot_tracker_go/internal/position"
+	"robot_tracker_go/internal/tracking"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hybridgroup/mjpeg"
 	"gopkg.in/yaml.v3"
-	"robot_tracker_go/internal/planning"
-	"robot_tracker_go/internal/position"
-	"robot_tracker_go/internal/tracking"
 )
 
 type WebServer struct {
@@ -56,7 +57,11 @@ type WebServer struct {
 	obstaclesSaved bool
 	obstaclesPath  string
 
+	destinationMutex sync.RWMutex
+	destination      DestinationMessage
+
 	OnObstaclesChanged func([]planning.Obstacle)
+	OnDestinationSet   func(int, [2]float64)
 }
 
 type OverlayMessage struct {
@@ -69,6 +74,7 @@ type OverlayMessage struct {
 	Command     *CommandMessage           `json:"command,omitempty"`
 	Calibration *CalibrationStatusMessage `json:"calibration,omitempty"`
 	Obstacles   *ObstaclesMessage         `json:"obstacles,omitempty"`
+	Destination *DestinationMessage       `json:"destination,omitempty"`
 }
 
 type TracksMessage struct {
@@ -114,8 +120,16 @@ type CommandMessage struct {
 }
 
 type DestinationRequest struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+	RobotID int `json:"robot_id"`
+	X       int `json:"x"`
+	Y       int `json:"y"`
+}
+
+type DestinationMessage struct {
+	RobotID int  `json:"robot_id"`
+	X       int  `json:"x"`
+	Y       int  `json:"y"`
+	Valid   bool `json:"valid"`
 }
 
 type CommandRequest struct {
@@ -320,7 +334,6 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
 		}
 		trackMessages = append(trackMessages, msg)
 	}
-	log.Printf("BroadcastTracks: %d tracks, %d with pixel_radius", len(trackMessages), len(trackMessages))
 	s.BroadcastOverlay(OverlayMessage{
 		Type:   "tracks",
 		Tracks: &TracksMessage{Tracks: trackMessages},
@@ -342,6 +355,25 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	s.destinationMutex.Lock()
+	s.destination = DestinationMessage{
+		RobotID: req.RobotID,
+		X:       req.X,
+		Y:       req.Y,
+		Valid:   true,
+	}
+	s.destinationMutex.Unlock()
+
+	if s.OnDestinationSet != nil {
+		go s.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)})
+	}
+
+	s.BroadcastOverlay(OverlayMessage{
+		Type:        "destination",
+		Destination: &s.destination,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": req})
 }
 

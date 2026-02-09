@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Track, RobotStatus, WebSocketMessage } from '@/types/api'
+import type { Track, RobotStatus, WebSocketMessage, Destination } from '@/types/api'
 import { useUIStore } from './uiStore'
 import { useObstacleStore } from './obstacleStore'
 
@@ -13,6 +13,9 @@ export const useRobotStore = defineStore('robot', () => {
         robotCount: 0,
         arduinoState: 'Disconnected'
     })
+    const selectedTrackId = ref<number | null>(null)
+    const destinationMode = ref(false)
+    const destination = ref<Destination | null>(null)
 
     // Computed
     const confirmedTracks = computed(() => {
@@ -25,6 +28,11 @@ export const useRobotStore = defineStore('robot', () => {
     const trackCount = computed(() => tracks.value.length)
 
     const confirmedCount = computed(() => confirmedTracks.value.length)
+
+    const selectedTrack = computed(() => {
+        if (selectedTrackId.value === null) return null
+        return tracks.value.find(t => t.id === selectedTrackId.value) || null
+    })
 
     // Actions
     function handleWebSocketMessage(data: WebSocketMessage): void {
@@ -62,6 +70,17 @@ export const useRobotStore = defineStore('robot', () => {
                     uiStore.setCalibrationState(data.calibration.state, data.calibration.message)
                 }
                 break
+            case 'destination':
+                if ((data as any).destination) {
+                    const dest = (data as any).destination
+                    setDestination({
+                        id: `dest-${dest.robot_id}-${Date.now()}`,
+                        robot_id: dest.robot_id,
+                        x: dest.x,
+                        y: dest.y
+                    })
+                }
+                break
         }
     }
 
@@ -86,19 +105,96 @@ export const useRobotStore = defineStore('robot', () => {
         tracks.value = []
     }
 
+    function selectTrack(id: number): void {
+        selectedTrackId.value = id
+        destinationMode.value = true
+    }
+
+    function clearSelection(): void {
+        selectedTrackId.value = null
+        destinationMode.value = false
+    }
+
+    function cancelDestinationMode(): void {
+        destinationMode.value = false
+    }
+
+    async function confirmDestination(canvasX: number, canvasY: number): Promise<boolean> {
+        if (selectedTrackId.value === null) {
+            return false
+        }
+
+        // Convert canvas coordinates to natural video coordinates for resize-safe storage
+        const video = document.getElementById('video') as HTMLVideoElement | HTMLImageElement | null
+        let naturalX = canvasX
+        let naturalY = canvasY
+
+        if (video) {
+            const naturalWidth = 'videoWidth' in video ? (video as HTMLVideoElement).videoWidth : ('naturalWidth' in video ? (video as HTMLImageElement).naturalWidth : 640)
+            const naturalHeight = 'videoHeight' in video ? (video as HTMLVideoElement).videoHeight : ('naturalHeight' in video ? (video as HTMLImageElement).naturalHeight : 480)
+
+            const overlay = document.getElementById('overlay') as HTMLCanvasElement | null
+            if (overlay && overlay.width > 0 && overlay.height > 0) {
+                naturalX = Math.round(canvasX * (naturalWidth / overlay.width))
+                naturalY = Math.round(canvasY * (naturalHeight / overlay.height))
+            }
+        }
+
+        try {
+            const response = await fetch('/api/destination', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    robot_id: selectedTrackId.value,
+                    x: naturalX,
+                    y: naturalY
+                })
+            })
+
+            if (response.ok) {
+                const result = await response.json()
+                destination.value = {
+                    id: `${selectedTrackId.value}-${Date.now()}`,
+                    robot_id: selectedTrackId.value,
+                    x: naturalX,
+                    y: naturalY
+                }
+                destinationMode.value = false
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error('Failed to set destination:', error)
+            return false
+        }
+    }
+
+    function setDestination(dest: Destination | null): void {
+        destination.value = dest
+    }
+
     return {
         // State
         tracks,
         status,
+        selectedTrackId,
+        destinationMode,
+        destination,
         // Computed
         confirmedTracks,
-        trackCount,
         confirmedCount,
+        trackCount,
+        selectedTrack,
         // Actions
         handleWebSocketMessage,
         updateTrack,
         setTracks,
         setStatus,
-        clearTracks
+        clearTracks,
+        selectTrack,
+        clearSelection,
+        cancelDestinationMode,
+        confirmDestination,
+        setDestination
     }
 })

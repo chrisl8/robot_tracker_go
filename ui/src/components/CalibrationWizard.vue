@@ -93,8 +93,12 @@ async function computeCalibration(): Promise<void> {
             return
         }
 
-        uiStore.showToast('Calibration computed successfully', 'success')
-        uiStore.setCalibrationState('calibrated', 'Calibration complete')
+        const message = data.computedWidth && data.computedHeight
+            ? `Calibration complete! Area: ${data.computedWidth.toFixed(2)}m x ${data.computedHeight.toFixed(2)}m`
+            : 'Calibration computed successfully'
+
+        uiStore.showToast(message, 'success')
+        uiStore.setCalibrationState('calibrated', message)
         close()
     } catch (e) {
         console.error('Failed to compute calibration:', e)

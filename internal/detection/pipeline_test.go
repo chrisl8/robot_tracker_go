@@ -332,3 +332,185 @@ func TestDetectionPipeline_setDefaultClassNames(t *testing.T) {
 		t.Error("GetClassName should return a valid class name")
 	}
 }
+
+func TestDetectionPipeline_SetObstacles_Integration(t *testing.T) {
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+
+	t.Run("initial obstacles should be empty", func(t *testing.T) {
+		obstacles := pipeline.GetObstacles()
+		if len(obstacles) != 0 {
+			t.Errorf("expected 0 obstacles, got %d", len(obstacles))
+		}
+	})
+
+	t.Run("SetObstacles should store obstacles", func(t *testing.T) {
+		testObstacles := []Obstacle{
+			{
+				ID:               "test-1",
+				PixelTopLeft:     [2]int{100, 100},
+				PixelBottomRight: [2]int{200, 200},
+			},
+			{
+				ID:               "test-2",
+				PixelTopLeft:     [2]int{300, 300},
+				PixelBottomRight: [2]int{400, 400},
+			},
+		}
+
+		pipeline.SetObstacles(testObstacles)
+
+		obstacles := pipeline.GetObstacles()
+		if len(obstacles) != 2 {
+			t.Errorf("expected 2 obstacles, got %d", len(obstacles))
+		}
+
+		if obstacles[0].ID != "test-1" {
+			t.Errorf("expected first obstacle ID 'test-1', got '%s'", obstacles[0].ID)
+		}
+
+		if obstacles[1].ID != "test-2" {
+			t.Errorf("expected second obstacle ID 'test-2', got '%s'", obstacles[1].ID)
+		}
+	})
+
+	t.Run("SetObstacles should replace existing obstacles", func(t *testing.T) {
+		pipeline.SetObstacles([]Obstacle{
+			{
+				ID:               "new-obs",
+				PixelTopLeft:     [2]int{50, 50},
+				PixelBottomRight: [2]int{150, 150},
+			},
+		})
+
+		obstacles := pipeline.GetObstacles()
+		if len(obstacles) != 1 {
+			t.Errorf("expected 1 obstacle, got %d", len(obstacles))
+		}
+
+		if obstacles[0].ID != "new-obs" {
+			t.Errorf("expected obstacle ID 'new-obs', got '%s'", obstacles[0].ID)
+		}
+	})
+
+	t.Run("SetObstacles with nil should clear obstacles", func(t *testing.T) {
+		pipeline.SetObstacles(nil)
+
+		obstacles := pipeline.GetObstacles()
+		if len(obstacles) != 0 {
+			t.Errorf("expected 0 obstacles after nil, got %d", len(obstacles))
+		}
+	})
+
+	t.Run("SetObstacles with empty slice should clear obstacles", func(t *testing.T) {
+		pipeline.SetObstacles([]Obstacle{})
+
+		obstacles := pipeline.GetObstacles()
+		if len(obstacles) != 0 {
+			t.Errorf("expected 0 obstacles after empty slice, got %d", len(obstacles))
+		}
+	})
+}
+
+func TestDetectionPipeline_DrawResults_Obstacles_Integration(t *testing.T) {
+	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+
+	t.Run("DrawResults should not draw obstacles when none are set", func(t *testing.T) {
+		imgData := make([]byte, 640*480*3)
+
+		result := &DetectionResult{
+			Tags:            []AprilTag{},
+			YOLODetections:  []YOLODetection{},
+			FusedDetections: []FusedDetection{},
+		}
+
+		output := pipeline.DrawResults(imgData, 640, 480, result)
+
+		if output == nil {
+			t.Error("expected output to not be nil")
+		}
+	})
+
+	t.Run("DrawResults should draw obstacles when set", func(t *testing.T) {
+		imgData := make([]byte, 640*480*3)
+
+		pipeline.SetObstacles([]Obstacle{
+			{
+				ID:               "visible-obs",
+				PixelTopLeft:     [2]int{100, 100},
+				PixelBottomRight: [2]int{200, 200},
+			},
+		})
+
+		result := &DetectionResult{
+			Tags:            []AprilTag{},
+			YOLODetections:  []YOLODetection{},
+			FusedDetections: []FusedDetection{},
+		}
+
+		output := pipeline.DrawResults(imgData, 640, 480, result)
+
+		if output == nil {
+			t.Error("expected output to not be nil when obstacles are set")
+		}
+	})
+
+	t.Run("DrawResults should draw multiple obstacles", func(t *testing.T) {
+		imgData := make([]byte, 640*480*3)
+
+		pipeline.SetObstacles([]Obstacle{
+			{
+				ID:               "obs-1",
+				PixelTopLeft:     [2]int{50, 50},
+				PixelBottomRight: [2]int{100, 100},
+			},
+			{
+				ID:               "obs-2",
+				PixelTopLeft:     [2]int{200, 200},
+				PixelBottomRight: [2]int{300, 300},
+			},
+			{
+				ID:               "obs-3",
+				PixelTopLeft:     [2]int{400, 400},
+				PixelBottomRight: [2]int{500, 500},
+			},
+		})
+
+		result := &DetectionResult{
+			Tags:            []AprilTag{},
+			YOLODetections:  []YOLODetection{},
+			FusedDetections: []FusedDetection{},
+		}
+
+		output := pipeline.DrawResults(imgData, 640, 480, result)
+
+		if output == nil {
+			t.Error("expected output to not be nil when multiple obstacles are set")
+		}
+	})
+
+	t.Run("DrawResults with cleared obstacles should not draw", func(t *testing.T) {
+		imgData := make([]byte, 640*480*3)
+
+		pipeline.SetObstacles([]Obstacle{
+			{
+				ID:               "was-visible",
+				PixelTopLeft:     [2]int{100, 100},
+				PixelBottomRight: [2]int{200, 200},
+			},
+		})
+
+		pipeline.SetObstacles([]Obstacle{})
+
+		result := &DetectionResult{
+			Tags:            []AprilTag{},
+			YOLODetections:  []YOLODetection{},
+			FusedDetections: []FusedDetection{},
+		}
+
+		output := pipeline.DrawResults(imgData, 640, 480, result)
+
+		if output == nil {
+			t.Error("expected output to not be nil even when obstacles are cleared")
+		}
+	})
+}

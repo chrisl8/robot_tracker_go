@@ -1334,3 +1334,214 @@ After fix:
 - Frontend: `[Watch] Tracks changed, calling render(), tracks: 3 confirmed: 3` ✓
 - Frontend: `renderFootprints called: {trackCount: 3, showFootprints: true, ...}` ✓
 - All tests pass ✓
+---
+
+## Phase 13: Remote Robot Path Planning (In Progress - Feb 9, 2026)
+
+### Overview
+
+Add the ability to select a robot and set a navigation destination via mouse interactions on the video overlay.
+
+### Design Decisions (Confirmed Feb 9, 2026)
+
+| Question | Decision |
+| -------- | -------- |
+| Coordinate System | Pixels for UI rendering, convert to world meters for API/planner |
+| Multiple Destinations | Yes - coordinator supports per-robot goals simultaneously |
+| Cancellation | Click robot footprint OR press Escape key |
+| Keyboard Shortcuts | Esc (cancel), Enter (confirm - alternative to click) |
+
+### User Workflow
+
+1. **Select Robot**: Click on a robot's footprint/track to select it (white highlight)
+2. **Destination Mode**: Once selected, mouse cursor shows green circle (robot size)
+3. **Validation**: Circle turns red if destination collides with obstacles
+4. **Confirm**: Click to send destination to robot (shown as destination marker)
+
+---
+
+### Implementation Tasks
+
+#### Phase 1: Backend - Destination API & Validation
+
+| Task | File | Description | Status |
+| ---- | ---- | ---------- | ------ |
+| 1.1 | `internal/ui/webserver.go` | Update `DestinationRequest` to include `robot_id` | Pending |
+| 1.2 | `internal/ui/webserver.go` | Connect `handleDestination` to `planner.SetGoal()` | Pending |
+| 1.3 | `internal/ui/webserver.go` | Add destination validation (obstacle collision check) | Pending |
+| 1.4 | `internal/planning/collision.go` | Add `IsPointInObstacle()` for validation | Pending |
+| 1.5 | `internal/ui/webserver.go` | Add WebSocket broadcast for destination confirmations | Pending |
+
+#### Phase 2: Frontend - Robot Selection
+
+| Task | File | Description | Status |
+| ---- | ---- | ---------- | ------ |
+| 2.1 | `ui/src/stores/robotStore.ts` | Add `selectedTrackId: number | null` state | Pending |
+| 2.2 | `ui/src/stores/robotStore.ts` | Add `selectedTrack` computed property | Pending |
+| 2.3 | `ui/src/stores/robotStore.ts` | Add `selectTrack(id)`, `clearSelection()` actions | Pending |
+| 2.4 | `ui/src/types/api.ts` | Add `selected_track_id` to WebSocket messages | Pending |
+
+#### Phase 3: Frontend - Canvas Rendering Updates
+
+| Task | File | Description | Status |
+| ---- | ---- | ---------- | ------ |
+| 3.1 | `ui/src/composables/useCanvas.ts` | Modify `renderFootprints()` to highlight selected robot (white) | Pending |
+| 3.2 | `ui/src/composables/useCanvas.ts` | Add `renderDestinationCursor()` (green/red circle under mouse) | Pending |
+| 3.3 | `ui/src/composables/useCanvas.ts` | Add `renderDestinationMarker()` (confirmed destinations) | Pending |
+| 3.4 | `ui/src/composables/useCanvas.ts` | Add `isPointInObstacle()` helper for cursor validation | Pending |
+| 3.5 | `ui/src/composables/useCanvas.ts` | Add mouse tracking state for cursor position | Pending |
+
+#### Phase 4: Frontend - Mouse Interaction
+
+| Task | File | Description | Status |
+| ---- | ---- | ---------- | ------ |
+| 4.1 | `ui/src/stores/robotStore.ts` | Add `destinationMode: boolean` state | Pending |
+| 4.2 | `ui/src/stores/robotStore.ts` | Add `destination: Destination | null` state | Pending |
+| 4.3 | `ui/src/stores/robotStore.ts` | Add `startDestinationMode()`, `cancelDestinationMode()`, `confirmDestination()` | Pending |
+| 4.4 | `ui/src/composables/useCanvas.ts` | Add canvas mouse event handlers (mousemove, click) | Pending |
+| 4.5 | `ui/src/composables/useCanvas.ts` | Track mouse position for cursor rendering | Pending |
+
+#### Phase 5: Frontend - UI Components
+
+| Task | File | Description | Status |
+| ---- | ---- | ---------- | ------ |
+| 5.1 | `ui/src/components/TrackList.vue` | Add click-to-select for tracks | Pending |
+| 5.2 | `ui/src/components/App.vue` | Show "Destination Mode" indicator when active | Pending |
+| 5.3 | `ui/src/components/App.vue` | Add destination marker to track list/status | Pending |
+| 5.4 | `ui/src/styles/variables.scss` | Add colors: destination-valid (green), destination-invalid (red), destination-confirmed (purple) | Pending |
+
+#### Phase 6: Frontend-Backend Communication
+
+| Task | File | Description | Status |
+| ---- | ---- | ---------- | ------ |
+| 6.1 | `ui/src/types/api.ts` | Add `DestinationMessage` WebSocket type | Pending |
+| 6.2 | `ui/src/stores/robotStore.ts` | Handle `destination` WebSocket messages | Pending |
+| 6.3 | `internal/ui/webserver.go` | Broadcast destinations to all clients | Pending |
+
+#### Phase 7: Testing
+
+| Task | Description | Status |
+| ---- | ----------- | ------ |
+| 7.1 | Unit tests for obstacle collision validation | Pending |
+| 7.2 | Unit tests for destination API | Pending |
+| 7.3 | Integration test: select robot → move cursor → validate collision → click | Pending |
+| 7.4 | Test multiple robots selection | Pending |
+
+---
+
+### Key Technical Details
+
+#### State Changes (Frontend)
+
+```typescript
+// robotStore.ts additions
+selectedTrackId: number | null = null          // Currently selected robot
+destinationMode: boolean = false                 // True when setting destination
+destination: Destination | null = null          // Confirmed destination
+```
+
+#### Canvas Mouse Tracking
+```typescript
+// useCanvas.ts additions
+mousePosition: { x: number, y: number } | null = null  // For cursor rendering
+```
+
+#### Rendering Order (Updated)
+
+| Layer | Function | Content |
+| ----- | -------- | ------- |
+| 1 | `renderObstacles()` | Static obstacles (red) |
+| 2 | `renderDestinationMarker()` | Confirmed destinations (purple) |
+| 3 | `renderFootprints()` | Selected robot (white), others (cyan) |
+| 4 | `renderDestinationCursor()` | Green/red circle under mouse |
+| 5 | `renderDrawingBox()` | Obstacle drawing (orange) |
+| 6 | `renderTracks()` | Bounding boxes |
+
+#### API Changes
+
+**Frontend → Backend:**
+```typescript
+POST /api/destination
+{
+  robot_id: number      // Required: which robot
+  x: number             // Pixel coordinates (converted to world for planner)
+  y: number
+}
+```
+
+**Backend → Frontend (WebSocket):**
+```typescript
+{
+  type: 'destination',
+  destination: {
+    robot_id: number
+    x: number
+    y: number
+    valid: boolean      // true if collision-free
+  }
+}
+```
+
+#### Coordinate Conversion
+- UI Rendering: Use pixels directly from mouse events
+- API Call: Convert pixels → world meters using `positionEst.PixelToWorld()`
+- Backend: Store destination in world coordinates (meters)
+
+#### Cancellation Behavior
+- **Click on robot footprint**: Clears selection and exits destination mode
+- **Press Escape**: Exits destination mode without sending destination
+- **Click on empty space**: Sends destination if valid
+
+---
+
+### Files Modified
+
+#### Backend (Go)
+
+| File | Changes |
+| ---- | ------- |
+| `internal/ui/webserver.go` | Update API, validation, WebSocket broadcast |
+| `internal/planning/collision.go` | Add `IsPointInObstacle()` |
+
+#### Frontend (Vue/TypeScript)
+
+| File | Changes |
+| ---- | ------- |
+| `ui/src/stores/robotStore.ts` | Add selection and destination state |
+| `ui/src/composables/useCanvas.ts` | Add rendering and mouse handling |
+| `ui/src/types/api.ts` | Add destination message types |
+| `ui/src/components/TrackList.vue` | Click-to-select tracks |
+| `ui/src/components/App.vue` | Destination mode UI |
+| `ui/src/styles/variables.scss` | Add destination colors |
+
+---
+
+### Effort Estimate
+
+| Phase | Tasks | Time |
+| ----- | ----- | ---- |
+| Phase 1: Backend | 5 tasks | 1-2 hours |
+| Phase 2: Selection | 4 tasks | 30 min |
+| Phase 3: Canvas Rendering | 5 tasks | 1-2 hours |
+| Phase 4: Mouse Interaction | 5 tasks | 1 hour |
+| Phase 5: UI Components | 4 tasks | 30 min |
+| Phase 6: Communication | 3 tasks | 30 min |
+| Phase 7: Testing | 4 tasks | 1 hour |
+| **Total** | **~30 tasks** | **~8 hours** |
+
+---
+
+### Verification Checklist
+
+- [ ] Robot selection works (click on footprint/track)
+- [ ] Selected robot highlighted in white
+- [ ] Green cursor circle follows mouse when robot selected
+- [ ] Cursor turns red when over obstacle
+- [ ] Click sends destination to backend
+- [ ] Destination marker displayed on confirmation
+- [ ] Multiple robots can have destinations simultaneously
+- [ ] Escape key cancels destination mode
+- [ ] Click on robot cancels selection
+- [ ] Destination validated by backend (collision check)
+- [ ] All tests pass
+

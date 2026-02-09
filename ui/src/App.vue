@@ -87,6 +87,13 @@ onUnmounted(() => {
                 </div>
 
                 <div
+                    v-if="robotStore.destinationMode"
+                    class="destination-badge"
+                >
+                    Destination Mode (ESC to cancel)
+                </div>
+
+                <div
                     class="calibration-badge"
                     :class="uiStore.calibration.state === 'calibrated' ? 'calibrated' : 'not-calibrated'"
                     @click="uiStore.openCalibration()"
@@ -180,5 +187,20 @@ onUnmounted(() => {
     flex-direction: column;
     gap: 16px;
     overflow-y: auto;
+}
+
+.destination-badge {
+    background: #10b981;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
 }
 </style>

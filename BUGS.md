@@ -568,6 +568,227 @@ function syncCanvasSize() {
 
 ## LOW
 
+### UI-005: Destination Cursor Only Checks Center Point - RESOLVED (Feb 9, 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | High |
+| **Impact** | Destination cursor shows green even when robot footprint overlaps obstacle |
+| **Component** | `ui/src/composables/useCanvas.ts` |
+
+**Symptom:**
+When setting a destination, the green cursor circle only turned red when the mouse cursor center was directly over an obstacle. However, if any part of the robot's footprint (the circle representing robot size) overlapped an obstacle, it should also show red.
+
+**Root Cause:**
+The `isPointInObstacle()` function only checked if the center point (mouse position) was inside an obstacle:
+```typescript
+// OLD - only checks center point
+function isPointInObstacle(x: number, y: number): boolean {
+    // Only checks if point (x,y) is inside any obstacle
+    return x >= obs.pixel_top_left[0] && x <= obs.pixel_bottom_right[0] && ...
+}
+```
+
+**Fix Applied:**
+Added `isCircleInObstacle()` function that uses circle-rectangle collision detection:
+```typescript
+function isCircleInObstacle(cx: number, cy: number, radius: number): boolean {
+    // Find closest point on rectangle to circle center
+    const closestX = Math.max(rectX1, Math.min(cx, rectX2))
+    const closestY = Math.max(rectY1, Math.min(cy, rectY2))
+
+    // Calculate distance from closest point to circle center
+    const distanceSquared = (cx - closestX)² + (cy - closestY)²
+
+    // Collision if distance < radius
+    return distanceSquared < radius * radius
+}
+```
+
+Updated `renderDestinationCursor()` to use the new function:
+```typescript
+const isInvalid = isCircleInObstacle(pos.x, pos.y, radius)
+```
+
+**Test Added:**
+Added `ui/src/composables/__tests__/useCanvas.test.ts` with FOOTPRINT-001 test cases:
+- Edge overlap when center is outside
+- Full containment
+- Corner overlap
+- Cross-edge overlap
+- Comparison test demonstrating old vs new behavior
+
+**Verification:**
+```
+✅ Edge overlap detection - circle extends into obstacle
+✅ Full containment - circle completely inside obstacle
+✅ Corner overlap - circle corner touches obstacle corner
+✅ Partial overlap - circle crosses edge
+✅ No overlap - circle completely outside
+✅ All 7 tests passing
+```
+
+---
+
+### UI-006: Canvas Resize Causes Overlay Misalignment - RESOLVED (Feb 9, 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Critical (Blocking) |
+| **Impact** | Static obstacles become misaligned when browser window is resized |
+| **Component** | `ui/src/composables/useCanvas.ts`, `ui/src/utils/coordinates.ts` |
+
+**Symptom:**
+When the browser window is resized, obstacles drawn on the frontend canvas overlay became misaligned with the video.
+
+**Root Cause:**
+Frontend canvas overlay doesn't scale with the video - only AprilTags (drawn by backend) remained aligned.
+
+**Solution - Backend-Based Rendering:**
+Instead of trying to fix frontend scaling, obstacles are now drawn **by the backend** directly on the video frame, just like AprilTags:
+
+```
+Backend (Go):
+  1. Receive obstacle coordinates from frontend
+  2. Draw obstacles on video frame using pixel coordinates
+  3. Send annotated frame to frontend
+  4. Obstacles scale perfectly - they're part of the video!
+
+Frontend:
+  1. Send obstacle coordinates to backend
+  2. Display received video frame
+  3. No scaling logic needed!
+```
+
+**Files Added:**
+| File | Purpose |
+|------|---------|
+| `internal/detection/obstacle_drawer.go` | GOCV implementation - draws obstacles on video |
+| `internal/detection/obstacle_drawer_stub.go` | Non-GOCV stub for CI |
+| `internal/detection/obstacle_drawer_test.go` | Unit tests |
+
+**Files Modified:**
+| File | Changes |
+|------|---------|
+| `internal/detection/types.go` | Added `Obstacle` struct and `SetObstacles()` method |
+| `internal/detection/pipeline.go` | Draw obstacles in `DrawResults()` |
+| `cmd/main.go` | Pass obstacles from webserver to detection pipeline |
+| `ui/src/composables/useCanvas.ts` | Removed frontend obstacle rendering |
+
+**Benefits:**
+| Benefit | Description |
+|--------|-------------|
+| **Perfect Alignment** | Obstacles are part of the video frame itself |
+| **No Scaling Logic** | Backend handles all coordinate transforms |
+| **Consistent Architecture** | Same approach as AprilTags |
+| **Simpler Frontend** | Removed 50+ lines of scaling code |
+
+**Verification:**
+```
+✅ All 19 integration tests pass
+✅ All Vue unit tests pass
+✅ Build succeeds
+✅ Obstacles drawn by backend match AprilTag alignment
+```
+
+**Note:** The frontend still uses the canvas overlay for:
+- Destination cursor (green/red circle)
+- Destination marker (purple goal circle)
+- Drawing new obstacles (user interaction)
+- Calibration tag overlays
+
+Only static obstacles are now rendered by the backend.
+
+**Benefits of this architecture:**
+
+| Benefit | Description |
+|---------|-------------|
+| **Single Source of Truth** | All coordinate conversions use the same utility functions |
+| **Future-Proof** | New features simply import the utilities |
+| **Testable** | Utilities can be unit tested independently |
+| **Consistent** | All render functions use the same pattern |
+| **Maintainable** | Bug fixes apply everywhere automatically |
+
+**Files Changed:**
+
+| File | Changes |
+|------|---------|
+| `ui/src/utils/coordinates.ts` | NEW - Centralized coordinate utilities |
+| `ui/src/composables/useCanvas.ts` | Refactored to use utilities |
+| `ui/src/components/VideoOverlay.vue` | Uses `canvasToNatural` from composable |
+| `ui/src/stores/robotStore.ts` | Inlined conversion (store context) |
+
+**Pattern for Future Development:**
+
+```typescript
+import { canvasToNatural, naturalToCanvas } from '@/utils/coordinates'
+
+// When rendering data from backend (stored in natural coords):
+const scaled = naturalToCanvas(data.x, data.y)
+ctx.drawImage(..., scaled.x, scaled.y)
+
+// When capturing user input:
+const natural = canvasToNatural(mouseX, mouseY)
+// Send natural coords to backend
+```
+
+**Note:** Existing obstacles drawn before this fix will appear misaligned until the next draw operation. New obstacles use the correct coordinate system.
+
+**Verification:**
+```
+✅ All 19 integration tests pass
+✅ All Vue unit tests pass
+✅ Build succeeds
+✅ Centralized utilities are tested
+```
+
+2. **Scale obstacles during render** (`useCanvas.ts:114-150`):
+```typescript
+const scaleX = dimensions.value.width / naturalWidth
+const scaleY = dimensions.value.height / naturalHeight
+const scaledX1 = x1 * scaleX
+const scaledY1 = y1 * scaleY
+```
+
+3. **Scale destinations during render** (`useCanvas.ts:257-286`):
+```typescript
+const scaledX = dest.x * scaleX
+const scaledY = dest.y * scaleY
+```
+
+4. **Scale collision detection** (`useCanvas.ts:228-237`):
+```typescript
+const naturalX = canvasX / scaleX
+const naturalY = canvasY / scaleY
+isCircleInObstacle(naturalX, naturalY, naturalRadius)
+```
+
+5. **Scale click detection** (`useCanvas.ts:419-470`):
+```typescript
+const scaledX1 = x1 * scaleX
+const scaledY1 = y1 * scaleY
+```
+
+**Files Changed:**
+| File | Changes |
+|------|---------|
+| `ui/src/components/VideoOverlay.vue` | Convert canvas → natural coords before API call |
+| `ui/src/composables/useCanvas.ts` | Scale all rendering functions |
+| `ui/src/stores/robotStore.ts` | Convert canvas → natural coords in confirmDestination |
+
+**Note:** Existing obstacles drawn before this fix will appear misaligned until the next draw operation. New obstacles will use the correct coordinate system.
+
+**Verification:**
+```
+✅ All tests pass
+✅ Build succeeds
+✅ Render functions now use consistent scaling
+```
+
+---
+
 ### DOC-001: API Documentation Incomplete
 
 | Field | Value |
@@ -637,6 +858,93 @@ func TestFunction(t *testing.T) {
         })
     }
 }
+```
+
+---
+
+### UI-007: Obstacles Not Visible - Backend Drawing Bug - RESOLVED (Feb 9, 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | High |
+| **Impact** | Static obstacles not displayed on video overlay |
+| **Component** | `cmd/main.go` |
+
+**Symptom:**
+User reported that obstacles exist in the obstacle list but are not visible on the video display, despite being listed and added via the UI.
+
+**Root Cause:**
+In demo mode (`--demo`), the `initDemoMode()` function was called instead of `Initialize()`. However, `initDemoMode()` only created the web server but did NOT initialize the `detectionPipe` field.
+
+Since `rs.detectionPipe` was nil:
+1. The check `if rs.detectionPipe != nil && rs.webServer != nil` in `ProcessDemoFrame()` failed
+2. `DrawResults()` was never called
+3. Obstacles were never drawn on the video
+
+**Fix Applied:**
+Modified `initDemoMode()` to also initialize the detection pipeline:
+
+```go
+// cmd/main.go:139-175 (AFTER FIX)
+func (rs *RobotSystem) initDemoMode() {
+    rs.webServer = ui.NewWebServer(":9086")
+
+    tagConfig := detection.AprilTagConfig{
+        Family:       "tag36h11",
+        QuadDecimate: 2.0,
+    }
+    rs.detectionPipe = detection.NewDetectionPipeline(nil, tagConfig)
+    log.Printf("Demo mode: Detection pipeline initialized (YOLO disabled)")
+
+    rs.webServer.Start()
+    log.Print(getWebUIURLs("9086"))
+
+    rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+        rs.planner.SetObstacles(obstacles)
+
+        detectionObstacles := make([]detection.Obstacle, len(obstacles))
+        for i, obs := range obstacles {
+            detectionObstacles[i] = detection.Obstacle{
+                ID:               obs.Name,
+                PixelTopLeft:     [2]int{obs.PixelsTopLeft[0], obs.PixelsTopLeft[1]},
+                PixelBottomRight: [2]int{obs.PixelsBottomRight[0], obs.PixelsBottomRight[1]},
+                WorldTopLeft:     obs.WorldTopLeft,
+                WorldBottomRight: obs.WorldBottomRight,
+                Clearance:        0.05,
+            }
+        }
+        rs.detectionPipe.SetObstacles(detectionObstacles)
+    }
+
+    rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+        log.Printf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
+            robotID, int(pixelPos[0]), int(pixelPos[1]))
+    }
+}
+```
+
+**Why Integration Tests Didn't Catch This Earlier:**
+The integration tests for `SetObstacles()` and `DrawResults()` tested the detection pipeline in isolation. They did NOT test the runtime behavior where `initDemoMode()` was called without initializing the pipeline.
+
+**Files Changed:**
+| File | Changes |
+|------|---------|
+| `cmd/main.go` | `initDemoMode()` now initializes detection pipeline and sets up `OnObstaclesChanged` callback |
+
+**Tests Added:**
+| Test File | Tests |
+|----------|-------|
+| `cmd/main_test.go` | `TestConvertDemoObstacles_ToDetection` and related tests |
+| `internal/detection/pipeline_test.go` | `TestDetectionPipeline_SetObstacles_Integration` (5 subtests) |
+| `internal/detection/pipeline_test.go` | `TestDetectionPipeline_DrawResults_Obstacles_Integration` (4 subtests) |
+
+**Verification:**
+```
+✅ All detection pipeline tests pass (13 tests)
+✅ All Vue UI tests pass (68 tests)
+✅ Demo mode now initializes detection pipeline
+✅ Obstacles from UI are converted and stored in pipeline
 ```
 
 ---

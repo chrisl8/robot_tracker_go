@@ -126,9 +126,19 @@ type AprilTagConfig struct {
 }
 
 type DetectionPipeline struct {
-	tagDetector  TagDetector
-	yoloDetector YOLODetectorInterface
-	yoloEnabled  bool
+	tagDetector    TagDetector
+	yoloDetector   YOLODetectorInterface
+	yoloEnabled    bool
+	obstacleDrawer *ObstacleDrawer
+	obstacles      []Obstacle
+}
+
+func (p *DetectionPipeline) SetObstacles(obstacles []Obstacle) {
+	p.obstacles = obstacles
+}
+
+func (p *DetectionPipeline) GetObstacles() []Obstacle {
+	return p.obstacles
 }
 
 type TagDetector interface {

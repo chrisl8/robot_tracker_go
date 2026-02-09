@@ -1,0 +1,111 @@
+//go:build gocv
+// +build gocv
+
+package detection
+
+import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	"log"
+)
+
+type Obstacle struct {
+	ID               string
+	PixelTopLeft     [2]int
+	PixelBottomRight [2]int
+	WorldTopLeft     [2]float64
+	WorldBottomRight [2]float64
+	Clearance        float64
+}
+
+type ObstacleDrawer struct{}
+
+func NewObstacleDrawer() *ObstacleDrawer {
+	return &ObstacleDrawer{}
+}
+
+func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstacles []Obstacle) []byte {
+	log.Printf("OBSTACLE_DRAWER: Called with %d obstacles, frame=%dx%d", len(obstacles), width, height)
+	if len(imgData) == 0 || len(obstacles) == 0 {
+		log.Printf("OBSTACLE_DRAWER: Early exit - empty data or obstacles")
+		return imgData
+	}
+
+	log.Printf("OBSTACLE_DRAWER: Processing %d obstacles", len(obstacles))
+
+	reader := bytes.NewReader(imgData)
+	img, _, err := image.Decode(reader)
+	if err != nil {
+		log.Printf("OBSTACLE_DRAWER: Failed to decode image: %v", err)
+		return imgData
+	}
+
+	rgba, ok := img.(*image.RGBA)
+	if !ok {
+		b := img.Bounds()
+		newImg := image.NewRGBA(b)
+		draw.Draw(newImg, b, img, b.Min, draw.Src)
+		rgba = newImg
+	}
+
+	borderColor := color.RGBA{255, 107, 107, 255}
+	labelColor := color.RGBA{255, 255, 255, 255}
+	bgColor := color.RGBA{255, 107, 107, 200}
+	fillColor := color.RGBA{255, 107, 107, 50}
+
+	drawnCount := 0
+	for _, obs := range obstacles {
+		x1 := obs.PixelTopLeft[0]
+		y1 := obs.PixelTopLeft[1]
+		x2 := obs.PixelBottomRight[0]
+		y2 := obs.PixelBottomRight[1]
+
+		log.Printf("OBSTACLE_DRAWER: Drawing '%s' at raw [%d,%d] to [%d,%d]", obs.ID, x1, y1, x2, y2)
+
+		if x1 >= width || y1 >= height || x2 <= 0 || y2 <= 0 {
+			log.Printf("OBSTACLE_DRAWER: Skipping '%s' - out of bounds", obs.ID)
+			continue
+		}
+
+		clipX1 := max(0, min(x1, width))
+		clipY1 := max(0, min(y1, height))
+		clipX2 := max(0, min(x2, width))
+		clipY2 := max(0, min(y2, height))
+
+		log.Printf("OBSTACLE_DRAWER: Drawing '%s' at clipped [%d,%d] to [%d,%d]", obs.ID, clipX1, clipY1, clipX2, clipY2)
+
+		rect := image.Rect(clipX1, clipY1, clipX2, clipY2)
+
+		drawFilledRect(rgba, rect, fillColor)
+
+		lineWidth := 2
+		drawLine(rgba, image.Point{X: clipX1, Y: clipY1}, image.Point{X: clipX2, Y: clipY1}, borderColor, lineWidth)
+		drawLine(rgba, image.Point{X: clipX2, Y: clipY1}, image.Point{X: clipX2, Y: clipY2}, borderColor, lineWidth)
+		drawLine(rgba, image.Point{X: clipX2, Y: clipY2}, image.Point{X: clipX1, Y: clipY2}, borderColor, lineWidth)
+		drawLine(rgba, image.Point{X: clipX1, Y: clipY2}, image.Point{X: clipX1, Y: clipY1}, borderColor, lineWidth)
+
+		drawLabel(rgba, clipX1+5, clipY1-8, "OBSTACLE", labelColor, bgColor)
+		drawnCount++
+	}
+
+	log.Printf("OBSTACLE_DRAWER: Drew %d obstacles", drawnCount)
+
+	buf := new(bytes.Buffer)
+	if err := jpeg.Encode(buf, rgba, &jpeg.Options{Quality: 85}); err != nil {
+		log.Printf("OBSTACLE_DRAWER: Failed to encode output: %v", err)
+		return imgData
+	}
+
+	return buf.Bytes()
+}
+
+func drawFilledRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		for x := rect.Min.X; x < rect.Max.X; x++ {
+			img.Set(x, y, c)
+		}
+	}
+}
