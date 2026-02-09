@@ -9,9 +9,10 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"os"
 
 	"gocv.io/x/gocv"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type YOLODetector struct {
@@ -22,7 +23,7 @@ type YOLODetector struct {
 }
 
 func NewYOLODetector(config *YOLOConfig) (*YOLODetector, error) {
-	if config.ModelPath != "" && !fileExists(config.ModelPath) {
+	if config.ModelPath != "" && !utils.FileExists(config.ModelPath) {
 		return nil, fmt.Errorf("model file not found: %s", config.ModelPath)
 	}
 
@@ -81,11 +82,6 @@ func NewYOLODetector(config *YOLOConfig) (*YOLODetector, error) {
 	}
 
 	return detector, nil
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func (d *YOLODetector) Detect(imageBytes []byte, width, height int) []YOLODetection {

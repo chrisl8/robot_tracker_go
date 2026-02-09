@@ -1262,6 +1262,114 @@ function renderFootprints(): void {
 
 ---
 
+---
+
+## Phase 14: Code Cleanup (COMPLETED ✅ - Feb 9, 2026)
+
+### Overview
+
+Remove unused, redundant, and non-functional code identified during code review.
+
+### Issues Fixed
+
+| Category | Count | Status |
+|----------|-------|--------|
+| Dead code (unused calculations) | 2 | ✅ Fixed |
+| Duplicate helper functions | 8 | ✅ Consolidated |
+| Unused diagnostic files | 5 | ✅ Deleted |
+| Redundant build tags | 2 | ✅ Fixed |
+| Empty/stub functions | 2 | ✅ Fixed |
+| Unused helper functions | 1 | ✅ Removed |
+| Redundant conditionals | 1 | ✅ Fixed |
+
+### Dead Code Fixed
+
+**cmd/main.go:557** - Velocity computed but never used:
+```go
+// BEFORE:
+velocity, _ := rs.planner.ComputeVelocityWithDynamicObstacles(...)
+log.Printf("Computed velocity...")
+_ = velocity  // DEAD: result is discarded
+
+// AFTER: Remove velocity variable entirely
+rs.planner.ComputeVelocityWithDynamicObstacles(...)
+log.Printf("Computed velocity...")
+```
+
+**cmd/main.go:664** - Calculation result discarded:
+```go
+// BEFORE:
+_ = float64(frameNum+i*100) * 0.02  // DEAD
+radius := 100.0
+
+// AFTER: Remove unused calculation
+radius := 100.0
+```
+
+### Duplicate Functions Consolidated
+
+Created `internal/utils/` package:
+- `abs()` - 3 duplicate definitions consolidated
+- `max()` - 2 duplicate definitions consolidated
+- `min()` - 2 duplicate definitions consolidated
+- `fileExists()` - 2 duplicate definitions consolidated
+- `toFloat64()` - 2 duplicate definitions consolidated
+- `containsPath()` - 2 duplicate definitions consolidated
+- `sqrt()` - Removed (use math.Sqrt)
+- `pow()` - Removed (use math.Pow)
+
+### Diagnostic Files Deleted
+
+| File | Status |
+|------|--------|
+| `diagnostics/test_cgo.go` | ✅ Deleted |
+| `diagnostics/test_gocv_simple.go` | ✅ Deleted |
+| `diagnostics/gocv_complete.go` | ✅ Deleted |
+| `diagnostics/gocv_final.go` | ✅ Deleted |
+| `diagnostics/gocv_direct.go` | ✅ Deleted |
+
+### Build Tags Fixed
+
+**obstacle_drawer.go** and **obstacle_drawer_stub.go**:
+- Removed redundant `// +build` lines (keep only `//go:build`)
+
+### Empty Functions Fixed
+
+**video.go:88-93** - GetPosition/SetPosition:
+- Removed empty `SetPosition()` method
+- `GetPosition()` now returns meaningful value (0 placeholder)
+
+### Unused Functions Removed
+
+**gocv_skip_test.go:99** - `checkOpenCVVersion()`:
+- Removed unused helper function
+
+### Redundant Conditionals Fixed
+
+**dynamic_obstacle_test.go:32**:
+```go
+// BEFORE:
+if obs.IsRobot != false {
+
+// AFTER:
+if !obs.IsRobot {
+```
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `cmd/main.go` | Removed dead code (2 locations) |
+| `internal/camera/video.go` | Fixed empty functions |
+| `internal/camera/gocv_skip_test.go` | Removed unused function |
+| `internal/planning/dynamic_obstacle_test.go` | Fixed conditional |
+| `internal/detection/obstacle_drawer.go` | Removed redundant build tag |
+| `internal/detection/obstacle_drawer_stub.go` | Removed redundant build tag |
+| `diagnostics/*.go` | Deleted 5 files |
+| `internal/utils/` | Created (consolidated helpers) |
+
+---
+
 ## References
 
 - Original Python implementation: `C:\Dev\robot_tracker\`

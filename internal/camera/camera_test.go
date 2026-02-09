@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"robot_tracker_go/internal/utils"
 )
 
 func TestOpenCVEnvironment(t *testing.T) {
@@ -37,7 +39,7 @@ func TestOpenCVEnvironment(t *testing.T) {
 				"C:\\opencv\\build\\install\\x64\\vc17\\bin",
 				"C:\\opencv\\build\\install\\x64\\vc16\\bin",
 			} {
-				if containsPath(path, p) {
+				if utils.ContainsPath(path, p) {
 					found = true
 					t.Logf("Found OpenCV bin in PATH: %s", p)
 					break
@@ -98,19 +100,6 @@ func TestOpenCVEnvironment(t *testing.T) {
 			}
 		}
 	})
-}
-
-func containsPath(path, target string) bool {
-	for _, p := range []string{path} {
-		if len(p) >= len(target) {
-			for i := 0; i <= len(p)-len(target); i++ {
-				if p[i:i+len(target)] == target {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 func TestGoCVCameraCreation(t *testing.T) {

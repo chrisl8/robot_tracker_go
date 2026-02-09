@@ -29,7 +29,7 @@ func TestDynamicObstacle_NewDynamicObstacle(t *testing.T) {
 	if obs.Confidence != 0.95 {
 		t.Errorf("Confidence = %v, want 0.95", obs.Confidence)
 	}
-	if obs.IsRobot != false {
+	if obs.IsRobot {
 		t.Errorf("IsRobot = %v, want false", obs.IsRobot)
 	}
 }

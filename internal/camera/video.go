@@ -89,9 +89,6 @@ func (c *VideoFileCamera) GetPosition() float64 {
 	return 0
 }
 
-func (c *VideoFileCamera) SetPosition(position float64) {
-}
-
 func (c *VideoFileCamera) IsLooping() bool {
 	return c.loop
 }

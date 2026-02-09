@@ -26,6 +26,7 @@ import (
 	"robot_tracker_go/internal/position"
 	"robot_tracker_go/internal/tracking"
 	"robot_tracker_go/internal/ui"
+	"robot_tracker_go/internal/utils"
 )
 
 type RobotSystem struct {
@@ -554,7 +555,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		)
 		log.Printf("Computed velocity with %d dynamic obstacles: (%.3f, %.3f)",
 			len(rs.DynamicObstacles), velocity[0], velocity[1])
-		_ = velocity
 	}
 
 	overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult)
@@ -661,7 +661,6 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 
 	numRobots := 3
 	for i := 0; i < numRobots; i++ {
-		_ = float64(frameNum+i*100) * 0.02
 		radius := 100.0
 		cx := float64(width)/2 + float64(i-1)*80
 		cy := float64(height) / 2
@@ -778,7 +777,7 @@ func drawLineOnRGBA(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int
 	dx := p2.X - p1.X
 	dy := p2.Y - p1.Y
 
-	if abs(dx) > abs(dy) {
+	if utils.Abs(dx) > utils.Abs(dy) {
 		if p1.X > p2.X {
 			p1, p2 = p2, p1
 		}
@@ -809,13 +808,6 @@ func drawCircleOnRGBA(img *image.RGBA, cx, cy, r int, c color.RGBA) {
 			}
 		}
 	}
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags []detection.AprilTag) {

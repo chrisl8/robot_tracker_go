@@ -2,6 +2,8 @@ package tracking
 
 import (
 	"math"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type Assignment struct {
@@ -146,10 +148,10 @@ func ComputeIoUCost(detections []Detection, tracks []Track, matchThresh float64)
 }
 
 func computeIoU(bbox1, bbox2 [4]int) float64 {
-	x1 := max(bbox1[0], bbox2[0])
-	y1 := max(bbox1[1], bbox2[1])
-	x2 := min(bbox1[2], bbox2[2])
-	y2 := min(bbox1[3], bbox2[3])
+	x1 := utils.Max(bbox1[0], bbox2[0])
+	y1 := utils.Max(bbox1[1], bbox2[1])
+	x2 := utils.Min(bbox1[2], bbox2[2])
+	y2 := utils.Min(bbox1[3], bbox2[3])
 
 	if x2 <= x1 || y2 <= y1 {
 		return 0
@@ -167,18 +169,4 @@ func computeIoU(bbox1, bbox2 [4]int) float64 {
 	}
 
 	return float64(intersection) / float64(union)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

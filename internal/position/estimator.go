@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type CameraIntrinsics struct {
@@ -60,24 +62,19 @@ func NewPositionEstimator(calibrationPath, obstaclesPath string, smoothing bool,
 		positions:      make(map[int]*SmoothedPosition),
 	}
 
-	if calibrationPath != "" && fileExists(calibrationPath) {
+	if calibrationPath != "" && utils.FileExists(calibrationPath) {
 		if err := est.LoadCalibration(calibrationPath); err != nil {
 			fmt.Printf("Warning: failed to load calibration: %v\n", err)
 		}
 	}
 
-	if obstaclesPath != "" && fileExists(obstaclesPath) {
+	if obstaclesPath != "" && utils.FileExists(obstaclesPath) {
 		if err := est.LoadObstacles(obstaclesPath); err != nil {
 			fmt.Printf("Warning: failed to load obstacles: %v\n", err)
 		}
 	}
 
 	return est, nil
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func (e *PositionEstimator) LoadCalibration(path string) error {
@@ -98,7 +95,7 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 			for i := 0; i < 3 && i < len(matrix); i++ {
 				row := matrix[i].([]interface{})
 				for j := 0; j < 3 && j < len(row); j++ {
-					e.intrinsics.CameraMatrix[i][j] = toFloat64(row[j])
+					e.intrinsics.CameraMatrix[i][j] = utils.ToFloat64(row[j])
 				}
 			}
 		}
@@ -117,9 +114,9 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		row2, _ := homographyData[2].([]interface{})
 		if len(row0) >= 3 && len(row1) >= 3 && len(row2) >= 3 {
 			e.homography.SetFromValues(
-				toFloat64(row0[0]), toFloat64(row0[1]), toFloat64(row0[2]),
-				toFloat64(row1[0]), toFloat64(row1[1]), toFloat64(row1[2]),
-				toFloat64(row2[0]), toFloat64(row2[1]), toFloat64(row2[2]),
+				utils.ToFloat64(row0[0]), utils.ToFloat64(row0[1]), utils.ToFloat64(row0[2]),
+				utils.ToFloat64(row1[0]), utils.ToFloat64(row1[1]), utils.ToFloat64(row1[2]),
+				utils.ToFloat64(row2[0]), utils.ToFloat64(row2[1]), utils.ToFloat64(row2[2]),
 			)
 		}
 	}
@@ -168,14 +165,14 @@ func (e *PositionEstimator) LoadObstacles(path string) error {
 		if world, ok := obs["world"].(map[string]interface{}); ok {
 			if tl, ok := world["top_left"].([]interface{}); ok && len(tl) >= 2 {
 				obstacle.WorldTopLeft = Point2D{
-					X: toFloat64(tl[0]),
-					Y: toFloat64(tl[1]),
+					X: utils.ToFloat64(tl[0]),
+					Y: utils.ToFloat64(tl[1]),
 				}
 			}
 			if br, ok := world["bottom_right"].([]interface{}); ok && len(br) >= 2 {
 				obstacle.WorldBottomRight = Point2D{
-					X: toFloat64(br[0]),
-					Y: toFloat64(br[1]),
+					X: utils.ToFloat64(br[0]),
+					Y: utils.ToFloat64(br[1]),
 				}
 			}
 		}
@@ -183,14 +180,14 @@ func (e *PositionEstimator) LoadObstacles(path string) error {
 		if pixels, ok := obs["pixels"].(map[string]interface{}); ok {
 			if tl, ok := pixels["top_left"].([]interface{}); ok && len(tl) >= 2 {
 				obstacle.PixelsTopLeft = [2]int{
-					int(toFloat64(tl[0])),
-					int(toFloat64(tl[1])),
+					int(utils.ToFloat64(tl[0])),
+					int(utils.ToFloat64(tl[1])),
 				}
 			}
 			if br, ok := pixels["bottom_right"].([]interface{}); ok && len(br) >= 2 {
 				obstacle.PixelsBottomRight = [2]int{
-					int(toFloat64(br[0])),
-					int(toFloat64(br[1])),
+					int(utils.ToFloat64(br[0])),
+					int(utils.ToFloat64(br[1])),
 				}
 			}
 		}
@@ -281,21 +278,6 @@ func (e *PositionEstimator) GetHomography() *Homography {
 
 func (e *PositionEstimator) IsCalibrated() bool {
 	return e.homography.IsValid()
-}
-
-func toFloat64(v interface{}) float64 {
-	switch val := v.(type) {
-	case float64:
-		return val
-	case float32:
-		return float64(val)
-	case int:
-		return float64(val)
-	case int64:
-		return float64(val)
-	default:
-		return 0
-	}
 }
 
 type PositionResult struct {

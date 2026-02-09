@@ -1,5 +1,7 @@
 package detection
 
+import "robot_tracker_go/internal/utils"
+
 type DetectionType int
 
 const (
@@ -33,10 +35,10 @@ func (b *BoundingBox) Contains(x, y int) bool {
 }
 
 func (b *BoundingBox) IoU(other *BoundingBox) float64 {
-	x1 := max(b.X1, other.X1)
-	y1 := max(b.Y1, other.Y1)
-	x2 := min(b.X2, other.X2)
-	y2 := min(b.Y2, other.Y2)
+	x1 := utils.Max(b.X1, other.X1)
+	y1 := utils.Max(b.Y1, other.Y1)
+	x2 := utils.Min(b.X2, other.X2)
+	y2 := utils.Min(b.Y2, other.Y2)
 
 	if x2 <= x1 || y2 <= y1 {
 		return 0
@@ -50,20 +52,6 @@ func (b *BoundingBox) IoU(other *BoundingBox) float64 {
 	}
 
 	return float64(intersection) / float64(union)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 type AprilTag struct {

@@ -11,6 +11,8 @@ import (
 	"image/jpeg"
 
 	"gocv.io/x/gocv"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type AprilTagDetector struct {
@@ -180,7 +182,7 @@ func drawLine(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int) {
 	dx := p2.X - p1.X
 	dy := p2.Y - p1.Y
 
-	if abs(dx) > abs(dy) {
+	if utils.Abs(dx) > utils.Abs(dy) {
 		if p1.X > p2.X {
 			p1, p2 = p2, p1
 		}
@@ -211,13 +213,6 @@ func drawCircle(img *image.RGBA, cx, cy, r int, c color.RGBA) {
 			}
 		}
 	}
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 func drawLabel(img *image.RGBA, x, y int, text string, textColor, bgColor color.RGBA) {

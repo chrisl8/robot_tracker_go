@@ -1,5 +1,4 @@
 //go:build gocv
-// +build gocv
 
 package detection
 

@@ -1,5 +1,7 @@
 package controller
 
+import "robot_tracker_go/internal/utils"
+
 type Velocity struct {
 	VX float64
 	VY float64
@@ -21,11 +23,11 @@ func (e *PathExecutor) VelocityToCommand(vx, vy float64) Command {
 	threshold := e.maxSpeed * 0.3
 	turnThreshold := e.turnSpeed * 0.3
 
-	if abs(vx) < threshold && abs(vy) < threshold {
+	if utils.AbsFloat64(vx) < threshold && utils.AbsFloat64(vy) < threshold {
 		return CommandStop
 	}
 
-	if abs(vy) < turnThreshold {
+	if utils.AbsFloat64(vy) < turnThreshold {
 		if vx > threshold {
 			return CommandForward
 		} else if vx < -threshold {
@@ -33,8 +35,8 @@ func (e *PathExecutor) VelocityToCommand(vx, vy float64) Command {
 		}
 	}
 
-	absVX := abs(vx)
-	absVY := abs(vy)
+	absVX := utils.AbsFloat64(vx)
+	absVY := utils.AbsFloat64(vy)
 
 	if absVY > absVX {
 		if vy > 0 {
@@ -66,11 +68,4 @@ func (e *PathExecutor) CommandToVelocity(cmd Command) Velocity {
 	default:
 		return Velocity{VX: 0, VY: 0}
 	}
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
