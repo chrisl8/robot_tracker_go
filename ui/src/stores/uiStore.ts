@@ -20,6 +20,8 @@ export const useUIStore = defineStore('ui', () => {
     const detectedTags = ref<DetectedTagInfo[]>([])
     const selectedCalibrationTagId = ref<number | null>(null)
 
+    const showFootprints = ref(true)
+
     const keyboard = ref<KeyboardState>({
         w: false,
         a: false,
@@ -103,6 +105,10 @@ export const useUIStore = defineStore('ui', () => {
         }
     }
 
+    function toggleFootprints(): void {
+        showFootprints.value = !showFootprints.value
+    }
+
     return {
         // State
         panels,
@@ -111,6 +117,7 @@ export const useUIStore = defineStore('ui', () => {
         detectedTags,
         selectedCalibrationTagId,
         keyboard,
+        showFootprints,
         // Panel actions
         toggleObstaclePanel,
         openObstaclePanel,
@@ -126,6 +133,8 @@ export const useUIStore = defineStore('ui', () => {
         setSelectedCalibrationTag,
         // Keyboard actions
         setKey,
-        resetKeyboard
+        resetKeyboard,
+        // Footprint actions
+        toggleFootprints
     }
 })

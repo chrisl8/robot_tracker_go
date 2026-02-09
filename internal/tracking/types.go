@@ -9,16 +9,18 @@ const (
 )
 
 type Track struct {
-	TrackID    int
-	Bbox       [4]int
-	Timestamp  float64
-	Confidence float64
-	TagID      *int
-	ClassID    *int
-	Age        int
-	Hits       int
-	State      TrackState
-	History    []TrackHistoryPoint
+	TrackID     int
+	Bbox        [4]int
+	Timestamp   float64
+	Confidence  float64
+	TagID       *int
+	ClassID     *int
+	Age         int
+	Hits        int
+	State       TrackState
+	History     []TrackHistoryPoint
+	WorldPos    [2]float64
+	PixelRadius float64
 }
 
 type TrackHistoryPoint struct {
@@ -61,7 +63,7 @@ func (t *Track) ToDict() map[string]interface{} {
 		}
 	}
 
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"track_id":   t.TrackID,
 		"bbox":       t.Bbox,
 		"timestamp":  t.Timestamp,
@@ -73,6 +75,12 @@ func (t *Track) ToDict() map[string]interface{} {
 		"state":      t.StateString(),
 		"history":    historyList,
 	}
+
+	if t.PixelRadius > 0 {
+		result["pixel_radius"] = t.PixelRadius
+	}
+
+	return result
 }
 
 func (t *Track) StateString() string {

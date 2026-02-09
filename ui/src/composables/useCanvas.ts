@@ -98,6 +98,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         updateVideoScale()
         clear()
         renderObstacles()
+        renderFootprints()
         renderDrawingBox()
         renderTracks()
         renderCalibrationTag()
@@ -128,6 +129,42 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             // Draw fill
             ctx.value.fillStyle = 'rgba(255, 107, 107, 0.1)'
             ctx.value.fillRect(x1, y1, width, height)
+        }
+    }
+
+    function renderFootprints(): void {
+        const tracks = robotStore.confirmedTracks
+        if (!ctx.value || !uiStore.showFootprints || tracks.length === 0) return
+
+        // Get video dimensions for scaling
+        const video = document.getElementById('video') as HTMLVideoElement | HTMLImageElement | null
+        if (!video) return
+
+        const naturalWidth = 'videoWidth' in video ? (video as HTMLVideoElement).videoWidth : ('naturalWidth' in video ? (video as HTMLImageElement).naturalWidth : 0)
+        const naturalHeight = 'videoHeight' in video ? (video as HTMLVideoElement).videoHeight : ('naturalHeight' in video ? (video as HTMLImageElement).naturalHeight : 0)
+
+        if (naturalWidth === 0 || naturalHeight === 0) return
+
+        const scaleX = dimensions.value.width / naturalWidth
+        const scaleY = dimensions.value.height / naturalHeight
+
+        for (const track of tracks) {
+            if (!track.pixel_radius || track.pixel_radius <= 0) continue
+
+            const centerX = ((track.bbox[0] + track.bbox[2]) / 2) * scaleX
+            const centerY = ((track.bbox[1] + track.bbox[3]) / 2) * scaleY
+            const radius = track.pixel_radius * Math.min(scaleX, scaleY)
+
+            // Draw filled circle
+            ctx.value.beginPath()
+            ctx.value.arc(centerX, centerY, radius, 0, Math.PI * 2)
+            ctx.value.fillStyle = 'rgba(0, 255, 255, 0.2)'
+            ctx.value.fill()
+
+            // Draw solid edge
+            ctx.value.strokeStyle = '#00ffff'
+            ctx.value.lineWidth = 2
+            ctx.value.stroke()
         }
     }
 
@@ -199,40 +236,56 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const tracks = robotStore.tracks
         if (!ctx.value || tracks.length === 0) return
 
+        // Get video dimensions for scaling
+        const video = document.getElementById('video') as HTMLVideoElement | HTMLImageElement | null
+        if (!video) return
+
+        const naturalWidth = 'videoWidth' in video ? (video as HTMLVideoElement).videoWidth : ('naturalWidth' in video ? (video as HTMLImageElement).naturalWidth : 0)
+        const naturalHeight = 'videoHeight' in video ? (video as HTMLVideoElement).videoHeight : ('naturalHeight' in video ? (video as HTMLImageElement).naturalHeight : 0)
+
+        if (naturalWidth === 0 || naturalHeight === 0) return
+
+        const scaleX = dimensions.value.width / naturalWidth
+        const scaleY = dimensions.value.height / naturalHeight
+
         for (const track of tracks) {
             const [x1, y1, x2, y2] = track.bbox
-            const width = x2 - x1
-            const height = y2 - y1
+            const scaledX1 = x1 * scaleX
+            const scaledY1 = y1 * scaleY
+            const scaledX2 = x2 * scaleX
+            const scaledY2 = y2 * scaleY
+            const width = scaledX2 - scaledX1
+            const height = scaledY2 - scaledY1
             const color = getTrackColor(track.id)
 
             // Draw rectangle
             ctx.value.strokeStyle = color
             ctx.value.lineWidth = 2
-            ctx.value.strokeRect(x1, y1, width, height)
+            ctx.value.strokeRect(scaledX1, scaledY1, width, height)
 
             // Draw label background
             ctx.value.fillStyle = color
-            ctx.value.fillRect(x1, y1 - 18, 50, 18)
+            ctx.value.fillRect(scaledX1, scaledY1 - 18, 50, 18)
 
             // Draw label text
             ctx.value.fillStyle = '#1a1a2e'
             ctx.value.font = 'bold 11px sans-serif'
-            ctx.value.fillText(`#${track.id}`, x1 + 4, y1 - 5)
+            ctx.value.fillText(`#${track.id}`, scaledX1 + 4, scaledY1 - 5)
 
             // Draw confidence if available
             if (track.confidence > 0) {
                 ctx.value.fillStyle = color
                 ctx.value.font = '10px sans-serif'
-                ctx.value.fillText(`${(track.confidence * 100).toFixed(0)}%`, x1, y2 + 14)
+                ctx.value.fillText(`${(track.confidence * 100).toFixed(0)}%`, scaledX1, scaledY2 + 14)
             }
 
             // Draw tag ID if available
             if (track.tag_id !== undefined) {
                 ctx.value.fillStyle = '#4ecca3'
-                ctx.value.fillRect(x2 - 25, y2 - 5, 25, 18)
+                ctx.value.fillRect(scaledX2 - 25, scaledY2 - 5, 25, 18)
                 ctx.value.fillStyle = '#1a1a2e'
                 ctx.value.font = 'bold 10px sans-serif'
-                ctx.value.fillText(`T${track.tag_id}`, x2 - 22, y2 + 8)
+                ctx.value.fillText(`T${track.tag_id}`, scaledX2 - 22, scaledY2 + 8)
             }
         }
     }

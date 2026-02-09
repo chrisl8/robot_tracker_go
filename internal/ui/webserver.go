@@ -23,6 +23,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"robot_tracker_go/internal/planning"
 	"robot_tracker_go/internal/position"
+	"robot_tracker_go/internal/tracking"
 )
 
 type WebServer struct {
@@ -62,11 +63,16 @@ type OverlayMessage struct {
 	Type        string                    `json:"type"`
 	BBox        *BBoxMessage              `json:"bbox,omitempty"`
 	Track       *TrackMessage             `json:"track,omitempty"`
+	Tracks      *TracksMessage            `json:"tracks,omitempty"`
 	Path        *PathMessage              `json:"path,omitempty"`
 	Status      *StatusMessage            `json:"status,omitempty"`
 	Command     *CommandMessage           `json:"command,omitempty"`
 	Calibration *CalibrationStatusMessage `json:"calibration,omitempty"`
 	Obstacles   *ObstaclesMessage         `json:"obstacles,omitempty"`
+}
+
+type TracksMessage struct {
+	Tracks []TrackMessage `json:"tracks"`
 }
 
 type ObstaclesMessage struct {
@@ -82,11 +88,13 @@ type BBoxMessage struct {
 }
 
 type TrackMessage struct {
-	ID         int      `json:"id"`
-	BBox       []int    `json:"bbox"`
-	History    [][2]int `json:"history"`
-	Color      string   `json:"color"`
-	Confidence float64  `json:"confidence"`
+	ID          int      `json:"id"`
+	BBox        []int    `json:"bbox"`
+	History     [][2]int `json:"history"`
+	Color       string   `json:"color"`
+	Confidence  float64  `json:"confidence"`
+	State       string   `json:"state"`
+	PixelRadius *float64 `json:"pixel_radius,omitempty"`
 }
 
 type PathMessage struct {
@@ -288,6 +296,34 @@ func (s *WebServer) BroadcastObstacles() {
 			Obstacles: obstacles,
 			Count:     len(obstacles),
 		},
+	})
+}
+
+func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
+	trackMessages := make([]TrackMessage, 0, len(tracks))
+	for _, track := range tracks {
+		bbox := []int{track.Bbox[0], track.Bbox[1], track.Bbox[2], track.Bbox[3]}
+		history := make([][2]int, len(track.History))
+		for i, hp := range track.History {
+			history[i] = [2]int{hp.Bbox[0], hp.Bbox[1]}
+		}
+		msg := TrackMessage{
+			ID:          track.TrackID,
+			BBox:        bbox,
+			History:     history,
+			Confidence:  track.Confidence,
+			State:       track.StateString(),
+			PixelRadius: &track.PixelRadius,
+		}
+		if track.PixelRadius <= 0 {
+			msg.PixelRadius = nil
+		}
+		trackMessages = append(trackMessages, msg)
+	}
+	log.Printf("BroadcastTracks: %d tracks, %d with pixel_radius", len(trackMessages), len(trackMessages))
+	s.BroadcastOverlay(OverlayMessage{
+		Type:   "tracks",
+		Tracks: &TracksMessage{Tracks: trackMessages},
 	})
 }
 

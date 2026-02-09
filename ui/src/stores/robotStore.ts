@@ -15,9 +15,12 @@ export const useRobotStore = defineStore('robot', () => {
     })
 
     // Computed
-    const confirmedTracks = computed(() =>
-        tracks.value.filter(t => t.state === 'confirmed')
-    )
+    const confirmedTracks = computed(() => {
+        if (!Array.isArray(tracks.value)) {
+            return []
+        }
+        return tracks.value.filter(t => t.state === 'confirmed')
+    })
 
     const trackCount = computed(() => tracks.value.length)
 
@@ -32,13 +35,25 @@ export const useRobotStore = defineStore('robot', () => {
                 updateTrack(data.track)
                 break
             case 'tracks':
-                tracks.value = data.tracks
+                // Backend sends nested format: { type: 'tracks', tracks: { tracks: [...], count: 3 } }
+                // Frontend expects flat format: { type: 'tracks', tracks: [...] }
+                let tracksArray: Track[] | undefined
+                if (Array.isArray((data as any).tracks)) {
+                    // Flat format (shouldn't happen with current backend)
+                    tracksArray = (data as any).tracks
+                } else if ((data as any).tracks && typeof (data as any).tracks === 'object') {
+                    // Nested format from backend
+                    tracksArray = (data as any).tracks.tracks
+                }
+                if (Array.isArray(tracksArray)) {
+                    tracks.value = tracksArray
+                }
                 break
             case 'status':
                 status.value = data.status
                 break
             case 'obstacles':
-                if (data.obstacles) {
+                if (data.obstacles && Array.isArray(data.obstacles.obstacles)) {
                     obstacleStore.setObstacles(data.obstacles.obstacles || [])
                 }
                 break

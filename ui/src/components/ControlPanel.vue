@@ -100,6 +100,14 @@ watch(
         <div class="keyboard-hint">
             Use <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to move, <kbd>X</kbd> to stop
         </div>
+        <div class="divider"></div>
+        <button
+            class="btn toggle"
+            :class="{ active: uiStore.showFootprints }"
+            @click="uiStore.toggleFootprints()"
+        >
+            {{ uiStore.showFootprints ? 'Hide' : 'Show' }} Footprints
+        </button>
     </div>
 </template>
 
@@ -167,6 +175,23 @@ h3 {
     background: #5fd9b0;
 }
 
+.btn.toggle {
+    width: 100%;
+    margin-top: 12px;
+    font-size: 0.9rem;
+    padding: 10px;
+    background: #0f3460;
+}
+
+.btn.toggle:hover {
+    background: #1a4a7a;
+}
+
+.btn.toggle.active {
+    background: #00bcd4;
+    color: #1a1a2e;
+}
+
 .keyboard-hint {
     font-size: 0.75rem;
     color: #666;
@@ -181,5 +206,11 @@ h3 {
     margin: 0 3px;
     font-family: monospace;
     font-size: 0.8rem;
+}
+
+.divider {
+    height: 1px;
+    background: #333;
+    margin: 16px 0;
 }
 </style>

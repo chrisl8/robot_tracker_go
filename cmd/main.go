@@ -464,17 +464,24 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
 	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
 
-	for _, track := range trackingResult.Tracks {
+	for i := range trackingResult.Tracks {
+		track := &trackingResult.Tracks[i]
 		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 			rs.CurrentRobotID = *track.TagID
 			if rs.positionEst != nil {
 				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
 				worldPos := rs.positionEst.PixelToWorld(px, py)
 				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+				track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+				if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+					track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+				}
 				rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
 			}
 		}
 	}
+
+	rs.webServer.BroadcastTracks(trackingResult.Tracks)
 
 	if rs.CurrentGoal != [2]float64{0, 0} && rs.CurrentRobotID != 0 {
 		velocity, _ := rs.planner.ComputeVelocityWithDynamicObstacles(
@@ -790,15 +797,23 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
 		trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
 
-		for _, track := range trackingResult.Tracks {
+		for i := range trackingResult.Tracks {
+			track := &trackingResult.Tracks[i]
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+				rs.CurrentRobotID = *track.TagID
 				if rs.positionEst != nil {
 					px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
 					worldPos := rs.positionEst.PixelToWorld(px, py)
 					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+					track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+					if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+						track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+					}
 				}
 			}
 		}
+
+		rs.webServer.BroadcastTracks(trackingResult.Tracks)
 	}
 
 	if rs.detectionPipe != nil && rs.webServer != nil {

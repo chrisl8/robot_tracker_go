@@ -92,6 +92,6 @@ test.describe('Control Panel', () => {
 
   test('should have manual control buttons', async ({ page }) => {
     await expect(page.locator('.panel:has-text("Controls")')).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('.panel:has-text("Controls") .btn')).toHaveCount(5)
+    await expect(page.locator('.panel:has-text("Controls") .btn')).toHaveCount(6)
   })
 })

@@ -3,11 +3,12 @@
 // Track types (maps to internal/tracking/types.go)
 export interface Track {
     id: number
-    bbox: [number, number, number, number]  // [x1, y1, x2, y2]
+    bbox: [number, number, number, number]
     confidence: number
     tag_id?: number
     state: 'pending' | 'confirmed' | 'lost'
-    history: [number, number][]  // [x, y] coordinates
+    history: [number, number][]
+    pixel_radius?: number
 }
 
 // Obstacle types (maps to internal/planning/static_obstacle.go)

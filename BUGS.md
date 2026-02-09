@@ -311,6 +311,149 @@ Camera interface methods return empty values on failure, no error propagation.
 
 ---
 
+### UI-003: Robot Footprints Not Displayed in Demo Mode - RESOLVED (Feb 8, 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Critical |
+| **Impact** | Footprint display feature not working in demo mode |
+| **Component** | `cmd/main.go`, `internal/ui/webserver.go` |
+
+**Symptom:**
+Frontend never received tracks via WebSocket in demo mode, so no robot footprints were displayed even when tracks were detected and confirmed.
+
+**Root Cause:**
+Two bugs in `cmd/main.go`:
+
+1. **Missing `BroadcastTracks` call in `ProcessDemoFrame`**: The demo mode function never called `rs.webServer.BroadcastTracks()`, so tracks were never sent to the frontend.
+
+2. **Missing `PixelRadius` calculation in `ProcessDemoFrame`**: Even if tracks were broadcast, the `PixelRadius` field was only set in `ProcessFrame`, not in `ProcessDemoFrame`.
+
+**Code Location:**
+```go
+// cmd/main.go:800-823 (before fix - missing BroadcastTracks and PixelRadius)
+if rs.tracker != nil {
+    trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
+    trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+
+    for _, track := range trackingResult.Tracks {
+        // PixelRadius never set!
+        if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+            // ... no BroadcastTracks call!
+        }
+    }
+}
+```
+
+**Fix Applied:**
+```go
+// cmd/main.go:800-830 (after fix)
+if rs.tracker != nil {
+    trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
+    trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+
+    for i := range trackingResult.Tracks {
+        track := &trackingResult.Tracks[i]
+        if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+            rs.CurrentRobotID = *track.TagID
+            if rs.positionEst != nil {
+                px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+                worldPos := rs.positionEst.PixelToWorld(px, py)
+                rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+                track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+                if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+                    track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+                }
+            }
+        }
+    }
+
+    rs.webServer.BroadcastTracks(trackingResult.Tracks)
+}
+```
+
+**Verification:**
+After fix, logs show:
+```
+BroadcastTracks: 3 tracks, 3 with pixel_radius
+```
+
+**Related Files:**
+- `cmd/main.go` - Added missing `BroadcastTracks` call and `PixelRadius` calculation
+- `internal/ui/webserver.go` - Already had `BroadcastTracks` method
+- `ui/src/composables/useCanvas.ts` - `renderFootprints()` function (already implemented)
+- `ui/src/stores/robotStore.ts` - `confirmedTracks` computed property (already implemented)
+- `ui/src/stores/uiStore.ts` - `showFootprints` state (already implemented)
+
+---
+
+### UI-004: WebSocket Track Message Format Mismatch - RESOLVED (Feb 8, 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Critical |
+| **Impact** | Robot footprints not displayed - frontend received tracks but couldn't parse them |
+| **Component** | `ui/src/stores/robotStore.ts`, `internal/ui/webserver.go` |
+
+**Symptom:**
+Backend logs showed `BroadcastTracks: 3 tracks, 3 with pixel_radius`, but frontend showed `trackCount: 0` and no footprints were rendered.
+
+**Root Cause:**
+Backend sends tracks in nested format:
+```json
+{
+  "type": "tracks",
+  "tracks": {
+    "tracks": [...],
+    "count": 3
+  }
+}
+```
+
+But frontend expected flat format:
+```json
+{
+  "type": "tracks",
+  "tracks": [...]
+}
+```
+
+The frontend's `handleWebSocketMessage()` was checking `Array.isArray(data.tracks)` which returned false for the nested object, so tracks were never assigned to the store.
+
+**Fix Applied:**
+Modified `ui/src/stores/robotStore.ts` to handle both formats:
+```typescript
+case 'tracks':
+    let tracksArray: Track[] | undefined
+    if (Array.isArray((data as any).tracks)) {
+        // Flat format
+        tracksArray = (data as any).tracks
+    } else if ((data as any).tracks && typeof (data as any).tracks === 'object') {
+        // Nested format from backend
+        tracksArray = (data as any).tracks.tracks
+    }
+    if (Array.isArray(tracksArray)) {
+        tracks.value = tracksArray
+    }
+    break
+```
+
+**Verification:**
+After fix, logs show:
+```
+[WebSocket] Setting tracks, count: 3
+[Watch] Tracks changed, calling render(), tracks: 3 confirmed: 3
+[Footprint] renderFootprints called: {trackCount: 3, showFootprints: true, ...}
+```
+
+**Related Files:**
+- `ui/src/stores/robotStore.ts` - Updated `handleWebSocketMessage()` to parse nested tracks format
+- `ui/src/types/api.ts` - `TracksMessage` interface (unchanged)
+
+---
+
 ### UI-002: MJPEG Stream Has No Error Recovery
 
 | Field | Value |

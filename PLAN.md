@@ -1065,6 +1065,203 @@ SKIP_INTEGRATION_TESTS=true ./scripts/test.sh
 
 ---
 
+## Phase 12: Robot Footprint Display (COMPLETED ✅ - Feb 8, 2026)
+
+### Overview
+
+Add semi-transparent cyan circles showing robot footprints on the video overlay.
+
+### Requirements
+
+1. **Visual Style**: Semi-transparent cyan circles (`rgba(0, 255, 255, 0.2)`) with solid cyan edge (`#00ffff`, 2px)
+2. **Toggleable**: Show/hide via UI toggle button
+3. **Coordinate System**: Backend pre-computes pixel radius (simplest approach)
+4. **Scope**: Only confirmed tracks (physical robots, not tentative detections)
+
+### Implementation Tasks
+
+| Task | File | Status |
+|------|------|--------|
+| 12.1 Update Track struct | `internal/tracking/types.go` | ✅ Done |
+| 12.2 Populate new fields in ProcessFrame | `cmd/main.go` | ✅ Done |
+| 12.3 Update TrackMessage | `internal/ui/webserver.go` | ✅ Done |
+| 12.4 Update Track interface | `ui/src/types/api.ts` | ✅ Done |
+| 12.5 Add showFootprints toggle | `ui/src/stores/uiStore.ts` | ✅ Done |
+| 12.6 Add renderFootprints() | `ui/src/composables/useCanvas.ts` | ✅ Done |
+| 12.7 Add toggle button | `ui/src/components/ControlPanel.vue` | ✅ Done |
+| 12.8 Run tests | - | ✅ Done |
+
+### Bug Fixes Discovered During Testing
+
+#### Critical Bug 1: Missing BroadcastTracks in Demo Mode
+
+**Problem:** `ProcessDemoFrame` never called `rs.webServer.BroadcastTracks()`, so no tracks were sent to frontend in demo mode.
+
+**Impact:** Footprint feature appeared broken even though implementation was correct.
+
+**Fix Applied** (`cmd/main.go:800-823`):
+```go
+// Added BroadcastTracks call after processing tracks
+rs.webServer.BroadcastTracks(trackingResult.Tracks)
+```
+
+#### Critical Bug 2: Missing PixelRadius in Demo Mode
+
+**Problem:** Even if tracks were broadcast, `PixelRadius` was only calculated in `ProcessFrame`, not in `ProcessDemoFrame`.
+
+**Impact:** Tracks would be displayed but without footprints.
+
+**Fix Applied** (`cmd/main.go:808-821`):
+```go
+// Added PixelRadius calculation matching ProcessFrame logic
+if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+    track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+}
+```
+
+### Verification
+
+```
+$ ./scripts/test.sh
+[WebServer] BroadcastTracks: 3 tracks, 3 with pixel_radius
+✓ All 13 Playwright integration tests pass
+✓ All Vue unit tests pass
+✓ All Go tests pass
+```
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `cmd/main.go` | Added `BroadcastTracks` call and `PixelRadius` calculation in `ProcessDemoFrame` |
+| `internal/tracking/types.go` | Added `WorldPos` and `PixelRadius` fields |
+| `internal/ui/webserver.go` | Added `TracksMessage` type and `BroadcastTracks()` method |
+| `ui/src/types/api.ts` | Added `pixel_radius` to `Track` interface |
+| `ui/src/stores/robotStore.ts` | Added `confirmedTracks` computed property |
+| `ui/src/stores/uiStore.ts` | Added `showFootprints` state and `toggleFootprints()` action |
+| `ui/src/composables/useCanvas.ts` | Added `renderFootprints()` function with coordinate scaling |
+| `ui/src/components/ControlPanel.vue` | Added footprint toggle button |
+| `ui/tests/app.spec.ts` | Updated expected button count |
+
+### Architecture
+
+```
+Backend (Go)                          Frontend (Vue/TS)
+────────────────                      ──────────────────
+Track struct:                         Track interface:
+  - Bbox [4]int (pixels)                - bbox: [x1,y1,x2,y2]
+  - WorldPos [2]float64 (NEW)           - world_pos?: [x,y]
+  - PixelRadius float64 (NEW)         - pixel_radius?: number (NEW)
+```
+
+### Backend Changes
+
+**12.1 Track struct** (`internal/tracking/types.go`):
+```go
+type Track struct {
+    // ... existing fields ...
+    WorldPos     [2]float64  // NEW: center world coordinates [x, y]
+    PixelRadius  float64     // NEW: radius in pixels for footprint
+}
+```
+
+**12.2 ProcessFrame** (`cmd/main.go`):
+```go
+// After converting to world position, populate new fields:
+worldPos := rs.positionEst.PixelToWorld(px, py)
+track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+
+// Get robot diameter from config and convert to pixel radius
+if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+    diameter := robotConfig.Diameter
+    track.PixelRadius = (diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+}
+```
+
+**12.3 TrackMessage** (`internal/ui/webserver.go`):
+```go
+type TrackMessage struct {
+    // ... existing fields ...
+    PixelRadius *float64 `json:"pixel_radius,omitempty"` // NEW
+}
+```
+
+### Frontend Changes
+
+**12.4 Track interface** (`ui/src/types/api.ts`):
+```typescript
+export interface Track {
+    // ... existing fields ...
+    pixel_radius?: number  // NEW: radius in pixels for footprint
+}
+```
+
+**12.5 uiStore toggle** (`ui/src/stores/uiStore.ts`):
+```typescript
+const showFootprints = ref(true)  // NEW
+
+function toggleFootprints(): void {
+    showFootprints.value = !showFootprints.value
+}
+```
+
+**12.6 renderFootprints()** (`ui/src/composables/useCanvas.ts`):
+```typescript
+function renderFootprints(): void {
+    const tracks = robotStore.confirmedTracks
+    if (!ctx.value || !uiStore.showFootprints || tracks.length === 0) return
+
+    for (const track of tracks) {
+        if (!track.pixel_radius) continue
+
+        const centerX = (track.bbox[0] + track.bbox[2]) / 2
+        const centerY = (track.bbox[1] + track.bbox[3]) / 2
+
+        // Draw filled circle
+        ctx.value.beginPath()
+        ctx.value.arc(centerX, centerY, track.pixel_radius, 0, Math.PI * 2)
+        ctx.value.fillStyle = 'rgba(0, 255, 255, 0.2)'
+        ctx.value.fill()
+
+        // Draw solid edge
+        ctx.value.strokeStyle = '#00ffff'
+        ctx.value.lineWidth = 2
+        ctx.value.stroke()
+    }
+}
+```
+
+**12.7 Toggle button** (`ui/src/components/ControlPanel.vue`):
+```vue
+<button 
+    class="btn toggle" 
+    :class="{ active: uiStore.showFootprints }"
+    @click="uiStore.toggleFootprints()"
+>
+    {{ uiStore.showFootprints ? 'Hide' : 'Show' }} Footprints
+</button>
+```
+
+### Rendering Order
+
+| Layer | Function | Content |
+|-------|----------|---------|
+| 1 | `renderObstacles()` | Static obstacles (red) |
+| 2 | `renderFootprints()` | Robot footprints (cyan) ← NEW |
+| 3 | `renderDrawingBox()` | User selection (orange) |
+| 4 | `renderTracks()` | Bounding boxes (per-track color) |
+
+### Effort Estimate
+
+| Task | Time |
+|------|------|
+| Backend changes | 1-2 hours |
+| Frontend changes | 2-3 hours |
+| Testing | 1 hour |
+| **Total** | **4-6 hours** |
+
+---
+
 ## References
 
 - Original Python implementation: `C:\Dev\robot_tracker\`
@@ -1074,3 +1271,66 @@ SKIP_INTEGRATION_TESTS=true ./scripts/test.sh
 - TypeScript: https://www.typescriptlang.org/
 - Pinia: https://pinia.vuejs.org/
 - Vite: https://vitejs.dev/
+
+---
+
+## Phase 12 Bug Fix Summary (Feb 8, 2026)
+
+### Root Cause: WebSocket Message Format Mismatch
+
+Despite the backend correctly broadcasting tracks with `pixel_radius`, the frontend was not displaying footprints because:
+
+**Backend sends (nested format):**
+```json
+{
+  "type": "tracks",
+  "tracks": {
+    "tracks": [...],
+    "count": 3
+  }
+}
+```
+
+**Frontend expected (flat format):**
+```json
+{
+  "type": "tracks",
+  "tracks": [...]
+}
+```
+
+The frontend's `handleWebSocketMessage()` checked `Array.isArray(data.tracks)` which returned `false` for the nested object, so tracks were never assigned to the store.
+
+### Fix Applied
+
+Modified `ui/src/stores/robotStore.ts`:
+```typescript
+case 'tracks':
+    let tracksArray: Track[] | undefined
+    if (Array.isArray((data as any).tracks)) {
+        tracksArray = (data as any).tracks
+    } else if ((data as any).tracks && typeof (data as any).tracks === 'object') {
+        tracksArray = (data as any).tracks.tracks
+    }
+    if (Array.isArray(tracksArray)) {
+        tracks.value = tracksArray
+    }
+    break
+```
+
+### Debug Process
+
+1. Added console.log statements to track rendering
+2. Discovered Vite was stripping console.log in production build
+3. Used `console.debug` and configured Vite to preserve console statements
+4. Found `renderFootprints()` was called but `trackCount: 0`
+5. Traced issue to WebSocket message parsing
+
+### Verification
+
+After fix:
+- Backend: `BroadcastTracks: 3 tracks, 3 with pixel_radius` ✓
+- Frontend: `[WebSocket] Setting tracks, count: 3` ✓
+- Frontend: `[Watch] Tracks changed, calling render(), tracks: 3 confirmed: 3` ✓
+- Frontend: `renderFootprints called: {trackCount: 3, showFootprints: true, ...}` ✓
+- All tests pass ✓
