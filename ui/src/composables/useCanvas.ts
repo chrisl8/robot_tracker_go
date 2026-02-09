@@ -10,6 +10,22 @@ export interface CanvasPoint {
     y: number
 }
 
+// Module-level videoScale that is shared across all usages
+const videoScale = ref({ x: 1, y: 1, offsetX: 0, offsetY: 0 })
+
+// Export canvasToNatural for use by other modules (e.g., robotStore)
+// Uses the shared module-level videoScale ref
+export function canvasToNaturalShared(canvasX: number, canvasY: number): { x: number, y: number } {
+    const scale = videoScale.value
+    if (scale.x === 0 || scale.y === 0) {
+        return { x: Math.round(canvasX), y: Math.round(canvasY) }
+    }
+    return {
+        x: Math.round((canvasX - scale.offsetX) / scale.x),
+        y: Math.round((canvasY - scale.offsetY) / scale.y)
+    }
+}
+
 export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const robotStore = useRobotStore()
     const obstacleStore = useObstacleStore()
@@ -18,9 +34,11 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const canvas = ref<HTMLCanvasElement | null>(null)
     const context = ref<CanvasRenderingContext2D | null>(null)
     const dimensions = ref({ width: 0, height: 0 })
-    const videoScale = ref({ x: 1, y: 1, offsetX: 0, offsetY: 0 })
     const mousePosition = ref<{ x: number, y: number } | null>(null)
     const flashInvalid = ref<{ x: number, y: number, active: boolean } | null>(null)
+
+    // Export videoScale for use by other modules (e.g., robotStore)
+    const getVideoScale = () => videoScale.value
 
     const ctx = computed(() => context.value)
 
@@ -537,6 +555,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         render,
         getCanvasPoint,
         canvasToNatural,
-        naturalToCanvas
+        naturalToCanvas,
+        getVideoScale
     }
 }

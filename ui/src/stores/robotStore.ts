@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Track, RobotStatus, WebSocketMessage, Destination } from '@/types/api'
-import { canvasToNatural, naturalToCanvas } from '@/utils/coordinates'
+import { canvasToNaturalShared } from '@/composables/useCanvas'
 import { useUIStore } from './uiStore'
 import { useObstacleStore } from './obstacleStore'
 
@@ -125,11 +125,11 @@ export const useRobotStore = defineStore('robot', () => {
             return false
         }
 
-        const overlay = document.getElementById('overlay') as HTMLCanvasElement | null
-        const canvasWidth = overlay?.width || 640
-        const canvasHeight = overlay?.height || 480
+        // Use the SAME canvasToNatural function as useCanvas.ts for consistency
+        const naturalCoords = canvasToNaturalShared(canvasX, canvasY)
 
-        const naturalCoords = canvasToNatural(canvasX, canvasY, canvasWidth, canvasHeight)
+        console.log('[DEST DEBUG] Click (canvas):', { canvasX, canvasY })
+        console.log('[DEST DEBUG] Stored (natural):', naturalCoords)
 
         try {
             const response = await fetch('/api/destination', {
