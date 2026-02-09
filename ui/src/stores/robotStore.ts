@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Track, RobotStatus, WebSocketMessage, Destination } from '@/types/api'
+import { canvasToNatural, naturalToCanvas } from '@/utils/coordinates'
 import { useUIStore } from './uiStore'
 import { useObstacleStore } from './obstacleStore'
 
@@ -124,21 +125,11 @@ export const useRobotStore = defineStore('robot', () => {
             return false
         }
 
-        // Convert canvas coordinates to natural video coordinates for resize-safe storage
-        const video = document.getElementById('video') as HTMLVideoElement | HTMLImageElement | null
-        let naturalX = canvasX
-        let naturalY = canvasY
+        const overlay = document.getElementById('overlay') as HTMLCanvasElement | null
+        const canvasWidth = overlay?.width || 640
+        const canvasHeight = overlay?.height || 480
 
-        if (video) {
-            const naturalWidth = 'videoWidth' in video ? (video as HTMLVideoElement).videoWidth : ('naturalWidth' in video ? (video as HTMLImageElement).naturalWidth : 640)
-            const naturalHeight = 'videoHeight' in video ? (video as HTMLVideoElement).videoHeight : ('naturalHeight' in video ? (video as HTMLImageElement).naturalHeight : 480)
-
-            const overlay = document.getElementById('overlay') as HTMLCanvasElement | null
-            if (overlay && overlay.width > 0 && overlay.height > 0) {
-                naturalX = Math.round(canvasX * (naturalWidth / overlay.width))
-                naturalY = Math.round(canvasY * (naturalHeight / overlay.height))
-            }
-        }
+        const naturalCoords = canvasToNatural(canvasX, canvasY, canvasWidth, canvasHeight)
 
         try {
             const response = await fetch('/api/destination', {
@@ -146,8 +137,8 @@ export const useRobotStore = defineStore('robot', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     robot_id: selectedTrackId.value,
-                    x: naturalX,
-                    y: naturalY
+                    x: naturalCoords.x,
+                    y: naturalCoords.y
                 })
             })
 
@@ -156,8 +147,8 @@ export const useRobotStore = defineStore('robot', () => {
                 destination.value = {
                     id: `${selectedTrackId.value}-${Date.now()}`,
                     robot_id: selectedTrackId.value,
-                    x: naturalX,
-                    y: naturalY
+                    x: naturalCoords.x,
+                    y: naturalCoords.y
                 }
                 destinationMode.value = false
                 return true
