@@ -356,6 +356,28 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		return
 	}
 
+	s.obstaclesMutex.RLock()
+	obstacles := s.obstacles
+	s.obstaclesMutex.RUnlock()
+
+	if len(obstacles) > 0 {
+		destX := float64(req.X)
+		destY := float64(req.Y)
+
+		for _, obs := range obstacles {
+			if destX >= float64(obs.PixelsTopLeft[0]) && destX <= float64(obs.PixelsBottomRight[0]) &&
+				destY >= float64(obs.PixelsTopLeft[1]) && destY <= float64(obs.PixelsBottomRight[1]) {
+				log.Printf("DESTINATION_REJECTED: Destination (%.0f, %.0f) overlaps with obstacle '%s'",
+					destX, destY, obs.Name)
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error":    "Destination overlaps with obstacle",
+					"obstacle": obs.Name,
+				})
+				return
+			}
+		}
+	}
+
 	s.destinationMutex.Lock()
 	s.destination = DestinationMessage{
 		RobotID: req.RobotID,
@@ -915,4 +937,10 @@ func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
 	if s.OnObstaclesChanged != nil {
 		s.OnObstaclesChanged(obstacles)
 	}
+}
+
+func (s *WebServer) GetAllObstacles() []planning.Obstacle {
+	s.obstaclesMutex.RLock()
+	defer s.obstaclesMutex.RUnlock()
+	return s.obstacles
 }

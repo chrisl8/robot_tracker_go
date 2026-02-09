@@ -49,8 +49,6 @@ func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstac
 	}
 
 	borderColor := color.RGBA{255, 107, 107, 255}
-	labelColor := color.RGBA{255, 255, 255, 255}
-	bgColor := color.RGBA{255, 107, 107, 200}
 
 	drawnCount := 0
 	for _, obs := range obstacles {
@@ -75,7 +73,6 @@ func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstac
 		drawLine(rgba, image.Point{X: clipX2, Y: clipY2}, image.Point{X: clipX1, Y: clipY2}, borderColor, lineWidth)
 		drawLine(rgba, image.Point{X: clipX1, Y: clipY2}, image.Point{X: clipX1, Y: clipY1}, borderColor, lineWidth)
 
-		drawLabel(rgba, clipX1+5, clipY1-8, "OBSTACLE", labelColor, bgColor)
 		drawnCount++
 	}
 

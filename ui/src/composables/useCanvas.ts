@@ -20,6 +20,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const dimensions = ref({ width: 0, height: 0 })
     const videoScale = ref({ x: 1, y: 1, offsetX: 0, offsetY: 0 })
     const mousePosition = ref<{ x: number, y: number } | null>(null)
+    const flashInvalid = ref<{ x: number, y: number, active: boolean } | null>(null)
 
     const ctx = computed(() => context.value)
 
@@ -126,6 +127,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         renderDrawingBox()
         renderTracks()
         renderCalibrationTag()
+        renderInvalidFlash()
     }
 
     // renderObstacles removed - obstacles are now drawn by the backend
@@ -245,6 +247,33 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         ctx.value.fillStyle = isInvalid ? '#ff0000' : '#00ff00'
         ctx.value.font = 'bold 12px sans-serif'
         ctx.value.fillText('DEST', pos.x + radius + 5, pos.y)
+    }
+
+    function triggerInvalidFlash(x: number, y: number): void {
+        flashInvalid.value = { x, y, active: true }
+        setTimeout(() => {
+            flashInvalid.value = null
+        }, 200)
+    }
+
+    function renderInvalidFlash(): void {
+        if (!ctx.value || !flashInvalid.value || !flashInvalid.value.active) return
+        if (videoScale.value.x === 0 || videoScale.value.y === 0) return
+
+        const pos = flashInvalid.value
+        const radius = 20
+
+        ctx.value.beginPath()
+        ctx.value.arc(pos.x, pos.y, radius * 1.2, 0, Math.PI * 2)
+        ctx.value.strokeStyle = 'rgba(255, 0, 0, 0.8)'
+        ctx.value.lineWidth = 4
+        ctx.value.stroke()
+
+        ctx.value.beginPath()
+        ctx.value.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
+        ctx.value.strokeStyle = 'rgba(255, 0, 0, 0.4)'
+        ctx.value.lineWidth = 2
+        ctx.value.stroke()
     }
 
     function renderDestinationMarker(): void {
@@ -419,6 +448,18 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                     } else {
                         robotStore.selectTrack(track.id)
                     }
+                    return
+                }
+            }
+
+            const naturalPos = canvasToNatural(point.x, point.y)
+            const selectedTrack = robotStore.confirmedTracks.find(t => t.id === robotStore.selectedTrackId)
+            const pixelRadius = selectedTrack?.pixel_radius
+
+            if (pixelRadius && pixelRadius > 0) {
+                if (isCircleInObstacle(naturalPos.x, naturalPos.y, pixelRadius)) {
+                    triggerInvalidFlash(point.x, point.y)
+                    uiStore.showToast('Destination overlaps with obstacle', 'error')
                     return
                 }
             }
