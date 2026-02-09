@@ -82,9 +82,17 @@ type YOLOConfig struct {
 
 type ObstaclesConfig struct {
 	CollisionMargin float64 `yaml:"collision_margin"`
-	Path            string  `yaml:"path"`
+	File            string  `yaml:"file"`
+	Path            string  `yaml:"path"` // Deprecated: use File instead
 	Enabled         bool    `yaml:"enabled"`
 	DisplayColor    string  `yaml:"display_color"`
+}
+
+func (c *ObstaclesConfig) GetPath() string {
+	if c.File != "" {
+		return c.File
+	}
+	return c.Path
 }
 
 type StaticObstacleConfig struct {

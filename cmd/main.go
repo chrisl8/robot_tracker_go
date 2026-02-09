@@ -216,8 +216,8 @@ func (rs *RobotSystem) Initialize() error {
 		log.Printf("Using calibration file: %s", calibrationPath)
 	}
 	obstaclesPath := ""
-	if rs.cfg.Obstacles.Path != "" {
-		obstaclesPath = rs.cfg.Obstacles.Path
+	if rs.cfg != nil && rs.cfg.Obstacles.GetPath() != "" {
+		obstaclesPath = rs.cfg.Obstacles.GetPath()
 	}
 	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
 	if err != nil {
@@ -261,14 +261,30 @@ func (rs *RobotSystem) Initialize() error {
 }
 
 func (rs *RobotSystem) loadStaticObstacles() {
-	if rs.cfg == nil || rs.cfg.Obstacles.Path == "" {
-		log.Printf("No obstacle path configured")
-		return
+	obstaclesPath := ""
+	if rs.cfg != nil && rs.cfg.Obstacles.GetPath() != "" {
+		configPath := rs.cfg.Obstacles.GetPath()
+		if _, err := os.Stat(configPath); err == nil {
+			obstaclesPath = configPath
+			log.Printf("Obstacles path from config: %s", obstaclesPath)
+		} else {
+			log.Printf("Config obstacles file not found: %s", configPath)
+		}
 	}
 
-	data, err := os.ReadFile(rs.cfg.Obstacles.Path)
+	if obstaclesPath == "" && rs.webServer != nil {
+		obstaclesPath = rs.webServer.GetObstaclesPath()
+		log.Printf("Obstacles path from webserver: %s", obstaclesPath)
+	}
+	if obstaclesPath == "" {
+		obstaclesPath = "config/obstacles.yaml"
+		log.Printf("Using default obstacles path: %s", obstaclesPath)
+	}
+
+	log.Printf("Loading obstacles from: %s", obstaclesPath)
+	data, err := os.ReadFile(obstaclesPath)
 	if err != nil {
-		log.Printf("No obstacles file found at %s", rs.cfg.Obstacles.Path)
+		log.Printf("No obstacles file found at %s", obstaclesPath)
 		return
 	}
 
@@ -341,7 +357,7 @@ func (rs *RobotSystem) loadStaticObstacles() {
 	}
 
 	if len(rs.StaticObstacles) > 0 {
-		log.Printf("Loaded %d static obstacles from %s", len(rs.StaticObstacles), rs.cfg.Obstacles.Path)
+		log.Printf("Loaded %d static obstacles from %s", len(rs.StaticObstacles), obstaclesPath)
 		rs.webServer.SetObstacles(rs.StaticObstacles)
 	}
 }
