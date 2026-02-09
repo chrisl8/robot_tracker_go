@@ -25,24 +25,24 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const ctx = computed(() => context.value)
 
     function canvasToNatural(canvasX: number, canvasY: number): { x: number, y: number } {
-        const dims = getVideoDimensions(dimensions.value.width, dimensions.value.height)
-        if (dims.naturalWidth === 0 || dims.canvasWidth === 0) {
+        const scale = videoScale.value
+        if (scale.x === 0 || scale.y === 0) {
             return { x: Math.round(canvasX), y: Math.round(canvasY) }
         }
         return {
-            x: Math.round(canvasX * (dims.naturalWidth / dims.canvasWidth)),
-            y: Math.round(canvasY * (dims.naturalHeight / dims.canvasHeight))
+            x: Math.round(canvasX / scale.x),
+            y: Math.round(canvasY / scale.y)
         }
     }
 
     function naturalToCanvas(naturalX: number, naturalY: number): { x: number, y: number } {
-        const dims = getVideoDimensions(dimensions.value.width, dimensions.value.height)
-        if (dims.naturalWidth === 0 || dims.canvasWidth === 0) {
+        const scale = videoScale.value
+        if (scale.x === 0 || scale.y === 0) {
             return { x: naturalX, y: naturalY }
         }
         return {
-            x: naturalX * (dims.canvasWidth / dims.naturalWidth),
-            y: naturalY * (dims.canvasHeight / dims.naturalHeight)
+            x: naturalX * scale.x,
+            y: naturalY * scale.y
         }
     }
 
@@ -130,8 +130,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const tracks = robotStore.confirmedTracks
         if (!ctx.value || !uiStore.showFootprints || tracks.length === 0) return
 
-        const dims = getVideoDimensions(dimensions.value.width, dimensions.value.height)
-        if (dims.naturalWidth === 0 || dims.canvasWidth === 0) return
+        if (videoScale.value.x === 0 || videoScale.value.y === 0) return
 
         const selectedTrackId = robotStore.selectedTrackId
 
@@ -142,7 +141,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 (track.bbox[0] + track.bbox[2]) / 2,
                 (track.bbox[1] + track.bbox[3]) / 2
             )
-            const radius = track.pixel_radius * dims.scaleX
+            const radius = track.pixel_radius * videoScale.value.x
 
             const isSelected = track.id === selectedTrackId
 
@@ -215,12 +214,11 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
         const pos = mousePosition.value
 
-        const dims = getVideoDimensions(dimensions.value.width, dimensions.value.height)
-        if (dims.naturalWidth === 0 || dims.canvasWidth === 0) return
+        if (videoScale.value.x === 0 || videoScale.value.y === 0) return
 
         // Convert canvas mouse position to natural video coordinates for collision check
         const naturalPos = canvasToNatural(pos.x, pos.y)
-        const radius = selectedTrack.pixel_radius * dims.scaleX
+        const radius = selectedTrack.pixel_radius * videoScale.value.x
         const naturalRadius = selectedTrack.pixel_radius
 
         // Check collision using natural video coordinates
@@ -255,8 +253,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     function renderInvalidFlash(): void {
         if (!ctx.value || !flashInvalid.value || !flashInvalid.value.active) return
 
-        const dims = getVideoDimensions(dimensions.value.width, dimensions.value.height)
-        if (dims.naturalWidth === 0 || dims.canvasWidth === 0) return
+        if (videoScale.value.x === 0 || videoScale.value.y === 0) return
 
         const pos = flashInvalid.value
         const radius = 20
@@ -281,11 +278,10 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const selectedTrack = robotStore.confirmedTracks.find(t => t.id === dest.robot_id)
         const selectedPixelRadius = selectedTrack?.pixel_radius
 
-        const dims = getVideoDimensions(dimensions.value.width, dimensions.value.height)
-        if (dims.naturalWidth === 0 || dims.canvasWidth === 0) return
+        if (videoScale.value.x === 0 || videoScale.value.y === 0) return
 
         const scaled = naturalToCanvas(dest.x, dest.y)
-        const radius = (selectedPixelRadius || 20) * dims.scaleX
+        const radius = (selectedPixelRadius || 20) * videoScale.value.x
 
         // Draw filled circle
         ctx.value.beginPath()
