@@ -133,7 +133,7 @@ func getHostname() string {
 func getWebUIURLs(port string) string {
 	localIP := getLocalIP()
 	hostname := getHostname()
-	return fmt.Sprintf("Web UI started at http://localhost:%s http://%s:%s http://%s:%s", port, localIP, port, hostname, port)
+	return fmt.Sprintf("\n\n---------------------------------\n--     Web UI started at:\n--     http://localhost:%s\n--     http://%s:%s\n--     http://%s:%s\n---------------------------------\n\n", port, localIP, port, hostname, port)
 }
 
 func (rs *RobotSystem) initDemoMode() {

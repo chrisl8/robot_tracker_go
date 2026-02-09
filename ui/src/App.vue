@@ -113,7 +113,7 @@ onUnmounted(() => {
         <div class="main-layout">
             <div class="video-container">
                 <div class="video-wrapper">
-                    <img ref="videoRef" id="video" :src="streamUrl" alt="Video Stream" />
+                    <img id="video" :src="streamUrl" alt="Video Stream" />
                     <VideoOverlay />
                     <div v-if="!isConnected" class="loading">Connecting...</div>
                 </div>

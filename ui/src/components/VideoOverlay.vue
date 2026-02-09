@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
@@ -10,10 +10,27 @@ const uiStore = useUIStore()
 const robotStore = useRobotStore()
 
 const overlayRef = ref<HTMLCanvasElement | null>(null)
-const { render, getCanvasPoint, canvasToNatural } = useCanvas(overlayRef)
+const { render, getCanvasPoint, canvasToNatural, syncDimensions } = useCanvas(overlayRef)
 
 const drawingMode = computed(() => obstacleStore.drawingMode)
 const destinationMode = computed(() => robotStore.destinationMode)
+
+function syncCanvasToVideo(): void {
+    const video = document.getElementById('video') as HTMLImageElement | null
+    const canvas = overlayRef.value
+    if (!video || !canvas) return
+
+    const videoWidth = video.clientWidth
+    const videoHeight = video.clientHeight
+
+    if (videoWidth > 0 && videoHeight > 0) {
+        canvas.width = videoWidth
+        canvas.height = videoHeight
+        syncDimensions()
+    }
+}
+
+let resizeObserver: ResizeObserver | null = null
 
 function handleMouseDown(event: MouseEvent): void {
     if (uiStore.panels.obstacleOpen && drawingMode.value) {
@@ -108,6 +125,7 @@ function handleMouseLeave(): void {
 
 // Handle video stream events
 function handleVideoLoad(): void {
+    syncCanvasToVideo()
     render()
 }
 
@@ -115,7 +133,28 @@ onMounted(() => {
     const video = document.getElementById('video') as HTMLImageElement
     if (video) {
         video.addEventListener('loadeddata', handleVideoLoad)
+        if (video.complete) {
+            syncCanvasToVideo()
+        }
     }
+
+    resizeObserver = new ResizeObserver(() => {
+        syncCanvasToVideo()
+    })
+
+    const videoEl = document.getElementById('video') as HTMLImageElement
+    if (videoEl) {
+        resizeObserver.observe(videoEl)
+    }
+
+    const canvas = overlayRef.value
+    if (canvas) {
+        resizeObserver.observe(canvas)
+    }
+})
+
+onUnmounted(() => {
+    resizeObserver?.disconnect()
 })
 </script>
 
@@ -136,8 +175,6 @@ onMounted(() => {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
     pointer-events: auto;
 }
 </style>
