@@ -13,6 +13,7 @@ export const useObstacleStore = defineStore('obstacle', () => {
         startTime: null
     })
     const isSaved = ref(true)
+    const drawingMode = ref(false)
 
     // Computed
     const obstacleCount = computed(() => obstacles.value.length)
@@ -55,8 +56,24 @@ export const useObstacleStore = defineStore('obstacle', () => {
         isSaved.value = value
     }
 
+    // Drawing mode actions
+    function toggleDrawingMode(): void {
+        drawingMode.value = !drawingMode.value
+        if (!drawingMode.value) {
+            cancelDrawing()
+        }
+    }
+
+    function setDrawingMode(value: boolean): void {
+        drawingMode.value = value
+        if (!value) {
+            cancelDrawing()
+        }
+    }
+
     // Drawing actions
     function startDrawing(point: Point): void {
+        if (!drawingMode.value) return
         drawing.value = {
             active: true,
             startPoint: point,
@@ -91,6 +108,7 @@ export const useObstacleStore = defineStore('obstacle', () => {
         obstacles,
         drawing,
         isSaved,
+        drawingMode,
         // Computed
         obstacleCount,
         drawRect,
@@ -100,6 +118,9 @@ export const useObstacleStore = defineStore('obstacle', () => {
         removeObstacle,
         clearObstacles,
         setSaved,
+        // Drawing mode actions
+        toggleDrawingMode,
+        setDrawingMode,
         // Drawing actions
         startDrawing,
         updateDrawing,

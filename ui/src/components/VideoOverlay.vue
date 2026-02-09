@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useCanvas, type CanvasPoint } from '@/composables/useCanvas'
@@ -10,8 +10,10 @@ const uiStore = useUIStore()
 const overlayRef = ref<HTMLCanvasElement | null>(null)
 const { render, getCanvasPoint } = useCanvas(overlayRef)
 
+const drawingMode = computed(() => obstacleStore.drawingMode)
+
 function handleMouseDown(event: MouseEvent): void {
-    if (!uiStore.panels.obstacleOpen) return
+    if (!uiStore.panels.obstacleOpen || !drawingMode.value) return
 
     const point = getCanvasPoint(event)
     if (point) {
@@ -67,8 +69,7 @@ async function addObstacle(topLeft: [number, number], bottomRight: [number, numb
             throw new Error('Failed to add obstacle')
         }
 
-        const data = await response.json()
-        obstacleStore.setObstacles(data.obstacles.obstacles || [])
+        // Obstacles will be updated via WebSocket broadcast
         uiStore.showToast('Obstacle added', 'success')
     } catch (e) {
         console.error('Failed to add obstacle:', e)
@@ -115,9 +116,21 @@ onMounted(() => {
     <canvas
         ref="overlayRef"
         id="overlay"
+        :style="{ cursor: drawingMode ? 'crosshair' : 'default' }"
         @mousedown="handleMouseDown"
         @mousemove="handleMouseMove"
         @mouseup="handleMouseUp"
         @mouseleave="handleMouseLeave"
     ></canvas>
 </template>
+
+<style scoped>
+#overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+</style>

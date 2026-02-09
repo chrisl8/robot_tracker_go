@@ -7,6 +7,14 @@ const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
 
 const obstacles = computed(() => obstacleStore.obstacles)
+const drawingMode = computed(() => obstacleStore.drawingMode)
+
+function toggleDrawingMode(): void {
+    obstacleStore.toggleDrawingMode()
+    if (obstacleStore.drawingMode) {
+        uiStore.showToast('Click and drag on video to draw obstacle', 'info')
+    }
+}
 
 async function deleteObstacle(id: string): Promise<void> {
     try {
@@ -73,11 +81,11 @@ async function saveObstacles(): Promise<void> {
     <div class="panel obstacle-panel">
         <h3>Static Obstacles</h3>
 
-        <div v-if="obstacles.length === 0" class="no-obstacles">
+        <div v-if="obstacles.length === 0 && !drawingMode" class="no-obstacles">
             No obstacles defined
         </div>
 
-        <div v-else class="obstacle-list">
+        <div v-else-if="obstacles.length > 0" class="obstacle-list">
             <div
                 v-for="obstacle in obstacles"
                 :key="obstacle.id"
@@ -88,9 +96,24 @@ async function saveObstacles(): Promise<void> {
             </div>
         </div>
 
+        <div v-if="drawingMode" class="drawing-instructions">
+            <span class="instruction-icon">📐</span>
+            Click and drag on video to draw obstacle
+        </div>
+
         <div class="obstacle-controls">
-            <button class="btn" @click="clearAllObstacles">Clear All</button>
-            <button class="btn" @click="saveObstacles">Save</button>
+            <button
+                class="btn draw-btn"
+                :class="{ active: drawingMode }"
+                @click="toggleDrawingMode"
+            >
+                {{ drawingMode ? '✕ Cancel' : '+ Draw Obstacle' }}
+            </button>
+        </div>
+
+        <div class="obstacle-controls" :class="{ disabled: drawingMode }">
+            <button class="btn" @click="clearAllObstacles" :disabled="drawingMode">Clear All</button>
+            <button class="btn" @click="saveObstacles" :disabled="drawingMode">Save</button>
         </div>
     </div>
 </template>
@@ -173,5 +196,45 @@ h3 {
     text-align: center;
     padding: 20px;
     font-size: 0.9rem;
+}
+
+.draw-btn {
+    background: #4ecca3;
+    color: #1a1a2e;
+}
+
+.draw-btn:hover {
+    background: #5fd9b0;
+}
+
+.draw-btn.active {
+    background: #e94560;
+    color: #fff;
+}
+
+.draw-btn.active:hover {
+    background: #ff5a75;
+}
+
+.obstacle-controls.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.drawing-instructions {
+    background: rgba(78, 204, 163, 0.15);
+    border: 1px solid rgba(78, 204, 163, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: #4ecca3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.instruction-icon {
+    font-size: 1rem;
 }
 </style>

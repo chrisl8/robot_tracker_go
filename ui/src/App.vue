@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useWebSocket } from '@/composables/useWebSocket'
+import VideoOverlay from '@/components/VideoOverlay.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
 import TrackList from '@/components/TrackList.vue'
@@ -15,18 +16,10 @@ const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
 
-const videoRef = ref<HTMLImageElement | null>(null)
-void videoRef // videoRef is only used for Vue template binding
-const overlayRef = ref<HTMLCanvasElement | null>(null)
 const streamUrl = '/stream'
 
 const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 const { isConnected } = useWebSocket(wsUrl)
-
-import { useCanvas } from '@/composables/useCanvas'
-useCanvas(overlayRef)
-
-// Fetch initial data
 async function loadInitialData(): Promise<void> {
     try {
         // Load obstacles
@@ -114,7 +107,7 @@ onUnmounted(() => {
             <div class="video-container">
                 <div class="video-wrapper">
                     <img ref="videoRef" id="video" :src="streamUrl" alt="Video Stream" />
-                    <canvas ref="overlayRef" id="overlay"></canvas>
+                    <VideoOverlay />
                     <div v-if="!isConnected" class="loading">Connecting...</div>
                 </div>
             </div>
@@ -170,15 +163,6 @@ onUnmounted(() => {
     max-width: 100%;
     max-height: 100%;
     display: block;
-}
-
-#overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: auto;
 }
 
 .loading {
