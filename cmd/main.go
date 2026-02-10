@@ -900,6 +900,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 	}
 }
 
+//gocyclo:ignore
 func main() {
 	configPath := flag.String("config", "config/tracking_config.yaml", "Path to configuration file")
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")

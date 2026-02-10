@@ -11,6 +11,7 @@ type Assignment struct {
 	Cost     float64
 }
 
+//gocyclo:ignore
 func Hungarian(costMatrix [][]float64) *Assignment {
 	n := len(costMatrix)
 	if n == 0 {

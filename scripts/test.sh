@@ -111,7 +111,7 @@ errcheck -tags=gocv ./... || exit 1
 
 echo ""
 echo "[TEST] Running go gocyclo..."
-gocyclo . || exit 1
+gocyclo -over 25 . || exit 1
 
 echo ""
 echo "[TEST] Running go gosec..."
