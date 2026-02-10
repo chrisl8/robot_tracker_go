@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "@vueuse/core": "^14.2.0"
+  },
+  "devDependencies": {
+    "vue-eslint-parser": "^9.4.3"
   }
 }
