@@ -40,3 +40,4 @@ logs/
 *.log
 ui/test-results/*
 ui/test-results/.last-run.json
+coverage.out

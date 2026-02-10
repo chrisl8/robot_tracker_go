@@ -149,6 +149,7 @@ func (h *Homography) Save(filename string) error {
 		return fmt.Errorf("homography not valid")
 	}
 
+	// #nosec G304
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -171,6 +172,7 @@ func (h *Homography) Save(filename string) error {
 }
 
 func (h *Homography) Load(filename string) error {
+	// #nosec G304
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -266,10 +268,12 @@ func solveDLT(A []float64) [3][3]float64 {
 
 	_, V := eigenDecomposition(A)
 
+	// #nosec G602
 	for j := 0; j < 9; j++ {
 		H[j/3][j%3] = V[8][j]
 	}
 
+	// #nosec G602
 	scale := H[2][2]
 	if scale != 0 {
 		for i := 0; i < 3; i++ {

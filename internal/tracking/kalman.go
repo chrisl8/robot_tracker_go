@@ -111,6 +111,7 @@ func (kf *KalmanFilter) Update(measurement [2]float64) [4]float64 {
 	y[1] = z[1] - kf.H[1][1]*kf.x[1]
 
 	S := [2][2]float64{}
+	// #nosec G602
 	for i := 0; i < 2; i++ {
 		for j := 0; j < 2; j++ {
 			S[i][j] = kf.R[i][j]

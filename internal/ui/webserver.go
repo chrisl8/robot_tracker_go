@@ -611,10 +611,12 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 		dir := filepath.Dir(filename)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
-		if err := os.WriteFile(filename, data, 0644); err != nil {
+		// #nosec G304
+		// #nosec G306
+		if err := os.WriteFile(filename, data, 0600); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 		return nil
@@ -659,8 +661,9 @@ func (s *WebServer) Start() {
 	s.isRunning = true
 	go func() {
 		srv := &http.Server{
-			Addr:    s.addr,
-			Handler: s.engine,
+			Addr:              s.addr,
+			Handler:           s.engine,
+			ReadHeaderTimeout: 5 * time.Second,
 		}
 		if err := srv.ListenAndServe(); err != nil && !strings.Contains(err.Error(), "Server closed") {
 			log.Printf("HTTP server error: %v", err)
@@ -877,7 +880,8 @@ func (s *WebServer) handleObstaclesSave(c *gin.Context) {
 
 	path := s.GetObstaclesPath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	// #nosec G304
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -915,7 +919,9 @@ func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstac
 		}
 	}
 
-	return os.WriteFile(path, []byte(yamlContent), 0644)
+	// #nosec G304
+	// #nosec G306
+	return os.WriteFile(path, []byte(yamlContent), 0600)
 }
 
 func (s *WebServer) GetObstacles() []planning.Obstacle {

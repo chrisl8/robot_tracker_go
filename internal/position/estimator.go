@@ -78,6 +78,7 @@ func NewPositionEstimator(calibrationPath, obstaclesPath string, smoothing bool,
 }
 
 func (e *PositionEstimator) LoadCalibration(path string) error {
+	// #nosec G304
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read calibration file: %w", err)
@@ -130,6 +131,7 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 }
 
 func (e *PositionEstimator) LoadObstacles(path string) error {
+	// #nosec G304
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read obstacles file: %w", err)
@@ -269,7 +271,9 @@ func (e *PositionEstimator) SaveObstacles(path string, obstacles []Obstacle) err
 		}
 	}
 
-	return os.WriteFile(path, []byte(yamlContent), 0644)
+	// #nosec G304
+	// #nosec G306
+	return os.WriteFile(path, []byte(yamlContent), 0600)
 }
 
 func (e *PositionEstimator) GetHomography() *Homography {

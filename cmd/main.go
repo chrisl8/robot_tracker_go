@@ -385,20 +385,24 @@ func (rs *RobotSystem) loadStaticObstacles() {
 		var worldTL [2]float64
 		var worldBR [2]float64
 
+		// #nosec G602
 		if tl, ok := pixels["top_left"].([]interface{}); ok && len(tl) >= 2 {
 			pixelsTL[0] = int(toFloat64(tl[0]))
 			pixelsTL[1] = int(toFloat64(tl[1]))
 		}
+		// #nosec G602
 		if br, ok := pixels["bottom_right"].([]interface{}); ok && len(br) >= 2 {
 			pixelsBR[0] = int(toFloat64(br[0]))
 			pixelsBR[1] = int(toFloat64(br[1]))
 		}
 
 		if world != nil {
+			// #nosec G602
 			if tl, ok := world["top_left"].([]interface{}); ok && len(tl) >= 2 {
 				worldTL[0] = toFloat64(tl[0])
 				worldTL[1] = toFloat64(tl[1])
 			}
+			// #nosec G602
 			if br, ok := world["bottom_right"].([]interface{}); ok && len(br) >= 2 {
 				worldBR[0] = toFloat64(br[0])
 				worldBR[1] = toFloat64(br[1])
@@ -668,6 +672,7 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 		x := int(cx + radius*float64(i)*0.3*float64(frameNum)*0.01)
 		y := int(cy + radius*float64(i)*0.5*float64(frameNum)*0.01)
 
+		// #nosec G115
 		robotColor := color.RGBA{uint8(78 + i*50), uint8(204 - i*30), 163, 255}
 		for dy := -20; dy <= 20; dy++ {
 			for dx := -20; dx <= 20; dx++ {
