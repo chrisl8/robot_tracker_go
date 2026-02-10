@@ -83,7 +83,12 @@ export interface TrackMessage {
 
 export interface TracksMessage {
     type: 'tracks'
+    tracks: TracksNestedResponse
+}
+
+export interface TracksNestedResponse {
     tracks: Track[]
+    count: number
 }
 
 export interface ObstaclesMessage {

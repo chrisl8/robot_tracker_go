@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Track, RobotStatus, WebSocketMessage, Destination } from '@/types/api'
+import type {
+    Track,
+    RobotStatus,
+    WebSocketMessage,
+    Destination,
+    TracksNestedResponse,
+} from '@/types/api'
 import { canvasToNaturalShared } from '@/composables/useCanvas'
 import { useUIStore } from './uiStore'
 import { useObstacleStore } from './obstacleStore'
@@ -44,18 +50,9 @@ export const useRobotStore = defineStore('robot', () => {
                 updateTrack(data.track)
                 break
             case 'tracks': {
-                // Backend sends nested format: { type: 'tracks', tracks: { tracks: [...], count: 3 } }
-                // Frontend expects flat format: { type: 'tracks', tracks: [...] }
-                let tracksArray: Track[] | undefined
-                if (Array.isArray((data as any).tracks)) {
-                    // Flat format (shouldn't happen with current backend)
-                    tracksArray = (data as any).tracks
-                } else if ((data as any).tracks && typeof (data as any).tracks === 'object') {
-                    // Nested format from backend
-                    tracksArray = (data as any).tracks.tracks
-                }
-                if (Array.isArray(tracksArray)) {
-                    tracks.value = tracksArray
+                const nestedTracks = (data as { tracks: TracksNestedResponse }).tracks
+                if (nestedTracks && Array.isArray(nestedTracks.tracks)) {
+                    tracks.value = nestedTracks.tracks
                 }
                 break
             }
@@ -73,8 +70,8 @@ export const useRobotStore = defineStore('robot', () => {
                 }
                 break
             case 'destination':
-                if ((data as any).destination) {
-                    const dest = (data as any).destination
+                if (data.destination) {
+                    const dest = data.destination
                     setDestination({
                         id: `dest-${dest.robot_id}-${Date.now()}`,
                         robot_id: dest.robot_id,

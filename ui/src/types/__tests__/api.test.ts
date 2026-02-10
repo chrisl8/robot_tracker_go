@@ -59,21 +59,25 @@ describe('API Types', () => {
         it('should validate tracks message structure', () => {
             const message: TracksMessage = {
                 type: 'tracks',
-                tracks: [
-                    {
-                        id: 1,
-                        bbox: [100, 100, 50, 50],
-                        confidence: 0.95,
-                        tag_id: 42,
-                        state: 'confirmed',
-                        history: [],
-                    },
-                ],
+                tracks: {
+                    tracks: [
+                        {
+                            id: 1,
+                            bbox: [100, 100, 50, 50],
+                            confidence: 0.95,
+                            tag_id: 42,
+                            state: 'confirmed',
+                            history: [],
+                        },
+                    ],
+                    count: 1,
+                },
             }
 
             expect(message.type).toBe('tracks')
-            expect(message.tracks).toHaveLength(1)
-            expect(message.tracks[0].confidence).toBe(0.95)
+            expect(message.tracks.tracks).toHaveLength(1)
+            expect(message.tracks.tracks[0].confidence).toBe(0.95)
+            expect(message.tracks.count).toBe(1)
         })
     })
 
