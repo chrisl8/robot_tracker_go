@@ -58,7 +58,6 @@ func TestByteTrack_Update_EmptyDetections(t *testing.T) {
 }
 
 func TestByteTrack_Update_SingleDetection(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	detections := []Detection{
@@ -75,7 +74,6 @@ func TestByteTrack_Update_SingleDetection(t *testing.T) {
 }
 
 func TestByteTrack_Update_MultipleDetections(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	detections := []Detection{
@@ -90,7 +88,6 @@ func TestByteTrack_Update_MultipleDetections(t *testing.T) {
 }
 
 func TestByteTrack_Update_TrackConfirmed(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	bbox := [4]int{10, 20, 100, 200}
@@ -111,7 +108,6 @@ func TestByteTrack_Update_TrackConfirmed(t *testing.T) {
 }
 
 func TestByteTrack_Update_SameDetection(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	bbox := [4]int{10, 20, 100, 200}
@@ -130,7 +126,6 @@ func TestByteTrack_Update_SameDetection(t *testing.T) {
 }
 
 func TestByteTrack_Update_LowConfidenceFiltered(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	detections := []Detection{
@@ -157,8 +152,6 @@ func TestByteTrack_Update_SmallBoxFiltered(t *testing.T) {
 }
 
 func TestByteTrack_Reset(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
-
 	bt := NewByteTrack(nil)
 	bt.Update([]Detection{{Bbox: [4]int{10, 20, 100, 200}, Confidence: 0.6}}, 1000.0, 1)
 
@@ -180,7 +173,6 @@ func TestByteTrack_Reset(t *testing.T) {
 }
 
 func TestByteTrack_GetTrackCount(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	if bt.GetTrackCount() != 0 {
@@ -195,7 +187,6 @@ func TestByteTrack_GetTrackCount(t *testing.T) {
 }
 
 func TestByteTrack_Update_DifferentLocations(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 
 	detections := []Detection{
@@ -280,7 +271,6 @@ func TestTrackedTrack_Struct(t *testing.T) {
 }
 
 func TestByteTrack_Update_TagIDPreserved(t *testing.T) {
-	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 	bt := NewByteTrack(nil)
 	tagID := 5
 

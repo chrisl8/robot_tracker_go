@@ -91,7 +91,7 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 	}
 
 	// Match low-confidence detections
-	lowMatched, lowUnmatchedDetections, lowMatchedTrackIDs := t.matchTracksLowConf(lowConfDetections)
+	lowMatched, _, lowMatchedTrackIDs := t.matchTracksLowConf(lowConfDetections)
 
 	for i, detIdx := range lowMatched {
 		if detIdx < len(lowConfDetections) {
@@ -102,12 +102,6 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 			}
 			tt.track.Update(lowConfDetections[detIdx].Bbox, timestamp, lowConfDetections[detIdx].Confidence)
 			tt.timeSinceUpdate = 0
-		}
-	}
-
-	for _, detIdx := range lowUnmatchedDetections {
-		if detIdx < len(lowConfDetections) {
-			t.createNewTrack(lowConfDetections[detIdx], timestamp)
 		}
 	}
 

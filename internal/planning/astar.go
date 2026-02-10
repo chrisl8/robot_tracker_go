@@ -82,6 +82,10 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 		return nil, false
 	}
 
+	if startNode.Pos[0] == goalNode.Pos[0] && startNode.Pos[1] == goalNode.Pos[1] {
+		return nil, false
+	}
+
 	obstacleMap := make(map[[2]int]bool)
 	for _, obs := range obstacles {
 		gridObs := worldToGrid(obs, a.config.Resolution, gridWidth, gridHeight)
