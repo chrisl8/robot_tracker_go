@@ -46,6 +46,9 @@ if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     echo "[TEST] Running TypeScript type check..."
     npx vue-tsc --noEmit || exit 1
 
+    echo "[TEST] Running knip dead code check..."
+    npm run knip:check || exit 1
+
     # Run unit tests
     echo "[TEST] Running Vue unit tests..."
     npm run test:run

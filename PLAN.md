@@ -1889,3 +1889,46 @@ console.warn = (...args: unknown[]) => {
 - All 19 Vue integration tests pass
 - Test output is now clean
 
+
+---
+
+## Phase 15: Code Quality Tools Enhancement (In Progress - Feb 9, 2026)
+
+### Overview
+
+Add additional code quality tools to catch issues early and improve code quality.
+
+### Goals
+
+1. **Extend golangci-lint** with additional valuable linters beyond defaults
+2. **Add knip** to Vue UI for dead code and unused dependency detection
+
+### Linters to Add to golangci-lint
+
+| Linter | Purpose | Category |
+|--------|---------|----------|
+| `gocritic` | 100+ checks: performance, bugs, anti-patterns | Code quality |
+| `misspell` | Catches typos in comments and strings | Style |
+| `prealloc` | Suggests slice pre-allocation | Performance |
+| `revive` | Modern linter, configurable rules | Code quality |
+
+### Vue UI Tools to Add
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `knip` | Finds unused files, exports, dependencies, and types | Dead code |
+
+### Implementation Tasks
+
+| Task | Status |
+|------|--------|
+| 15.1 Extend .golangci.yml with gocritic, misspell, prealloc, revive | In Progress |
+| 15.2 Add knip to package.json devDependencies | Pending |
+| 15.3 Add knip scripts to package.json | Pending |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `.golangci.yml` | Add linters section with additional checkers |
+| `ui/package.json` | Add knip devDependency and scripts |

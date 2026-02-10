@@ -2,3 +2,32 @@ version: "2"
 run:
   build-tags:
     - gocv
+
+linters:
+  enable:
+    - gocritic
+    - misspell
+    - prealloc
+    - revive
+
+linters-settings:
+  gocritic:
+    enabled-checks:
+      - diagnostic
+      - performance
+      - style
+      - complexity
+      - experimental
+      - module
+  misspell:
+    locale: US
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: true
+  revive:
+    rules:
+      - name: unused-parameter
+        severity: warning
+      - name: unexported-return
+        severity: warning
