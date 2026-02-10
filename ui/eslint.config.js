@@ -9,6 +9,9 @@ export default tseslint.config(
     js.configs.recommended,
     ...tseslint.configs.recommended,
     {
+        ignores: ['**/vite-env.d.ts'],
+    },
+    {
         languageOptions: {
             globals: {
                 ...globals.browser,
@@ -57,6 +60,12 @@ export default tseslint.config(
             'no-undef': 'warn',
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+        },
+    },
+    {
+        files: ['**/__tests__/**/*', '**/*.test.ts', '**/*.spec.ts'],
+        rules: {
+            '@typescript-eslint/no-explicit-any': 'off',
         },
     }
 )
