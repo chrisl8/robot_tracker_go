@@ -19,6 +19,9 @@ type PriorityQueue []*Node
 func (pq PriorityQueue) Len() int { return len(pq) }
 
 func (pq PriorityQueue) Less(i, j int) bool {
+	if pq[i] == nil || pq[j] == nil {
+		return false
+	}
 	return pq[i].F < pq[j].F
 }
 
@@ -155,6 +158,9 @@ func (a *AStar) getNeighbors(node *Node, width, height int, obstacles map[[2]int
 
 func (a *AStar) inOpenSet(pq *PriorityQueue, node *Node) bool {
 	for _, n := range *pq {
+		if n == nil {
+			continue
+		}
 		if n.Pos == node.Pos {
 			return true
 		}

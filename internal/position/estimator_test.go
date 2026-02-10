@@ -212,13 +212,19 @@ func TestPositionEstimator_MultipleTrackIDs(t *testing.T) {
 	pos2 := est.GetPosition(2)
 	pos3 := est.GetPosition(3)
 
-	if pos1 == nil || pos1.X != 100 || pos1.Y != 200 {
+	if pos1 == nil {
+		t.Errorf("Track 1 position is nil")
+	} else if pos1.X != 100 || pos1.Y != 200 {
 		t.Errorf("Track 1 position = (%f, %f), want (100, 200)", pos1.X, pos1.Y)
 	}
-	if pos2 == nil || pos2.X != 300 || pos2.Y != 400 {
+	if pos2 == nil {
+		t.Errorf("Track 2 position is nil")
+	} else if pos2.X != 300 || pos2.Y != 400 {
 		t.Errorf("Track 2 position = (%f, %f), want (300, 400)", pos2.X, pos2.Y)
 	}
-	if pos3 == nil || pos3.X != 500 || pos3.Y != 600 {
+	if pos3 == nil {
+		t.Errorf("Track 3 position is nil")
+	} else if pos3.X != 500 || pos3.Y != 600 {
 		t.Errorf("Track 3 position = (%f, %f), want (500, 600)", pos3.X, pos3.Y)
 	}
 }

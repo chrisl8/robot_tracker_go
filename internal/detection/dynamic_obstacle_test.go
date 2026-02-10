@@ -6,8 +6,8 @@ import (
 
 func TestYOLODetectionsToDynamicObstacles_Empty(t *testing.T) {
 	result := YOLODetectionsToDynamicObstacles(nil, nil, nil, 0.5)
-	if result != nil {
-		t.Errorf("Expected nil for empty input, got %v", result)
+	if len(result) != 0 {
+		t.Errorf("Expected empty slice for empty input, got %v", result)
 	}
 }
 

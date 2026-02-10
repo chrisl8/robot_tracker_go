@@ -12,7 +12,7 @@ func YOLODetectionsToDynamicObstacles(
 	minConfidence float64,
 ) []*planning.DynamicObstacle {
 	if len(detections) == 0 {
-		return nil
+		return []*planning.DynamicObstacle{}
 	}
 
 	obstacles := make([]*planning.DynamicObstacle, 0, len(detections))
