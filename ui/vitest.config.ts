@@ -7,7 +7,9 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
+    setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    logHeapUsage: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
