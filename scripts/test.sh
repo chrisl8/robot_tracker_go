@@ -134,7 +134,7 @@ gocyclo -over 25 . || exit 1
 
 echo ""
 echo "[TEST] Running go gosec..."
-gosec -tags=gocv ./... || exit 1
+gosec -quiet -tags=gocv ./... || exit 1
 
 echo ""
 echo "[TEST] Running govulncheck..."
