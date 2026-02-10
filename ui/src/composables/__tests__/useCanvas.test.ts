@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest'
 
 describe('FOOTPRINT-001: Circle-Rectangle Collision Detection', () => {
-    function isCircleInObstacle(cx: number, cy: number, radius: number, rectX1: number, rectY1: number, rectX2: number, rectY2: number): boolean {
+    function isCircleInObstacle(
+        cx: number,
+        cy: number,
+        radius: number,
+        rectX1: number,
+        rectY1: number,
+        rectX2: number,
+        rectY2: number
+    ): boolean {
         const closestX = Math.max(rectX1, Math.min(cx, rectX2))
         const closestY = Math.max(rectY1, Math.min(cy, rectY2))
         const distanceX = cx - closestX
@@ -12,9 +20,16 @@ describe('FOOTPRINT-001: Circle-Rectangle Collision Detection', () => {
             return true
         }
 
-        if (cx >= rectX1 && cx <= rectX2 && cy >= rectY1 && cy <= rectY2 &&
-            cx - radius >= rectX1 && cx + radius <= rectX2 &&
-            cy - radius >= rectY1 && cy + radius <= rectY2) {
+        if (
+            cx >= rectX1 &&
+            cx <= rectX2 &&
+            cy >= rectY1 &&
+            cy <= rectY2 &&
+            cx - radius >= rectX1 &&
+            cx + radius <= rectX2 &&
+            cy - radius >= rectY1 &&
+            cy + radius <= rectY2
+        ) {
             return true
         }
         return false
@@ -84,14 +99,20 @@ describe('FOOTPRINT-001: Circle-Rectangle Collision Detection', () => {
         // OLD behavior (isPointInObstacle): only checks center point
         // Center (90, 150) is outside the obstacle [100,100]-[200,200]
         const oldBehaviorCenterInObstacle =
-            centerX >= obs.x1 && centerX <= obs.x2 &&
-            centerY >= obs.y1 && centerY <= obs.y2
+            centerX >= obs.x1 && centerX <= obs.x2 && centerY >= obs.y1 && centerY <= obs.y2
         expect(oldBehaviorCenterInObstacle).toBe(false) // Center is outside
 
         // NEW behavior (isCircleInObstacle): checks entire circle
         // The circle extends into the obstacle area
-        const newBehaviorCircleInObstacle =
-            isCircleInObstacle(centerX, centerY, radius, obs.x1, obs.y1, obs.x2, obs.y2)
+        const newBehaviorCircleInObstacle = isCircleInObstacle(
+            centerX,
+            centerY,
+            radius,
+            obs.x1,
+            obs.y1,
+            obs.x2,
+            obs.y2
+        )
         expect(newBehaviorCircleInObstacle).toBe(true) // Circle overlaps
 
         // This is the key difference:

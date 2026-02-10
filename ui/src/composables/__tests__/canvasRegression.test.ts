@@ -1,6 +1,6 @@
+import { ref } from 'vue'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import type { Ref } from 'vue'
 
 // Mock the DOM
 const mockCanvas = {
@@ -76,14 +76,13 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
                     state: 'confirmed',
                     history: [],
                     pixel_radius: 30,
-                    world_pos: [1.0, 1.0],
                 },
             ])
 
             // Use the correct method name
             uiStore.showFootprints = true
 
-            const canvasRef = { value: mockCanvas as any }
+            const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
             const { render } = useCanvas(canvasRef)
 
             // Should not throw
@@ -111,14 +110,18 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
             uiStore.setDetectedTags([
                 {
                     id: 1,
-                    corners: [[100, 100], [200, 100], [200, 200], [100, 200]],
+                    corners: [
+                        [100, 100],
+                        [200, 100],
+                        [200, 200],
+                        [100, 200],
+                    ],
                     center: [150, 150],
-                    size: 100,
                 },
             ])
             uiStore.setSelectedCalibrationTag(1)
 
-            const canvasRef = { value: mockCanvas as any }
+            const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
             const { render } = useCanvas(canvasRef)
 
             // Should not throw
@@ -128,7 +131,7 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
         it('should use videoScale for corner scaling', async () => {
             const { useCanvas } = await import('@/composables/useCanvas')
 
-            const canvasRef = { value: mockCanvas as any }
+            const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
             const canvas = useCanvas(canvasRef)
 
             // Access videoScale through the composable
@@ -147,7 +150,7 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
             obstacleStore.startDrawing({ x: 100, y: 100 })
             obstacleStore.updateDrawing({ x: 200, y: 200 })
 
-            const canvasRef = { value: mockCanvas as any }
+            const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
             const { render } = useCanvas(canvasRef)
 
             // Should not throw

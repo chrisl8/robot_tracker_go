@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import type { Track, WebSocketMessage } from '@/types/api'
+import type { WebSocketMessage } from '@/types/api'
 
 describe('Robot Store - Destination Planning', () => {
     beforeEach(() => {
@@ -84,14 +84,14 @@ describe('Robot Store - Destination Planning', () => {
                 id: 'dest-1-123',
                 robot_id: 1,
                 x: 100,
-                y: 200
+                y: 200,
             })
 
             expect(store.destination).toEqual({
                 id: 'dest-1-123',
                 robot_id: 1,
                 x: 100,
-                y: 200
+                y: 200,
             })
         })
 
@@ -103,7 +103,7 @@ describe('Robot Store - Destination Planning', () => {
                 id: 'dest-1-123',
                 robot_id: 1,
                 x: 100,
-                y: 200
+                y: 200,
             })
             store.setDestination(null)
 
@@ -119,11 +119,12 @@ describe('Robot Store - Destination Planning', () => {
             const message: WebSocketMessage = {
                 type: 'destination',
                 destination: {
+                    id: 'dest-1-123456',
                     robot_id: 1,
                     x: 150,
                     y: 250,
-                    valid: true
-                }
+                    valid: true,
+                },
             }
 
             store.handleWebSocketMessage(message)
@@ -142,7 +143,7 @@ describe('Destination Types', () => {
             id: 'dest-1-123456',
             robot_id: 1,
             x: 320,
-            y: 240
+            y: 240,
         }
 
         expect(destination.id).toBe('dest-1-123456')
@@ -158,8 +159,8 @@ describe('Destination Types', () => {
                 robot_id: 2,
                 x: 640,
                 y: 480,
-                valid: true
-            }
+                valid: true,
+            },
         }
 
         expect(message.type).toBe('destination')

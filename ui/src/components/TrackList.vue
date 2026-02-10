@@ -30,21 +30,19 @@ function hasDestination(trackId: number): boolean {
 <template>
     <div class="panel">
         <h3>Detected Targets</h3>
-        <div v-if="tracks.length === 0" class="no-tracks">
-            No targets detected
-        </div>
+        <div v-if="tracks.length === 0" class="no-tracks">No targets detected</div>
         <div v-else class="track-list">
             <div
                 v-for="track in tracks"
                 :key="track.id"
                 class="track-item"
-                :class="{ selected: isSelected(track.id), 'has-destination': hasDestination(track.id) }"
+                :class="{
+                    selected: isSelected(track.id),
+                    'has-destination': hasDestination(track.id),
+                }"
                 @click="selectTrack(track)"
             >
-                <div
-                    class="track-color"
-                    :style="{ background: getTrackColor(track.id) }"
-                >
+                <div class="track-color" :style="{ background: getTrackColor(track.id) }">
                     {{ track.id }}
                 </div>
                 <div class="track-info">

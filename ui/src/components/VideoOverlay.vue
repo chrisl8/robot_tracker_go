@@ -70,7 +70,10 @@ function handleMouseUp(event: MouseEvent): void {
     obstacleStore.cancelDrawing()
 }
 
-async function addObstacle(topLeft: [number, number], bottomRight: [number, number]): Promise<void> {
+async function addObstacle(
+    topLeft: [number, number],
+    bottomRight: [number, number]
+): Promise<void> {
     const name = `obstacle_${obstacleStore.obstacleCount + 1}`
 
     // Convert canvas coordinates to natural video coordinates for resize-safe storage
@@ -85,8 +88,8 @@ async function addObstacle(topLeft: [number, number], bottomRight: [number, numb
                 pixel_top_left: [naturalTopLeft.x, naturalTopLeft.y],
                 pixel_bottom_right: [naturalBottomRight.x, naturalBottomRight.y],
                 name,
-                clearance: 0.02
-            })
+                clearance: 0.02,
+            }),
         })
 
         if (!response.ok) {
@@ -106,14 +109,8 @@ function calculateObstacleFromPoints(
     end: CanvasPoint
 ): { topLeft: [number, number]; bottomRight: [number, number] } {
     return {
-        topLeft: [
-            Math.round(Math.min(start.x, end.x)),
-            Math.round(Math.min(start.y, end.y))
-        ],
-        bottomRight: [
-            Math.round(Math.max(start.x, end.x)),
-            Math.round(Math.max(start.y, end.y))
-        ]
+        topLeft: [Math.round(Math.min(start.x, end.x)), Math.round(Math.min(start.y, end.y))],
+        bottomRight: [Math.round(Math.max(start.x, end.x)), Math.round(Math.max(start.y, end.y))],
     }
 }
 
@@ -162,7 +159,7 @@ onUnmounted(() => {
     <canvas
         ref="overlayRef"
         id="overlay"
-        :style="{ cursor: drawingMode ? 'crosshair' : (destinationMode ? 'crosshair' : 'default') }"
+        :style="{ cursor: drawingMode ? 'crosshair' : destinationMode ? 'crosshair' : 'default' }"
         @mousedown="handleMouseDown"
         @mousemove="handleMouseMove"
         @mouseup="handleMouseUp"

@@ -3,23 +3,23 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
-  plugins: [vue()],
-  test: {
-    environment: 'happy-dom',
-    globals: true,
-    setupFiles: ['./vitest.setup.ts'],
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
-    logHeapUsage: false,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      include: ['src/**/*.ts', 'src/**/*.tsx', 'src/**/*.vue'],
-      exclude: ['src/**/*.d.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx']
-    }
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src')
-    }
-  }
+    plugins: [vue()],
+    test: {
+        environment: 'happy-dom',
+        globals: true,
+        setupFiles: ['./vitest.setup.ts'],
+        include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+        logHeapUsage: false,
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'json', 'html'],
+            include: ['src/**/*.ts', 'src/**/*.tsx', 'src/**/*.vue'],
+            exclude: ['src/**/*.d.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx'],
+        },
+    },
+    resolve: {
+        alias: {
+            '@': resolve(__dirname, 'src'),
+        },
+    },
 })

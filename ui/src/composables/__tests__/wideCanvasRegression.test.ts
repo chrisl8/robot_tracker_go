@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -80,11 +81,10 @@ describe('WIDE-CANVAS-001: Wide Canvas Coordinate Conversion Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 40,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         initialize()
@@ -118,15 +118,13 @@ describe('WIDE-CANVAS-001: Wide Canvas Coordinate Conversion Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 20,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
-        const { initialize, render, canvasToNatural } = useCanvas(canvasRef)
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
+        const { initialize, canvasToNatural } = useCanvas(canvasRef)
 
         initialize()
-        render()
 
         const arcCall = mockCtx.arc.mock.calls[0]
         const centerX = arcCall[0]
@@ -147,13 +145,11 @@ describe('WIDE-CANVAS-001: Wide Canvas Coordinate Conversion Bug', () => {
         const obstacleStore = useObstacleStore()
         obstacleStore.setDrawingMode(true)
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
-        obstacleStore.startDrawing({ x: 350, y: 250 })
-        obstacleStore.updateDrawing({ x: 450, y: 350 })
-
         initialize()
+        obstacleStore.startDrawing({ x: 350, y: 250 })
         render()
 
         expect(mockCtx.strokeRect).toHaveBeenCalled()
@@ -245,15 +241,13 @@ describe('WIDE-CANVAS-002: Tall Canvas Coordinate Conversion Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
-        const { initialize, render } = useCanvas(canvasRef)
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
+        const { initialize } = useCanvas(canvasRef)
 
         initialize()
-        render()
 
         expect(mockCtx.arc).toHaveBeenCalled()
         const arcCall = mockCtx.arc.mock.calls[0]
@@ -347,12 +341,11 @@ describe('WIDE-CANVAS-003: Video Max-Width Scaling Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 40,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
-        const { initialize, render } = useCanvas(canvasRef)
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
+        const { initialize } = useCanvas(canvasRef)
 
         initialize()
 
@@ -379,12 +372,11 @@ describe('WIDE-CANVAS-003: Video Max-Width Scaling Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 25,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
-        const { initialize, render } = useCanvas(canvasRef)
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
+        const { initialize } = useCanvas(canvasRef)
 
         initialize()
 
@@ -414,12 +406,11 @@ describe('WIDE-CANVAS-003: Video Max-Width Scaling Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
-        const { initialize, render } = useCanvas(canvasRef)
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
+        const { initialize } = useCanvas(canvasRef)
 
         initialize()
 

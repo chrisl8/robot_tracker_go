@@ -7,14 +7,14 @@ export const useUIStore = defineStore('ui', () => {
     // State
     const panels = ref<PanelState>({
         obstacleOpen: false,
-        calibrationOpen: false
+        calibrationOpen: false,
     })
 
     const toasts = ref<Toast[]>([])
 
     const calibration = ref<CalibrationState>({
         state: 'not_calibrated',
-        message: ''
+        message: '',
     })
 
     const detectedTags = ref<DetectedTagInfo[]>([])
@@ -30,7 +30,7 @@ export const useUIStore = defineStore('ui', () => {
         x: false,
         e: false,
         z: false,
-        c: false
+        c: false,
     })
 
     // Actions - Panels
@@ -101,7 +101,7 @@ export const useUIStore = defineStore('ui', () => {
             x: false,
             e: false,
             z: false,
-            c: false
+            c: false,
         }
     }
 
@@ -135,6 +135,6 @@ export const useUIStore = defineStore('ui', () => {
         setKey,
         resetKeyboard,
         // Footprint actions
-        toggleFootprints
+        toggleFootprints,
     }
 })

@@ -34,13 +34,7 @@ export function calculateObstacleFromPoints(
     end: Point
 ): { topLeft: [number, number]; bottomRight: [number, number] } {
     return {
-        topLeft: [
-            Math.round(Math.min(start.x, end.x)),
-            Math.round(Math.min(start.y, end.y))
-        ],
-        bottomRight: [
-            Math.round(Math.max(start.x, end.x)),
-            Math.round(Math.max(start.y, end.y))
-        ]
+        topLeft: [Math.round(Math.min(start.x, end.x)), Math.round(Math.min(start.y, end.y))],
+        bottomRight: [Math.round(Math.max(start.x, end.x)), Math.round(Math.max(start.y, end.y))],
     }
 }

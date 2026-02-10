@@ -10,7 +10,7 @@ const isOpen = computed(() => uiStore.panels.calibrationOpen)
 const detectedTags = computed(() => uiStore.detectedTags)
 const selectedTagId = computed({
     get: () => uiStore.selectedCalibrationTagId,
-    set: (value) => uiStore.setSelectedCalibrationTag(value)
+    set: value => uiStore.setSelectedCalibrationTag(value),
 })
 
 const dialogRef = ref<HTMLElement | null>(null)
@@ -26,7 +26,7 @@ const { x, y } = useDraggable(dialogRef, {
         if (pinned.value) {
             lastPosition.value = { x: x.value, y: y.value }
         }
-    }
+    },
 })
 
 const step = ref(1)
@@ -35,10 +35,10 @@ const pinned = ref(false)
 const lastPosition = ref({ x: initialX, y: initialY })
 
 const tagSizePresets = [
-    { label: '10cm', value: 0.10 },
+    { label: '10cm', value: 0.1 },
     { label: '15cm', value: 0.15 },
-    { label: '20cm', value: 0.20 },
-    { label: '25cm', value: 0.25 }
+    { label: '20cm', value: 0.2 },
+    { label: '25cm', value: 0.25 },
 ]
 
 function close(): void {
@@ -82,8 +82,8 @@ async function computeCalibration(): Promise<void> {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 tag_id: uiStore.selectedCalibrationTagId,
-                tag_size: tagSize.value
-            })
+                tag_size: tagSize.value,
+            }),
         })
 
         const data = await response.json()
@@ -93,9 +93,10 @@ async function computeCalibration(): Promise<void> {
             return
         }
 
-        const message = data.computedWidth && data.computedHeight
-            ? `Calibration complete! Area: ${data.computedWidth.toFixed(2)}m x ${data.computedHeight.toFixed(2)}m`
-            : 'Calibration computed successfully'
+        const message =
+            data.computedWidth && data.computedHeight
+                ? `Calibration complete! Area: ${data.computedWidth.toFixed(2)}m x ${data.computedHeight.toFixed(2)}m`
+                : 'Calibration computed successfully'
 
         uiStore.showToast(message, 'success')
         uiStore.setCalibrationState('calibrated', message)
@@ -119,7 +120,7 @@ function togglePin(): void {
     }
 }
 
-watch(isOpen, (open) => {
+watch(isOpen, open => {
     if (open) {
         step.value = 1
         uiStore.setSelectedCalibrationTag(null)
@@ -143,7 +144,10 @@ watch(isOpen, (open) => {
                 ref="dialogRef"
                 class="calibration-content"
                 :class="{ pinned }"
-                :style="{ left: `${pinned ? lastPosition.x : x}px`, top: `${pinned ? lastPosition.y : y}px` }"
+                :style="{
+                    left: `${pinned ? lastPosition.x : x}px`,
+                    top: `${pinned ? lastPosition.y : y}px`,
+                }"
             >
                 <div ref="handleRef" class="calibration-header">
                     <h2>Calibration</h2>
@@ -156,9 +160,7 @@ watch(isOpen, (open) => {
                         >
                             📌
                         </button>
-                        <button class="calibration-btn-icon" @click="close" title="Close">
-                            ✕
-                        </button>
+                        <button class="calibration-btn-icon" @click="close" title="Close">✕</button>
                     </div>
                 </div>
 
@@ -214,10 +216,7 @@ watch(isOpen, (open) => {
                     <div v-else-if="step === 2" class="calibration-step active">
                         <h2>Step 2: Select Detected Tag</h2>
 
-                        <div
-                            v-if="detectedTags.length === 0"
-                            class="calibration-status info"
-                        >
+                        <div v-if="detectedTags.length === 0" class="calibration-status info">
                             No tags detected. Make sure a tag is visible in the camera.
                         </div>
 

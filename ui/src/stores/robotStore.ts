@@ -12,7 +12,7 @@ export const useRobotStore = defineStore('robot', () => {
         connected: false,
         fps: 0,
         robotCount: 0,
-        arduinoState: 'Disconnected'
+        arduinoState: 'Disconnected',
     })
     const selectedTrackId = ref<number | null>(null)
     const destinationMode = ref(false)
@@ -43,7 +43,7 @@ export const useRobotStore = defineStore('robot', () => {
             case 'track':
                 updateTrack(data.track)
                 break
-            case 'tracks':
+            case 'tracks': {
                 // Backend sends nested format: { type: 'tracks', tracks: { tracks: [...], count: 3 } }
                 // Frontend expects flat format: { type: 'tracks', tracks: [...] }
                 let tracksArray: Track[] | undefined
@@ -58,6 +58,7 @@ export const useRobotStore = defineStore('robot', () => {
                     tracks.value = tracksArray
                 }
                 break
+            }
             case 'status':
                 status.value = data.status
                 break
@@ -78,7 +79,7 @@ export const useRobotStore = defineStore('robot', () => {
                         id: `dest-${dest.robot_id}-${Date.now()}`,
                         robot_id: dest.robot_id,
                         x: dest.x,
-                        y: dest.y
+                        y: dest.y,
                     })
                 }
                 break
@@ -138,17 +139,17 @@ export const useRobotStore = defineStore('robot', () => {
                 body: JSON.stringify({
                     robot_id: selectedTrackId.value,
                     x: naturalCoords.x,
-                    y: naturalCoords.y
-                })
+                    y: naturalCoords.y,
+                }),
             })
 
             if (response.ok) {
-                const result = await response.json()
+                await response.json()
                 destination.value = {
                     id: `${selectedTrackId.value}-${Date.now()}`,
                     robot_id: selectedTrackId.value,
                     x: naturalCoords.x,
-                    y: naturalCoords.y
+                    y: naturalCoords.y,
                 }
                 destinationMode.value = false
                 return true
@@ -186,6 +187,6 @@ export const useRobotStore = defineStore('robot', () => {
         clearSelection,
         cancelDestinationMode,
         confirmDestination,
-        setDestination
+        setDestination,
     }
 })

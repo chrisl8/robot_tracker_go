@@ -10,7 +10,7 @@ export const useObstacleStore = defineStore('obstacle', () => {
         active: false,
         startPoint: null,
         currentPoint: null,
-        startTime: null
+        startTime: null,
     })
     const isSaved = ref(true)
     const drawingMode = ref(false)
@@ -25,7 +25,7 @@ export const useObstacleStore = defineStore('obstacle', () => {
             x1: Math.min(startPoint.x, currentPoint.x),
             y1: Math.min(startPoint.y, currentPoint.y),
             x2: Math.max(startPoint.x, currentPoint.x),
-            y2: Math.max(startPoint.y, currentPoint.y)
+            y2: Math.max(startPoint.y, currentPoint.y),
         }
     })
 
@@ -78,7 +78,7 @@ export const useObstacleStore = defineStore('obstacle', () => {
             active: true,
             startPoint: point,
             currentPoint: point,
-            startTime: Date.now()
+            startTime: Date.now(),
         }
     }
 
@@ -92,7 +92,7 @@ export const useObstacleStore = defineStore('obstacle', () => {
             active: false,
             startPoint: null,
             currentPoint: null,
-            startTime: null
+            startTime: null,
         }
     }
 
@@ -125,6 +125,6 @@ export const useObstacleStore = defineStore('obstacle', () => {
         startDrawing,
         updateDrawing,
         cancelDrawing,
-        finishDrawing
+        finishDrawing,
     }
 })

@@ -3,29 +3,29 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
+    plugins: [vue()],
+    resolve: {
+        alias: {
+            '@': resolve(__dirname, 'src'),
+        },
     },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:9086',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:9086',
-        ws: true,
-      },
+    server: {
+        port: 5173,
+        proxy: {
+            '/api': {
+                target: 'http://localhost:9086',
+                changeOrigin: true,
+            },
+            '/ws': {
+                target: 'ws://localhost:9086',
+                ws: true,
+            },
+        },
     },
-  },
-  build: {
-    outDir: '../internal/ui/static',
-    emptyOutDir: true,
-    sourcemap: false,
-    chunkSizeWarningLimit: 2000,
-  },
+    build: {
+        outDir: '../internal/ui/static',
+        emptyOutDir: true,
+        sourcemap: false,
+        chunkSizeWarningLimit: 2000,
+    },
 })

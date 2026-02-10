@@ -3,7 +3,7 @@ import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getTrackColor } from '@/types/robot'
-import { canvasToNatural as utilCanvasToNatural, naturalToCanvas as utilNaturalToCanvas, getVideoDimensions } from '@/utils/coordinates'
+import { getVideoDimensions } from '@/utils/coordinates'
 
 export interface CanvasPoint {
     x: number
@@ -15,14 +15,14 @@ const videoScale = ref({ x: 1, y: 1, offsetX: 0, offsetY: 0 })
 
 // Export canvasToNatural for use by other modules (e.g., robotStore)
 // Uses the shared module-level videoScale ref
-export function canvasToNaturalShared(canvasX: number, canvasY: number): { x: number, y: number } {
+export function canvasToNaturalShared(canvasX: number, canvasY: number): { x: number; y: number } {
     const scale = videoScale.value
     if (scale.x === 0 || scale.y === 0) {
         return { x: Math.round(canvasX), y: Math.round(canvasY) }
     }
     return {
         x: Math.round((canvasX - scale.offsetX) / scale.x),
-        y: Math.round((canvasY - scale.offsetY) / scale.y)
+        y: Math.round((canvasY - scale.offsetY) / scale.y),
     }
 }
 
@@ -34,33 +34,33 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const canvas = ref<HTMLCanvasElement | null>(null)
     const context = ref<CanvasRenderingContext2D | null>(null)
     const dimensions = ref({ width: 0, height: 0 })
-    const mousePosition = ref<{ x: number, y: number } | null>(null)
-    const flashInvalid = ref<{ x: number, y: number, active: boolean } | null>(null)
+    const mousePosition = ref<{ x: number; y: number } | null>(null)
+    const flashInvalid = ref<{ x: number; y: number; active: boolean } | null>(null)
 
     // Export videoScale for use by other modules (e.g., robotStore)
     const getVideoScale = () => videoScale.value
 
     const ctx = computed(() => context.value)
 
-    function canvasToNatural(canvasX: number, canvasY: number): { x: number, y: number } {
+    function canvasToNatural(canvasX: number, canvasY: number): { x: number; y: number } {
         const scale = videoScale.value
         if (scale.x === 0 || scale.y === 0) {
             return { x: Math.round(canvasX), y: Math.round(canvasY) }
         }
         return {
             x: Math.round((canvasX - scale.offsetX) / scale.x),
-            y: Math.round((canvasY - scale.offsetY) / scale.y)
+            y: Math.round((canvasY - scale.offsetY) / scale.y),
         }
     }
 
-    function naturalToCanvas(naturalX: number, naturalY: number): { x: number, y: number } {
+    function naturalToCanvas(naturalX: number, naturalY: number): { x: number; y: number } {
         const scale = videoScale.value
         if (scale.x === 0 || scale.y === 0) {
             return { x: naturalX, y: naturalY }
         }
         return {
             x: naturalX * scale.x + scale.offsetX,
-            y: naturalY * scale.y + scale.offsetY
+            y: naturalY * scale.y + scale.offsetY,
         }
     }
 
@@ -68,8 +68,18 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const video = document.getElementById('video') as HTMLVideoElement | HTMLImageElement | null
         if (!video) return
 
-        const naturalWidth = 'videoWidth' in video ? (video as HTMLVideoElement).videoWidth : ('naturalWidth' in video ? (video as HTMLImageElement).naturalWidth : 0)
-        const naturalHeight = 'videoHeight' in video ? (video as HTMLVideoElement).videoHeight : ('naturalHeight' in video ? (video as HTMLImageElement).naturalHeight : 0)
+        const naturalWidth =
+            'videoWidth' in video
+                ? (video as HTMLVideoElement).videoWidth
+                : 'naturalWidth' in video
+                  ? (video as HTMLImageElement).naturalWidth
+                  : 0
+        const naturalHeight =
+            'videoHeight' in video
+                ? (video as HTMLVideoElement).videoHeight
+                : 'naturalHeight' in video
+                  ? (video as HTMLImageElement).naturalHeight
+                  : 0
 
         if (naturalWidth === 0 || naturalHeight === 0) return
 
@@ -87,7 +97,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 x: scaleX,
                 y: scaleY,
                 offsetX: videoRect.left - canvasRect.left,
-                offsetY: videoRect.top - canvasRect.top
+                offsetY: videoRect.top - canvasRect.top,
             }
         } else {
             videoScale.value = { x: scaleX, y: scaleY, offsetX: 0, offsetY: 0 }
@@ -105,7 +115,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             obstacleStore.drawRect,
             uiStore.selectedCalibrationTagId,
             uiStore.detectedTags,
-            mousePosition.value
+            mousePosition.value,
         ],
         () => {
             render()
@@ -192,17 +202,6 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         }
     }
 
-    function isPointInObstacle(x: number, y: number): boolean {
-        const obstacles = obstacleStore.obstacles
-        for (const obs of obstacles) {
-            if (x >= obs.pixel_top_left[0] && x <= obs.pixel_bottom_right[0] &&
-                y >= obs.pixel_top_left[1] && y <= obs.pixel_bottom_right[1]) {
-                return true
-            }
-        }
-        return false
-    }
-
     // x, y, radius are all in NATURAL VIDEO coordinates (not canvas pixels)
     function isCircleInObstacle(cx: number, cy: number, radius: number): boolean {
         const obstacles = obstacleStore.obstacles
@@ -227,9 +226,16 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             }
 
             // Also check if circle is completely inside rectangle
-            if (cx >= rectX1 && cx <= rectX2 && cy >= rectY1 && cy <= rectY2 &&
-                cx - radius >= rectX1 && cx + radius <= rectX2 &&
-                cy - radius >= rectY1 && cy + radius <= rectY2) {
+            if (
+                cx >= rectX1 &&
+                cx <= rectX2 &&
+                cy >= rectY1 &&
+                cy <= rectY2 &&
+                cx - radius >= rectX1 &&
+                cx + radius <= rectX2 &&
+                cy - radius >= rectY1 &&
+                cy + radius <= rectY2
+            ) {
                 return true
             }
         }
@@ -355,7 +361,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
         if (!ctx.value || selectedTagId === null || detectedTags.length === 0) return
 
-        const selectedTag = detectedTags.find((tag) => tag.id === selectedTagId)
+        const selectedTag = detectedTags.find(tag => tag.id === selectedTagId)
         if (!selectedTag || !selectedTag.corners || selectedTag.corners.length !== 4) return
 
         const corners = selectedTag.corners
@@ -368,18 +374,18 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         ctx.value.lineWidth = 3
         ctx.value.setLineDash([])
         ctx.value.beginPath()
-        ctx.value.moveTo(scaledCorners[0][0], scaledCorners[0][1])
-        ctx.value.lineTo(scaledCorners[1][0], scaledCorners[1][1])
-        ctx.value.lineTo(scaledCorners[2][0], scaledCorners[2][1])
-        ctx.value.lineTo(scaledCorners[3][0], scaledCorners[3][1])
+        ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
+        ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
+        ctx.value.lineTo(scaledCorners[2].x, scaledCorners[2].y)
+        ctx.value.lineTo(scaledCorners[3].x, scaledCorners[3].y)
         ctx.value.closePath()
         ctx.value.stroke()
 
         ctx.value.fillStyle = 'rgba(0, 188, 212, 0.2)'
         ctx.value.fill()
 
-        const centerX = (scaledCorners[0][0] + scaledCorners[2][0]) / 2
-        const centerY = (scaledCorners[0][1] + scaledCorners[2][1]) / 2
+        const centerX = (scaledCorners[0].x + scaledCorners[2].x) / 2
+        const centerY = (scaledCorners[0].y + scaledCorners[2].y) / 2
         ctx.value.fillStyle = '#00bcd4'
         ctx.value.fillRect(centerX - 30, centerY - 25, 60, 20)
 
@@ -425,7 +431,11 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             if (track.confidence > 0) {
                 ctx.value.fillStyle = color
                 ctx.value.font = '10px sans-serif'
-                ctx.value.fillText(`${(track.confidence * 100).toFixed(0)}%`, scaled1.x, scaled2.y + 14)
+                ctx.value.fillText(
+                    `${(track.confidence * 100).toFixed(0)}%`,
+                    scaled1.x,
+                    scaled2.y + 14
+                )
             }
 
             // Draw tag ID if available
@@ -444,7 +454,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const rect = canvas.value.getBoundingClientRect()
         return {
             x: (event.clientX - rect.left) * (canvas.value.width / rect.width),
-            y: (event.clientY - rect.top) * (canvas.value.height / rect.height)
+            y: (event.clientY - rect.top) * (canvas.value.height / rect.height),
         }
     }
 
@@ -466,8 +476,12 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 const scaled1 = naturalToCanvas(x1, y1)
                 const scaled2 = naturalToCanvas(x2, y2)
 
-                if (point.x >= scaled1.x && point.x <= scaled2.x &&
-                    point.y >= scaled1.y && point.y <= scaled2.y) {
+                if (
+                    point.x >= scaled1.x &&
+                    point.x <= scaled2.x &&
+                    point.y >= scaled1.y &&
+                    point.y <= scaled2.y
+                ) {
                     if (track.id === robotStore.selectedTrackId) {
                         robotStore.clearSelection()
                     } else {
@@ -478,7 +492,9 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             }
 
             const naturalPos = canvasToNatural(point.x, point.y)
-            const selectedTrack = robotStore.confirmedTracks.find(t => t.id === robotStore.selectedTrackId)
+            const selectedTrack = robotStore.confirmedTracks.find(
+                t => t.id === robotStore.selectedTrackId
+            )
             const pixelRadius = selectedTrack?.pixel_radius
 
             if (pixelRadius && pixelRadius > 0) {
@@ -497,8 +513,12 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 const scaled1 = naturalToCanvas(x1, y1)
                 const scaled2 = naturalToCanvas(x2, y2)
 
-                if (point.x >= scaled1.x && point.x <= scaled2.x &&
-                    point.y >= scaled1.y && point.y <= scaled2.y) {
+                if (
+                    point.x >= scaled1.x &&
+                    point.x <= scaled2.x &&
+                    point.y >= scaled1.y &&
+                    point.y <= scaled2.y
+                ) {
                     robotStore.selectTrack(track.id)
                     return
                 }
@@ -556,6 +576,6 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         getCanvasPoint,
         canvasToNatural,
         naturalToCanvas,
-        getVideoScale
+        getVideoScale,
     }
 }

@@ -79,32 +79,34 @@ onUnmounted(() => {
             <h1>Robot Tracker</h1>
             <div class="header-right">
                 <div class="status">
-                    <span>FPS: <span class="value">{{ robotStore.status.fps }}</span></span>
-                    <span>Tracks: <span class="value">{{ robotStore.confirmedCount }}</span></span>
+                    <span
+                        >FPS: <span class="value">{{ robotStore.status.fps }}</span></span
+                    >
+                    <span
+                        >Tracks: <span class="value">{{ robotStore.confirmedCount }}</span></span
+                    >
                     <span :class="isConnected ? 'connected' : 'disconnected'">
                         Arduino: <span class="value">{{ robotStore.status.arduinoState }}</span>
                     </span>
                 </div>
 
-                <div
-                    v-if="robotStore.destinationMode"
-                    class="destination-badge"
-                >
+                <div v-if="robotStore.destinationMode" class="destination-badge">
                     Destination Mode (ESC to cancel)
                 </div>
 
                 <div
                     class="calibration-badge"
-                    :class="uiStore.calibration.state === 'calibrated' ? 'calibrated' : 'not-calibrated'"
+                    :class="
+                        uiStore.calibration.state === 'calibrated' ? 'calibrated' : 'not-calibrated'
+                    "
                     @click="uiStore.openCalibration()"
                 >
-                    {{ uiStore.calibration.state === 'calibrated' ? 'Calibrated' : 'Not Calibrated' }}
+                    {{
+                        uiStore.calibration.state === 'calibrated' ? 'Calibrated' : 'Not Calibrated'
+                    }}
                 </div>
 
-                <button
-                    class="obstacle-toggle"
-                    @click="uiStore.toggleObstaclePanel"
-                >
+                <button class="obstacle-toggle" @click="uiStore.toggleObstaclePanel">
                     Obstacles ({{ obstacleStore.obstacleCount }})
                 </button>
             </div>
@@ -200,7 +202,12 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 </style>

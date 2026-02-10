@@ -11,7 +11,7 @@ async function sendCommand(command: string): Promise<void> {
         await fetch('/api/command', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command })
+            body: JSON.stringify({ command }),
         })
     } catch (e) {
         console.error('Failed to send command:', e)
@@ -31,7 +31,7 @@ function handleMouseUp(): void {
 // Watch keyboard state
 watch(
     () => uiStore.keyboard,
-    (keys) => {
+    keys => {
         if (keys.w) {
             sendCommand('F')
         } else if (keys.s) {

@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -67,7 +68,7 @@ describe('VIDEO-MAX-SIZE-001: Footprint Radius Scaling Bug', () => {
         })
 
         vi.stubGlobal('document', {
-            getElementById: mockGetElementById
+            getElementById: mockGetElementById,
         })
 
         const { useCanvas } = await import('@/composables/useCanvas')
@@ -88,11 +89,10 @@ describe('VIDEO-MAX-SIZE-001: Footprint Radius Scaling Bug', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 25,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize } = useCanvas(canvasRef)
 
         initialize()

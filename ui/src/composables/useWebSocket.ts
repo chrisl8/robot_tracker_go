@@ -12,13 +12,7 @@ interface WebSocketOptions {
 }
 
 export function useWebSocket(url: string, options: WebSocketOptions = {}) {
-    const {
-        maxAttempts = 5,
-        baseDelay = 1000,
-        onConnect,
-        onDisconnect,
-        onError
-    } = options
+    const { maxAttempts = 5, baseDelay = 1000, onConnect, onDisconnect, onError } = options
 
     const robotStore = useRobotStore()
     const uiStore = useUIStore()
@@ -49,11 +43,11 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
                 scheduleReconnect()
             }
 
-            ws.value.onerror = (error) => {
+            ws.value.onerror = error => {
                 onError?.(error)
             }
 
-            ws.value.onmessage = (event) => {
+            ws.value.onmessage = event => {
                 try {
                     const data = JSON.parse(event.data) as WebSocketMessage
                     robotStore.handleWebSocketMessage(data)
@@ -111,6 +105,6 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
         isConnected,
         connect,
         disconnect,
-        send
+        send,
     }
 }

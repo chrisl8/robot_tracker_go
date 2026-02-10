@@ -3,629 +3,639 @@
 
 // Reset and Base Styles
 * {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: $background;
-  color: $text;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: $background;
+    color: $text;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 #app {
-  width: 100%;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 // Header
 .app-header {
-  background: $surface;
-  padding: $spacing-md $spacing-xl;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid $border;
-
-  h1 {
-    font-size: 1.4rem;
-    font-weight: 500;
+    background: $surface;
+    padding: $spacing-md $spacing-xl;
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    border-bottom: 1px solid $border;
 
-    &::before {
-      content: '';
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      background: $primary;
-      border-radius: 50%;
-      animation: pulse 2s infinite;
+    h1 {
+        font-size: 1.4rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        &::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: $primary;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
     }
-  }
 }
 
 .header-right {
-  display: flex;
-  align-items: center;
-  gap: $spacing-lg;
+    display: flex;
+    align-items: center;
+    gap: $spacing-lg;
 }
 
 .status {
-  display: flex;
-  gap: 20px;
-  font-size: 0.9rem;
+    display: flex;
+    gap: 20px;
+    font-size: 0.9rem;
 
-  span {
-    color: $text-dim;
-  }
+    span {
+        color: $text-dim;
+    }
 
-  .value {
-    color: $primary;
-    font-weight: 500;
-  }
+    .value {
+        color: $primary;
+        font-weight: 500;
+    }
 
-  .connected .value {
-    color: $primary;
-  }
+    .connected .value {
+        color: $primary;
+    }
 
-  .disconnected .value {
-    color: $danger;
-  }
+    .disconnected .value {
+        color: $danger;
+    }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
 }
 
 @keyframes pulse-warning {
-  0%, 100% { box-shadow: 0 0 0 0 rgba($danger, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba($danger, 0); }
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba($danger, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba($danger, 0);
+    }
 }
 
 @keyframes toastIn {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
 }
 
 // Calibration Badge
 .calibration-badge {
-  padding: 6px 12px;
-  border-radius: $radius-md;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 2px solid transparent;
+    padding: 6px 12px;
+    border-radius: $radius-md;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid transparent;
 
-  &.calibrated {
-    background: $primary-dim;
-    color: $primary;
-    border-color: $primary;
+    &.calibrated {
+        background: $primary-dim;
+        color: $primary;
+        border-color: $primary;
 
-    &:hover {
-      background: $primary-hover;
+        &:hover {
+            background: $primary-hover;
+        }
     }
-  }
 
-  &.not-calibrated {
-    background: $danger-dim;
-    color: $danger;
-    border-color: $danger;
-    animation: pulse-warning 2s infinite;
+    &.not-calibrated {
+        background: $danger-dim;
+        color: $danger;
+        border-color: $danger;
+        animation: pulse-warning 2s infinite;
 
-    &:hover {
-      background: $danger-hover;
+        &:hover {
+            background: $danger-hover;
+        }
     }
-  }
 }
 
 // Main Layout
 .main-layout {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
+    display: flex;
+    flex: 1;
+    overflow: hidden;
 }
 
 // Video Container
 .video-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: $spacing-lg;
-  background: #0a0a0f;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: $spacing-lg;
+    background: #0a0a0f;
 }
 
 .video-wrapper {
-  flex: 1;
-  position: relative;
-  background: #000;
-  border-radius: $radius-lg;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    flex: 1;
+    position: relative;
+    background: #000;
+    border-radius: $radius-lg;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #video {
-  max-width: 100%;
-  max-height: 100%;
-  display: block;
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
 }
 
 #overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
 }
 
 .loading {
-  position: absolute;
-  color: $text-muted;
-  font-size: 1rem;
+    position: absolute;
+    color: $text-muted;
+    font-size: 1rem;
 }
 
 // Sidebar
 .sidebar {
-  width: 300px;
-  background: $surface;
-  padding: $spacing-lg;
-  border-left: 1px solid $border;
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-lg;
-  overflow-y: auto;
+    width: 300px;
+    background: $surface;
+    padding: $spacing-lg;
+    border-left: 1px solid $border;
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-lg;
+    overflow-y: auto;
 }
 
 .panel {
-  background: $surface-light;
-  border-radius: $radius-lg;
-  padding: $spacing-lg;
+    background: $surface-light;
+    border-radius: $radius-lg;
+    padding: $spacing-lg;
 
-  h3 {
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    color: $text-dim;
-    margin-bottom: $spacing-md;
-    letter-spacing: 0.5px;
-    display: flex;
-    align-items: center;
-    gap: $spacing-sm;
+    h3 {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        color: $text-dim;
+        margin-bottom: $spacing-md;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        gap: $spacing-sm;
 
-    &::before {
-      content: '';
-      display: block;
-      width: 3px;
-      height: 12px;
-      background: $primary;
-      border-radius: 2px;
+        &::before {
+            content: '';
+            display: block;
+            width: 3px;
+            height: 12px;
+            background: $primary;
+            border-radius: 2px;
+        }
     }
-  }
 }
 
 // Controls
 .controls {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: $spacing-sm;
-  max-width: 180px;
-  margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $spacing-sm;
+    max-width: 180px;
+    margin: 0 auto;
 }
 
 .btn {
-  padding: 14px;
-  border: none;
-  border-radius: $radius-lg;
-  cursor: pointer;
-  font-size: 1.3rem;
-  transition: all 0.15s ease;
-  background: $border;
-  color: $text;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    background: color.adjust($border, $lightness: 10%);
-    transform: translateY(-1px);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-
-  &.wide {
-    grid-column: span 2;
-  }
-
-  &.stop {
-    background: $danger;
+    padding: 14px;
+    border: none;
+    border-radius: $radius-lg;
+    cursor: pointer;
+    font-size: 1.3rem;
+    transition: all 0.15s ease;
+    background: $border;
+    color: $text;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
     &:hover {
-      background: color.adjust($danger, $lightness: 10%);
+        background: color.adjust($border, $lightness: 10%);
+        transform: translateY(-1px);
     }
-  }
 
-  &.forward {
-    background: $primary;
-    color: $background;
-
-    &:hover {
-      background-color: color.adjust($primary, $lightness: 10%);
+    &:active {
+        transform: scale(0.95);
     }
-  }
+
+    &.wide {
+        grid-column: span 2;
+    }
+
+    &.stop {
+        background: $danger;
+
+        &:hover {
+            background: color.adjust($danger, $lightness: 10%);
+        }
+    }
+
+    &.forward {
+        background: $primary;
+        color: $background;
+
+        &:hover {
+            background-color: color.adjust($primary, $lightness: 10%);
+        }
+    }
 }
 
 .keyboard-hint {
-  font-size: 0.75rem;
-  color: $text-muted;
-  text-align: center;
-  margin-top: 10px;
+    font-size: 0.75rem;
+    color: $text-muted;
+    text-align: center;
+    margin-top: 10px;
 
-  kbd {
-    background: $border;
-    padding: 3px 8px;
-    border-radius: $radius-sm;
-    margin: 0 3px;
-    font-family: monospace;
-    font-size: 0.8rem;
-  }
+    kbd {
+        background: $border;
+        padding: 3px 8px;
+        border-radius: $radius-sm;
+        margin: 0 3px;
+        font-family: monospace;
+        font-size: 0.8rem;
+    }
 }
 
 // Track List
 .track-list {
-  max-height: 250px;
-  overflow-y: auto;
+    max-height: 250px;
+    overflow-y: auto;
 }
 
 .track-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px;
-  background: $surface;
-  border-radius: $radius-md;
-  margin-bottom: $spacing-sm;
-  transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    background: $surface;
+    border-radius: $radius-md;
+    margin-bottom: $spacing-sm;
+    transition: background 0.2s;
 
-  &:hover {
-    background: color.adjust($surface, $lightness: 5%);
-  }
+    &:hover {
+        background: color.adjust($surface, $lightness: 5%);
+    }
 }
 
 .track-color {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: $background;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: $background;
 }
 
 .track-info {
-  flex: 1;
+    flex: 1;
 }
 
 .track-label {
-  font-size: 0.9rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: $spacing-sm;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
 }
 
 .track-tag {
-  font-size: 0.7rem;
-  background: $border;
-  padding: 2px 6px;
-  border-radius: $radius-sm;
-  color: $text-dim;
+    font-size: 0.7rem;
+    background: $border;
+    padding: 2px 6px;
+    border-radius: $radius-sm;
+    color: $text-dim;
 }
 
 .track-conf {
-  font-size: 0.75rem;
-  color: $primary;
-  margin-top: 2px;
+    font-size: 0.75rem;
+    color: $primary;
+    margin-top: 2px;
 }
 
 .no-tracks {
-  color: $text-muted;
-  text-align: center;
-  padding: 20px;
-  font-size: 0.9rem;
+    color: $text-muted;
+    text-align: center;
+    padding: 20px;
+    font-size: 0.9rem;
 }
 
 // Instructions
 .instructions {
-  font-size: 0.85rem;
-  color: $text-light;
-  line-height: 1.6;
-
-  li {
-    margin-bottom: $spacing-sm;
-  }
-
-  &.calibration-needed {
-    border: 1px solid $danger;
-    border-radius: $radius-lg;
-    padding: $spacing-md;
-    background: $danger-dim;
+    font-size: 0.85rem;
+    color: $text-light;
+    line-height: 1.6;
 
     li {
-      color: color.adjust($danger, $lightness: 20%);
+        margin-bottom: $spacing-sm;
     }
 
-    .warning {
-      color: $danger;
-      font-weight: bold;
-      margin-bottom: $spacing-sm;
+    &.calibration-needed {
+        border: 1px solid $danger;
+        border-radius: $radius-lg;
+        padding: $spacing-md;
+        background: $danger-dim;
+
+        li {
+            color: color.adjust($danger, $lightness: 20%);
+        }
+
+        .warning {
+            color: $danger;
+            font-weight: bold;
+            margin-bottom: $spacing-sm;
+        }
     }
-  }
 }
 
 .hidden {
-  display: none !important;
+    display: none !important;
 }
 
 // Stats Grid
 .stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: $spacing-md;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-md;
 }
 
 .stat-item {
-  background: $surface;
-  padding: $spacing-md;
-  border-radius: $radius-md;
-  text-align: center;
+    background: $surface;
+    padding: $spacing-md;
+    border-radius: $radius-md;
+    text-align: center;
 }
 
 .stat-value {
-  font-size: 1.4rem;
-  font-weight: 600;
-  color: $primary;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: $primary;
 }
 
 .stat-label {
-  font-size: 0.75rem;
-  color: $text-muted;
-  margin-top: 2px;
+    font-size: 0.75rem;
+    color: $text-muted;
+    margin-top: 2px;
 }
 
 // Obstacle Toggle
 .obstacle-toggle {
-  padding: 6px 12px;
-  border-radius: $radius-md;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 2px solid $obstacle;
-  background: $obstacle-dim;
-  color: $obstacle;
+    padding: 6px 12px;
+    border-radius: $radius-md;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid $obstacle;
+    background: $obstacle-dim;
+    color: $obstacle;
 
-  &:hover {
-    background: $obstacle-hover;
-  }
+    &:hover {
+        background: $obstacle-hover;
+    }
 }
 
 .obstacle-list {
-  max-height: 150px;
-  overflow-y: auto;
+    max-height: 150px;
+    overflow-y: auto;
 }
 
 .obstacle-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: $spacing-sm $spacing-md;
-  background: $obstacle-dim;
-  border-radius: $radius-sm;
-  margin-bottom: $spacing-xs;
-
-  &:hover {
-    background: $obstacle-hover;
-  }
-
-  button {
-    background: transparent;
-    border: none;
-    color: $obstacle;
-    cursor: pointer;
-    font-size: 1.2rem;
-    padding: 0 $spacing-xs;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: $spacing-sm $spacing-md;
+    background: $obstacle-dim;
+    border-radius: $radius-sm;
+    margin-bottom: $spacing-xs;
 
     &:hover {
-      color: color.adjust($obstacle, $lightness: -10%);
+        background: $obstacle-hover;
     }
-  }
+
+    button {
+        background: transparent;
+        border: none;
+        color: $obstacle;
+        cursor: pointer;
+        font-size: 1.2rem;
+        padding: 0 $spacing-xs;
+
+        &:hover {
+            color: color.adjust($obstacle, $lightness: -10%);
+        }
+    }
 }
 
 .obstacle-controls {
-  display: flex;
-  gap: $spacing-sm;
-  margin-top: $spacing-sm;
+    display: flex;
+    gap: $spacing-sm;
+    margin-top: $spacing-sm;
 
-  .btn {
-    flex: 1;
-    padding: $spacing-sm $spacing-md;
-    font-size: 0.8rem;
-  }
+    .btn {
+        flex: 1;
+        padding: $spacing-sm $spacing-md;
+        font-size: 0.8rem;
+    }
 }
 
 // Toast
 .toast-container {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2000;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
 }
 
 .toast {
-  background: $surface;
-  color: $text;
-  padding: $spacing-md $spacing-xl;
-  border-radius: $radius-lg;
-  box-shadow: $shadow-md;
-  border: 1px solid $border;
-  margin-top: $spacing-sm;
+    background: $surface;
+    color: $text;
+    padding: $spacing-md $spacing-xl;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-md;
+    border: 1px solid $border;
+    margin-top: $spacing-sm;
 
-  &.show {
-    display: block;
-    animation: toastIn 0.3s;
-  }
+    &.show {
+        display: block;
+        animation: toastIn 0.3s;
+    }
 
-  &.success {
-    border-color: $primary;
-    background: $primary-dim;
-    color: $primary;
-  }
+    &.success {
+        border-color: $primary;
+        background: $primary-dim;
+        color: $primary;
+    }
 
-  &.error {
-    border-color: $danger;
-    background: $danger-dim;
-    color: $danger;
-  }
+    &.error {
+        border-color: $danger;
+        background: $danger-dim;
+        color: $danger;
+    }
 
-  &.warning {
-    border-color: $warning;
-    background: rgba($warning, 0.2);
-    color: $warning;
-  }
+    &.warning {
+        border-color: $warning;
+        background: rgba($warning, 0.2);
+        color: $warning;
+    }
 
-  &.info {
-    border-color: $info;
-    background: $info-dim;
-    color: $info;
-  }
+    &.info {
+        border-color: $info;
+        background: $info-dim;
+        color: $info;
+    }
 }
 
 .dimension-results {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: $spacing-md;
-  margin: $spacing-lg 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-md;
+    margin: $spacing-lg 0;
 }
 
 .dimension-box {
-  background: $surface-light;
-  padding: $spacing-lg;
-  border-radius: $radius-lg;
-  text-align: center;
+    background: $surface-light;
+    padding: $spacing-lg;
+    border-radius: $radius-lg;
+    text-align: center;
 }
 
 .dimension-value {
-  font-size: 1.8rem;
-  font-weight: bold;
-  color: $primary;
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: $primary;
 }
 
 .dimension-label {
-  font-size: 0.8rem;
-  color: $text-dim;
-  margin-top: $spacing-xs;
+    font-size: 0.8rem;
+    color: $text-dim;
+    margin-top: $spacing-xs;
 }
 
 .measurement-guide {
-  background: $surface-light;
-  border-radius: $radius-lg;
-  padding: $spacing-lg;
-  margin: $spacing-lg 0;
+    background: $surface-light;
+    border-radius: $radius-lg;
+    padding: $spacing-lg;
+    margin: $spacing-lg 0;
 
-  h4 {
-    color: $text-dim;
-    font-size: 0.85rem;
-    margin-bottom: $spacing-md;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
+    h4 {
+        color: $text-dim;
+        font-size: 0.85rem;
+        margin-bottom: $spacing-md;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
 }
 
 .tag-diagram {
-  display: flex;
-  align-items: center;
-  gap: $spacing-lg;
-  margin-bottom: $spacing-md;
+    display: flex;
+    align-items: center;
+    gap: $spacing-lg;
+    margin-bottom: $spacing-md;
 }
 
 .tag-preview {
-  width: 100px;
-  height: 100px;
-  position: relative;
-  border: 8px solid white;
-  background: black;
-  flex-shrink: 0;
+    width: 100px;
+    height: 100px;
+    position: relative;
+    border: 8px solid white;
+    background: black;
+    flex-shrink: 0;
 
-  &::after {
-    content: 'DATA';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
-    font-size: 10px;
-    font-weight: bold;
-  }
+    &::after {
+        content: 'DATA';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 10px;
+        font-weight: bold;
+    }
 }
 
 .measurement-arrow {
-  flex: 1;
-  position: relative;
-  height: 30px;
+    flex: 1;
+    position: relative;
+    height: 30px;
 
-  &::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 2px;
-    background: $primary;
-  }
+    &::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 2px;
+        background: $primary;
+    }
 
-  &::after {
-    content: '▼';
-    position: absolute;
-    left: 50%;
-    bottom: 0;
-    transform: translateX(-50%);
-    color: $primary;
-    font-size: 12px;
-  }
+    &::after {
+        content: '▼';
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        transform: translateX(-50%);
+        color: $primary;
+        font-size: 12px;
+    }
 }
 
 .measurement-label {
-  text-align: center;
-  color: $primary;
-  font-weight: bold;
-  font-size: 0.9rem;
+    text-align: center;
+    color: $primary;
+    font-weight: bold;
+    font-size: 0.9rem;
 }
 
 .measurement-note {
-  font-size: 0.8rem;
-  color: $text-dim;
-  line-height: 1.5;
-  margin-top: $spacing-sm;
+    font-size: 0.8rem;
+    color: $text-dim;
+    line-height: 1.5;
+    margin-top: $spacing-sm;
 }

@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -79,11 +80,10 @@ describe('VISUALIZATION-001: Robot Footprint Display', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         initialize()
@@ -111,11 +111,10 @@ describe('VISUALIZATION-001: Robot Footprint Display', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         const arcCallsBefore = mockCtx.arc.mock.calls.length
@@ -145,19 +144,18 @@ describe('VISUALIZATION-001: Robot Footprint Display', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
             {
                 id: 2,
                 bbox: [200, 200, 250, 250],
-                confidence: 0.50,
-                state: 'tentative',
+                confidence: 0.5,
+                state: 'pending',
                 history: [],
                 pixel_radius: 20,
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         initialize()
@@ -184,8 +182,10 @@ describe('VISUALIZATION-002: Calibration Tag Size Display', () => {
         const computedWidth = 0.15
         const computedHeight = 0.15
 
-        uiStore.setCalibrationState('calibrated',
-            `Calibration complete! Area: ${computedWidth}m x ${computedHeight}m`)
+        uiStore.setCalibrationState(
+            'calibrated',
+            `Calibration complete! Area: ${computedWidth}m x ${computedHeight}m`
+        )
 
         expect(uiStore.calibration.message).toContain('Area:')
         expect(uiStore.calibration.message).toContain('m x')
@@ -290,10 +290,8 @@ describe('VISUALIZATION-003: Obstacle Backend Rendering', () => {
 
     it('should NOT render obstacles on frontend canvas (they are backend-drawn)', async () => {
         const { useCanvas } = await import('@/composables/useCanvas')
-        const { useRobotStore } = await import('@/stores/robotStore')
         const { useObstacleStore } = await import('@/stores/obstacleStore')
 
-        const robotStore = useRobotStore()
         const obstacleStore = useObstacleStore()
 
         obstacleStore.setObstacles([
@@ -308,7 +306,7 @@ describe('VISUALIZATION-003: Obstacle Backend Rendering', () => {
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         initialize()
@@ -328,7 +326,7 @@ describe('VISUALIZATION-003: Obstacle Backend Rendering', () => {
         obstacleStore.startDrawing({ x: 100, y: 100 })
         obstacleStore.updateDrawing({ x: 200, y: 200 })
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         initialize()
@@ -424,9 +422,13 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
         uiStore.setDetectedTags([
             {
                 id: 1,
-                corners: [[100, 100], [200, 100], [200, 200], [100, 200]],
+                corners: [
+                    [100, 100],
+                    [200, 100],
+                    [200, 200],
+                    [100, 200],
+                ],
                 center: [150, 150],
-                size: 100,
             },
         ])
         uiStore.setSelectedCalibrationTag(1)
@@ -440,11 +442,10 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         expect(() => {
@@ -485,11 +486,10 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
                 state: 'confirmed',
                 history: [],
                 pixel_radius: 30,
-                world_pos: [1.0, 1.0],
             },
         ])
 
-        const canvasRef = { value: mockCanvas }
+        const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
         const { initialize, render } = useCanvas(canvasRef)
 
         expect(() => {
