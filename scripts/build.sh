@@ -4,24 +4,74 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[0;37m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# Section separator function
+section_header() {
+    local title="$1"
+    local color="${2:-$CYAN}"
+    echo ""
+    echo -e "${color}══════════════════════════════════════════════════════════════════════${RESET}"
+    echo -e "${color}  ${BOLD}${title}${RESET}"
+    echo -e "${color}══════════════════════════════════════════════════════════════════════${RESET}"
+    echo ""
+}
+
+# Subsection separator function
+subsection_header() {
+    local title="$1"
+    local color="${2:-$BLUE}"
+    echo ""
+    echo -e "${color}─── ${WHITE}${BOLD}${title}${RESET} ${color}────────────────────────────────────────${RESET}"
+}
+
+# Status functions
+build_info() {
+    echo -e "${BLUE}ℹ${RESET} $1"
+}
+
+build_success() {
+    echo -e "${GREEN}✓${RESET} $1"
+}
+
+build_warning() {
+    echo -e "${YELLOW}⚠${RESET} $1"
+}
+
+build_error() {
+    echo -e "${RED}✗${RESET} $1"
+}
+
+section_header "Build: Robot Tracker Go" "$CYAN"
+
 # Build Vue UI first
-echo "[BUILD] Building Vue 3 UI..."
+subsection_header "Vue 3 UI" "$YELLOW"
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     cd ui
     # Only run npm update if node_modules is missing or outdated
     if [ ! -d "node_modules" ] || [ ! -d "node_modules/.package-lock.json" ] && [ ! -f "package-lock.json" ]; then
-        echo "[BUILD] Installing/updating npm dependencies..."
+        build_info "Installing/updating npm dependencies..."
         npm update 2>/dev/null || true
     fi
     # Skip vue-tsc due to Node.js compatibility issues - vite build does type checking
+    build_info "Building Vue UI with Vite..."
     npx vite build
     cd ..
-    
-    echo "[BUILD] Vue UI built successfully"
+
+    build_success "Vue UI built successfully"
 else
-    echo "[BUILD] Warning: ui/ directory not found, skipping Vue build"
+    build_warning "ui/ directory not found, skipping Vue build"
 fi
 
+# Set up Go environment
 if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
     export PATH="$HOME/go/bin:$PATH"
 fi
@@ -71,9 +121,10 @@ export CGO_LDFLAGS="-L/usr/local/lib $OPENCV_LIBS -Wl,-rpath,/usr/local/lib"
 # Prepend our OpenCV libraries to LD_LIBRARY_PATH (runtime)
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 
-echo "[BUILD] Building robot_tracker with GoCV support..."
-echo "[BUILD] PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+subsection_header "Go Backend with GoCV" "$YELLOW"
+build_info "Building robot_tracker with GoCV support..."
+build_info "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
 
 go build -tags=gocv -o robot_tracker ./cmd/
 
-echo "[BUILD] Done: robot_tracker"
+section_header "Build Complete: robot_tracker" "$GREEN"
