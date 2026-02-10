@@ -8,8 +8,11 @@ cd "$SCRIPT_DIR/.."
 echo "[BUILD] Building Vue 3 UI..."
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     cd ui
-    npm update 2>/dev/null || true
-    npm outdated || true
+    # Only run npm update if node_modules is missing or outdated
+    if [ ! -d "node_modules" ] || [ ! -d "node_modules/.package-lock.json" ] && [ ! -f "package-lock.json" ]; then
+        echo "[BUILD] Installing/updating npm dependencies..."
+        npm update 2>/dev/null || true
+    fi
     # Skip vue-tsc due to Node.js compatibility issues - vite build does type checking
     npx vite build
     cd ..
