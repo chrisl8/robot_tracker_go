@@ -365,7 +365,7 @@ func TestYOLODetector_NewYOLODetector(t *testing.T) {
 		{
 			name:        "non-existent model path",
 			config:      &YOLOConfig{ModelPath: "/nonexistent/path/model.onnx"},
-			expectError: false, // Stub doesn't check file existence
+			expectError: true, // Real implementation checks file existence
 		},
 	}
 
