@@ -126,7 +126,7 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		e.homography.SetPixelsPerMeter(scale)
 	}
 
-	fmt.Printf("Loaded calibration from %s\n", path)
+	utils.Logf("Loaded calibration from %s", path)
 	return nil
 }
 

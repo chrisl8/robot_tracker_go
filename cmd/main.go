@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -145,18 +144,18 @@ func (rs *RobotSystem) initDemoMode() {
 		QuadDecimate: 2.0,
 	}
 	rs.detectionPipe = detection.NewDetectionPipeline(nil, tagConfig)
-	log.Printf("Demo mode: Detection pipeline initialized (YOLO disabled)")
+	utils.Logf("Demo mode: Detection pipeline initialized (YOLO disabled)")
 
 	rs.webServer.Start()
-	log.Print(getWebUIURLs("9086"))
+	utils.Log(getWebUIURLs("9086"))
 
 	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
-		log.Printf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
+		utils.Logf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planner.SetObstacles(obstacles)
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
-			log.Printf("DEBUG: Converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
+			utils.Logf("DEBUG: Converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
 				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
 			detectionObstacles[i] = detection.Obstacle{
 				ID:               obs.Name,
@@ -168,11 +167,11 @@ func (rs *RobotSystem) initDemoMode() {
 			}
 		}
 		rs.detectionPipe.SetObstacles(detectionObstacles)
-		log.Printf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
+		utils.Logf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
 	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
-		log.Printf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
+		utils.Logf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]))
 	}
 }
@@ -202,7 +201,7 @@ func (rs *RobotSystem) Initialize() error {
 	}
 
 	rs.detectionPipe = detection.NewDetectionPipeline(yoloConfig, tagConfig)
-	log.Printf("Detection pipeline initialized, YOLO enabled: %v", rs.detectionPipe.IsYOLOEnabled())
+	utils.Logf("Detection pipeline initialized, YOLO enabled: %v", rs.detectionPipe.IsYOLOEnabled())
 
 	trackConfig := &tracking.ByteTrackConfig{
 		TrackThresh: rs.cfg.Tracking.TrackThresh,
@@ -213,7 +212,7 @@ func (rs *RobotSystem) Initialize() error {
 		MOT20:       rs.cfg.Tracking.MOT20,
 	}
 	rs.tracker = tracking.NewByteTrack(trackConfig)
-	log.Printf("ByteTrack initialized")
+	utils.Logf("ByteTrack initialized")
 
 	plannerConfig := &planning.PlannerConfig{
 		AStarConfig:            nil,
@@ -221,7 +220,7 @@ func (rs *RobotSystem) Initialize() error {
 		CollisionMargin:        0.05,
 	}
 	rs.planner = planning.NewPlanner(plannerConfig)
-	log.Printf("Planner initialized")
+	utils.Logf("Planner initialized")
 
 	if primaryCam := rs.cfg.GetPrimaryCamera(); primaryCam != nil {
 		camConfig := camera.CameraConfig{
@@ -235,20 +234,20 @@ func (rs *RobotSystem) Initialize() error {
 		}
 		cam, err := camera.NewCamera(camConfig)
 		if err != nil {
-			log.Printf("Warning: Could not initialize camera: %v", err)
+			utils.Logf("Warning: Could not initialize camera: %v", err)
 			rs.cam = nil
 		} else {
 			rs.cam = cam
-			log.Printf("Camera initialized: %s", rs.cam.GetName())
+			utils.Logf("Camera initialized: %s", rs.cam.GetName())
 		}
 	} else {
-		log.Printf("No camera configured, using demo mode")
+		utils.Logf("No camera configured, using demo mode")
 	}
 
 	calibrationPath := "config/calibration_default.yaml"
 	if rs.cam != nil {
 		calibrationPath = ui.GetCalibrationFilename(rs.cam.GetName())
-		log.Printf("Using calibration file: %s", calibrationPath)
+		utils.Logf("Using calibration file: %s", calibrationPath)
 	}
 	obstaclesPath := ""
 	if rs.cfg != nil && rs.cfg.Obstacles.GetPath() != "" {
@@ -256,33 +255,33 @@ func (rs *RobotSystem) Initialize() error {
 	}
 	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
 	if err != nil {
-		log.Printf("Warning: Position estimator initialization failed: %v", err)
+		utils.Logf("Warning: Position estimator initialization failed: %v", err)
 		rs.positionEst = nil
 	} else {
 		rs.positionEst = posEst
-		log.Printf("Position estimator initialized")
+		utils.Logf("Position estimator initialized")
 	}
 
 	rs.arduino = controller.NewArduinoController("auto", controller.BaudRate)
 	if err := rs.arduino.Connect(); err != nil {
-		log.Printf("Warning: Could not connect to Arduino: %v", err)
+		utils.Logf("Warning: Could not connect to Arduino: %v", err)
 	} else {
-		log.Printf("Connected to Arduino on %s", rs.arduino.GetPort())
+		utils.Logf("Connected to Arduino on %s", rs.arduino.GetPort())
 	}
 
 	rs.commandQueue = controller.NewCommandQueue(rs.arduino, controller.CommandIntervalMs)
 	rs.commandQueue.Start()
-	log.Printf("Command queue started")
+	utils.Logf("Command queue started")
 
 	rs.webServer = ui.NewWebServer(":9086")
 
 	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
-		log.Printf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
+		utils.Logf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planner.SetObstacles(obstacles)
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
-			log.Printf("DEBUG: Initialize() converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
+			utils.Logf("DEBUG: Initialize() converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
 				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
 			detectionObstacles[i] = detection.Obstacle{
 				ID:               obs.Name,
@@ -294,17 +293,17 @@ func (rs *RobotSystem) Initialize() error {
 			}
 		}
 		rs.detectionPipe.SetObstacles(detectionObstacles)
-		log.Printf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
+		utils.Logf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
 	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
 		if rs.positionEst == nil || !rs.positionEst.IsCalibrated() {
-			log.Printf("Cannot set destination: not calibrated")
+			utils.Logf("Cannot set destination: not calibrated")
 			return
 		}
 		worldPos := rs.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
 		rs.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
-		log.Printf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
+		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
@@ -313,10 +312,10 @@ func (rs *RobotSystem) Initialize() error {
 	}
 	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
 		rs.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
-		log.Printf("Calibration loaded from %s", calibrationPath)
+		utils.Logf("Calibration loaded from %s", calibrationPath)
 	}
 	rs.webServer.Start()
-	log.Print(getWebUIURLs("9086"))
+	utils.Log(getWebUIURLs("9086"))
 
 	rs.loadStaticObstacles()
 
@@ -329,31 +328,31 @@ func (rs *RobotSystem) loadStaticObstacles() {
 		configPath := rs.cfg.Obstacles.GetPath()
 		if _, err := os.Stat(configPath); err == nil {
 			obstaclesPath = configPath
-			log.Printf("Obstacles path from config: %s", obstaclesPath)
+			utils.Logf("Obstacles path from config: %s", obstaclesPath)
 		} else {
-			log.Printf("Config obstacles file not found: %s", configPath)
+			utils.Logf("Config obstacles file not found: %s", configPath)
 		}
 	}
 
 	if obstaclesPath == "" && rs.webServer != nil {
 		obstaclesPath = rs.webServer.GetObstaclesPath()
-		log.Printf("Obstacles path from webserver: %s", obstaclesPath)
+		utils.Logf("Obstacles path from webserver: %s", obstaclesPath)
 	}
 	if obstaclesPath == "" {
 		obstaclesPath = "config/obstacles.yaml"
-		log.Printf("Using default obstacles path: %s", obstaclesPath)
+		utils.Logf("Using default obstacles path: %s", obstaclesPath)
 	}
 
-	log.Printf("Loading obstacles from: %s", obstaclesPath)
+	utils.Logf("Loading obstacles from: %s", obstaclesPath)
 	data, err := os.ReadFile(obstaclesPath)
 	if err != nil {
-		log.Printf("No obstacles file found at %s", obstaclesPath)
+		utils.Logf("No obstacles file found at %s", obstaclesPath)
 		return
 	}
 
 	var config map[string]interface{}
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		log.Printf("Warning: Failed to parse obstacles file: %v", err)
+		utils.Logf("Warning: Failed to parse obstacles file: %v", err)
 		return
 	}
 
@@ -424,7 +423,7 @@ func (rs *RobotSystem) loadStaticObstacles() {
 	}
 
 	if len(rs.StaticObstacles) > 0 {
-		log.Printf("Loaded %d static obstacles from %s, calling SetObstacles", len(rs.StaticObstacles), obstaclesPath)
+		utils.Logf("Loaded %d static obstacles from %s, calling SetObstacles", len(rs.StaticObstacles), obstaclesPath)
 		rs.webServer.SetObstacles(rs.StaticObstacles)
 	}
 }
@@ -445,24 +444,24 @@ func toFloat64(v interface{}) float64 {
 }
 
 func (rs *RobotSystem) StartCamera() error {
-	log.Printf("Starting camera...")
+	utils.Logf("Starting camera...")
 	if rs.cam == nil {
-		log.Printf("No camera available")
+		utils.Logf("No camera available")
 		rs.cameraRunning = false
 		return nil
 	}
 	if err := rs.cam.Start(); err != nil {
-		log.Printf("Failed to start camera: %v", err)
+		utils.Logf("Failed to start camera: %v", err)
 		rs.cameraRunning = false
 		return err
 	}
 	rs.cameraRunning = true
-	log.Printf("Camera started: %s", rs.cam.GetName())
+	utils.Logf("Camera started: %s", rs.cam.GetName())
 	return nil
 }
 
 func (rs *RobotSystem) Stop() {
-	log.Printf("Stopping system...")
+	utils.Logf("Stopping system...")
 	rs.cameraRunning = false
 	if rs.cam != nil {
 		rs.cam.Stop()
@@ -476,7 +475,7 @@ func (rs *RobotSystem) Stop() {
 	if rs.webServer != nil {
 		rs.webServer.Stop()
 	}
-	log.Printf("System stopped")
+	utils.Logf("System stopped")
 }
 
 func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedDetection) []tracking.Detection {
@@ -558,7 +557,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 			rs.DynamicObstacles,
 			minConfidence,
 		)
-		log.Printf("Computed velocity with %d dynamic obstacles: (%.3f, %.3f)",
+		utils.Logf("Computed velocity with %d dynamic obstacles: (%.3f, %.3f)",
 			len(rs.DynamicObstacles), velocity[0], velocity[1])
 	}
 
@@ -914,42 +913,47 @@ func main() {
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
 	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
 	verbose := flag.Bool("verbose", false, "Enable verbose output (frame logging)")
+	quiet := flag.Bool("quiet", false, "Suppress all logging output")
 	flag.Parse()
+
+	if *quiet {
+		utils.SetQuietMode(true)
+	}
 
 	if *listPorts {
 		arduino := controller.NewArduinoController("auto", controller.BaudRate)
 		ports := arduino.ListPorts()
-		fmt.Println("Available serial ports:")
+		utils.Log("Available serial ports:")
 		for _, p := range ports {
-			fmt.Printf("  - %s\n", p)
+			utils.Logf("  - %s", p)
 		}
 		return
 	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Printf("Warning: Could not load config: %v", err)
-		log.Printf("Running with demo mode only")
+		utils.Logf("Warning: Could not load config: %v", err)
+		utils.Logf("Running with demo mode only")
 		*demoMode = true
 	}
 
 	rs := NewRobotSystem(cfg)
 	if cfg != nil {
 		if err := rs.Initialize(); err != nil {
-			log.Printf("Warning: Failed to initialize robot system: %v", err)
+			utils.Logf("Warning: Failed to initialize robot system: %v", err)
 		}
 	} else {
 		rs.initDemoMode()
 	}
 	defer rs.Stop()
 
-	fmt.Println("Press Ctrl+C to exit.")
+	utils.Log("Press Ctrl+C to exit.")
 
 	if *selfTestMode {
 		rs := NewRobotSystem(cfg)
 		if cfg != nil {
 			if err := rs.Initialize(); err != nil {
-				log.Printf("Warning: Failed to initialize robot system: %v", err)
+				utils.Logf("Warning: Failed to initialize robot system: %v", err)
 			}
 		}
 		RunSelfTest(rs)
@@ -960,7 +964,7 @@ func main() {
 		rs := NewRobotSystem(cfg)
 		if cfg != nil {
 			if err := rs.Initialize(); err != nil {
-				log.Printf("Warning: Failed to initialize robot system: %v", err)
+				utils.Logf("Warning: Failed to initialize robot system: %v", err)
 			}
 		}
 		RunDemoYOLOMode(rs)
@@ -968,33 +972,33 @@ func main() {
 	}
 
 	if rs.cam != nil && !*demoMode {
-		fmt.Println("Starting real camera capture...")
+		utils.Log("Starting real camera capture...")
 		if err := rs.StartCamera(); err != nil {
-			log.Printf("Failed to start camera: %v, falling back to demo mode", err)
+			utils.Logf("Failed to start camera: %v, falling back to demo mode", err)
 			*demoMode = true
 		} else {
-			log.Printf("Starting real camera capture...")
+			utils.Logf("Starting real camera capture...")
 			frameNum := 0
 			for rs.cameraRunning {
 				startTime := time.Now()
 				frame, err := rs.cam.GetFrame()
 				if err != nil {
-					log.Printf("Failed to get frame: %v", err)
+					utils.Logf("Failed to get frame: %v", err)
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
 				if frame == nil || len(frame.Data) == 0 {
-					log.Printf("Empty frame received")
+					utils.Logf("Empty frame received")
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
 				if *verbose {
-					log.Printf("Frame %d: %dx%d, %d bytes, channels=%d (capture time: %v)",
+					utils.Logf("Frame %d: %dx%d, %d bytes, channels=%d (capture time: %v)",
 						frameNum, frame.Width, frame.Height, len(frame.Data), frame.Channels, time.Since(startTime))
 				}
 				img := cameraFrameToImage(frame)
 				if img == nil {
-					log.Printf("Failed to convert frame to image")
+					utils.Logf("Failed to convert frame to image")
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
@@ -1009,7 +1013,7 @@ func main() {
 	}
 
 	for *demoMode {
-		fmt.Println("Demo mode: Generating test pattern with AprilTag visualization...")
+		utils.Log("Demo mode: Generating test pattern with AprilTag visualization...")
 		_ = rs.StartCamera()
 		frameNum := 0
 		for {
@@ -1037,15 +1041,15 @@ func main() {
 		}
 
 		for _, cmd := range testCommands {
-			fmt.Printf("Sending command: %c\n", cmd)
+			utils.Logf("Sending command: %c", cmd)
 			rs.commandQueue.Enqueue(cmd)
 			vel := executor.CommandToVelocity(cmd)
-			fmt.Printf("  Velocity: (%.2f, %.2f)\n", vel.VX, vel.VY)
+			utils.Logf("  Velocity: (%.2f, %.2f)", vel.VX, vel.VY)
 		}
 	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
-	fmt.Println("\nShutting down...")
+	utils.Log("\nShutting down...")
 }

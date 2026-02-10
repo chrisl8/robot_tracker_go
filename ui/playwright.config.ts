@@ -18,7 +18,7 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: 'cd .. &&./robot_tracker --demo',
+        command: 'cd .. && ./robot_tracker --demo --quiet',
         url: 'http://localhost:9086',
         reuseExistingServer: !process.env.CI,
         timeout: 30000,

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"image"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +18,7 @@ import (
 	"robot_tracker_go/internal/planning"
 	"robot_tracker_go/internal/position"
 	"robot_tracker_go/internal/tracking"
+	"robot_tracker_go/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -196,7 +196,7 @@ func corsMiddleware() gin.HandlerFunc {
 func (s *WebServer) setupRoutes() {
 	staticFS, err := fs.Sub(StaticFiles, "static")
 	if err != nil {
-		log.Printf("Warning: Failed to create static FS sub-directory: %v", err)
+		utils.Logf("Warning: Failed to create static FS sub-directory: %v", err)
 	} else {
 		s.engine.GET("/assets/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
 	}
@@ -368,7 +368,7 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		for _, obs := range obstacles {
 			if destX >= float64(obs.PixelsTopLeft[0]) && destX <= float64(obs.PixelsBottomRight[0]) &&
 				destY >= float64(obs.PixelsTopLeft[1]) && destY <= float64(obs.PixelsBottomRight[1]) {
-				log.Printf("DESTINATION_REJECTED: Destination (%.0f, %.0f) overlaps with obstacle '%s'",
+				utils.Logf("DESTINATION_REJECTED: Destination (%.0f, %.0f) overlaps with obstacle '%s'",
 					destX, destY, obs.Name)
 				c.JSON(http.StatusBadRequest, gin.H{
 					"error":    "Destination overlaps with obstacle",
@@ -623,7 +623,7 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 	}
 
 	if err := saveToFile(cameraFile); err != nil {
-		log.Printf("Warning: failed to save calibration: %v", err)
+		utils.Logf("Warning: failed to save calibration: %v", err)
 	}
 
 	s.SetCalibrationState("complete",
@@ -666,7 +666,7 @@ func (s *WebServer) Start() {
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 		if err := srv.ListenAndServe(); err != nil && !strings.Contains(err.Error(), "Server closed") {
-			log.Printf("HTTP server error: %v", err)
+			utils.Logf("HTTP server error: %v", err)
 		}
 	}()
 }
@@ -674,7 +674,7 @@ func (s *WebServer) Start() {
 func (s *WebServer) Stop() {
 	s.isRunning = false
 	close(s.stopChan)
-	log.Printf("Web server stopped")
+	utils.Log("Web server stopped")
 }
 
 func (s *WebServer) PushFrame(img image.Image) {
