@@ -4,6 +4,27 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[0;37m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# Section separator function
+section_header() {
+    local title="$1"
+    local color="${2:-$CYAN}"
+    echo ""
+    echo -e "${color}══════════════════════════════════════════════════════════════════════${RESET}"
+    echo -e "${color}  ${BOLD}${title}${RESET}"
+    echo -e "${color}══════════════════════════════════════════════════════════════════════${RESET}"
+    echo ""
+}
+
 if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
     export PATH="$HOME/go/bin:$PATH"
 fi
@@ -51,7 +72,7 @@ if [ ! -f "${SCRIPT_DIR}/../robot_tracker" ]; then
     "${SCRIPT_DIR}/build.sh"
 fi
 
-echo "[RUN] Starting robot_tracker..."
+section_header "Run: Robot Tracker Go" "$CYAN"
 
 # Run with any passed arguments
 exec ./robot_tracker "$@"
