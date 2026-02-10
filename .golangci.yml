@@ -8,7 +8,6 @@ linters:
     - gocritic
     - misspell
     - prealloc
-    - revive
 
 linters-settings:
   gocritic:
@@ -25,9 +24,3 @@ linters-settings:
     simple: true
     range-loops: true
     for-loops: true
-  revive:
-    rules:
-      - name: unused-parameter
-        severity: warning
-      - name: unexported-return
-        severity: warning

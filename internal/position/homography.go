@@ -263,10 +263,10 @@ func (h *Homography) ComputeFromAprilTag(imgCorners [][2]float64, worldCorners [
 	return nil
 }
 
-func solveDLT(A []float64) [3][3]float64 {
+func solveDLT(a []float64) [3][3]float64 {
 	var H [3][3]float64
 
-	_, V := eigenDecomposition(A)
+	_, V := eigenDecomposition(a)
 
 	// #nosec G602
 	for j := 0; j < 9; j++ {
@@ -286,7 +286,7 @@ func solveDLT(A []float64) [3][3]float64 {
 	return H
 }
 
-func eigenDecomposition(A []float64) ([]float64, [][]float64) {
+func eigenDecomposition(a []float64) ([]float64, [][]float64) {
 	n := 8
 	eigenvalues := make([]float64, n)
 	eigenvectors := make([][]float64, n)
@@ -297,7 +297,7 @@ func eigenDecomposition(A []float64) ([]float64, [][]float64) {
 	for i := 0; i < n; i++ {
 		eigenvalues[i] = 1.0
 		for j := 0; j < n; j++ {
-			eigenvectors[i][j] = A[i*9+j%9]
+			eigenvectors[i][j] = a[i*9+j%9]
 		}
 	}
 

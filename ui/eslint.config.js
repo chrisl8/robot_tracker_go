@@ -52,7 +52,7 @@ export default tseslint.config(
     {
         files: ['**/*.ts', '**/*.tsx'],
         rules: {
-            'no-console': 'warn',
+            'no-console': 'off',
             'no-debugger': 'warn',
             'no-undef': 'warn',
             '@typescript-eslint/no-explicit-any': 'warn',

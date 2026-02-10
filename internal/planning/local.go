@@ -167,10 +167,9 @@ func (p *LocalPlanner) computeBestAvoidanceVelocity(robot RobotState, desiredVel
 }
 
 func (p *LocalPlanner) generateCandidateVelocities(desired [2]float64) [][2]float64 {
-	candidates := make([][2]float64, 0)
-
-	angles := [8]float64{0, math.Pi / 4, math.Pi / 2, 3 * math.Pi / 4, math.Pi, -math.Pi / 4, -math.Pi / 2, -3 * math.Pi / 4}
 	speeds := []float64{0.1, 0.2, 0.3}
+	angles := [8]float64{0, math.Pi / 4, math.Pi / 2, 3 * math.Pi / 4, math.Pi, -math.Pi / 4, -math.Pi / 2, -3 * math.Pi / 4}
+	candidates := make([][2]float64, 0, len(speeds)*len(angles)+1)
 
 	for _, angle := range angles {
 		for _, speed := range speeds {
