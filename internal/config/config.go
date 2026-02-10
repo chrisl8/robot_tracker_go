@@ -11,6 +11,7 @@ type Config struct {
 	Robots        []RobotConfig       `yaml:"robots"`
 	Planning      PlanningConfig      `yaml:"planning"`
 	LocalPlanning LocalPlanningConfig `yaml:"local_planning"`
+	PathExecution PathExecutionConfig `yaml:"path_execution"`
 	AprilTags     AprilTagConfig      `yaml:"april_tags"`
 	YOLO          YOLOConfig          `yaml:"yolo"`
 	Obstacles     ObstaclesConfig     `yaml:"obstacles"`
@@ -56,6 +57,13 @@ type LocalPlanningConfig struct {
 	Debug           DebugConfig `yaml:"debug"`
 	ObstacleClasses []string    `yaml:"obstacle_classes"`
 	MinConfidence   float64     `yaml:"min_obstacle_confidence"`
+}
+
+type PathExecutionConfig struct {
+	WaypointThreshold float64 `yaml:"waypoint_threshold"`
+	MaxSpeed          float64 `yaml:"max_speed"`
+	TurnSpeed         float64 `yaml:"turn_speed"`
+	CommandIntervalMs int     `yaml:"command_interval_ms"`
 }
 
 type DebugConfig struct {

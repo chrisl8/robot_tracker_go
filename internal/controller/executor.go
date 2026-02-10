@@ -19,6 +19,14 @@ func NewPathExecutor(maxSpeed, turnSpeed float64) *PathExecutor {
 	}
 }
 
+func (e *PathExecutor) MaxSpeed() float64 {
+	return e.maxSpeed
+}
+
+func (e *PathExecutor) TurnSpeed() float64 {
+	return e.turnSpeed
+}
+
 func (e *PathExecutor) VelocityToCommand(vx, vy float64) Command {
 	threshold := e.maxSpeed * 0.3
 	turnThreshold := e.turnSpeed * 0.3

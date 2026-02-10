@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"math"
 	"time"
 
 	"robot_tracker_go/internal/config"
@@ -268,6 +269,50 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 					rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
 				}
+			}
+		}
+
+		for _, track := range trackingResult.Tracks {
+			if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
+				continue
+			}
+
+			robotID := *track.TagID
+
+			if waypoint, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
+				if rs.positionEst == nil {
+					continue
+				}
+
+				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+				worldPos := rs.positionEst.PixelToWorld(px, py)
+
+				robotState := planning.RobotState{
+					Position: [2]float64{worldPos.X, worldPos.Y},
+					Velocity: planning.Velocity{VX: 0, VY: 0},
+					RobotID:  robotID,
+					Diameter: 0.18,
+				}
+
+				velocity, _ := rs.planner.LocalPlanner().ComputeVelocityToWaypoint(
+					robotState, waypoint, rs.StaticObstacles, rs.DynamicObstacles, 0.5)
+
+				dx := waypoint[0] - worldPos.X
+				dy := waypoint[1] - worldPos.Y
+				distToWaypoint := math.Sqrt(dx*dx + dy*dy)
+				if distToWaypoint < rs.waypointThreshold {
+					rs.planner.AdvanceWaypoint(robotID)
+					fmt.Printf("Demo: Robot %d reached waypoint, advancing to next\n", robotID)
+					continue
+				}
+
+				if rs.pathExecutor != nil {
+					cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
+					fmt.Printf("Demo path exec: robot %d -> cmd %c (vel %.3f, %.3f)\n", robotID, cmd, velocity[0], velocity[1])
+				}
+
+				rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
+					[2]float64{velocity[0], velocity[1]})
 			}
 		}
 

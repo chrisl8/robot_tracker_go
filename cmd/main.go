@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"math"
 	"net"
 	"os"
 	"os/signal"
@@ -29,21 +30,23 @@ import (
 )
 
 type RobotSystem struct {
-	cfg              *config.Config
-	cam              camera.Camera
-	detectionPipe    *detection.DetectionPipeline
-	tracker          tracking.Tracker
-	planner          *planning.Planner
-	positionEst      *position.PositionEstimator
-	arduino          *controller.ArduinoController
-	commandQueue     *controller.CommandQueue
-	webServer        *ui.WebServer
-	cameraRunning    bool
-	frameNum         int
-	DynamicObstacles []*planning.DynamicObstacle
-	StaticObstacles  []planning.Obstacle
-	CurrentRobotID   int
-	CurrentGoal      [2]float64
+	cfg               *config.Config
+	cam               camera.Camera
+	detectionPipe     *detection.DetectionPipeline
+	tracker           tracking.Tracker
+	planner           *planning.Planner
+	positionEst       *position.PositionEstimator
+	arduino           *controller.ArduinoController
+	commandQueue      *controller.CommandQueue
+	pathExecutor      *controller.PathExecutor
+	webServer         *ui.WebServer
+	cameraRunning     bool
+	frameNum          int
+	DynamicObstacles  []*planning.DynamicObstacle
+	StaticObstacles   []planning.Obstacle
+	CurrentRobotID    int
+	CurrentGoal       [2]float64
+	waypointThreshold float64
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -272,6 +275,16 @@ func (rs *RobotSystem) Initialize() error {
 	rs.commandQueue = controller.NewCommandQueue(rs.arduino, controller.CommandIntervalMs)
 	rs.commandQueue.Start()
 	utils.Logf("Command queue started")
+
+	if rs.cfg != nil && rs.cfg.PathExecution.MaxSpeed > 0 {
+		rs.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
+		rs.waypointThreshold = rs.cfg.PathExecution.WaypointThreshold
+	} else {
+		rs.pathExecutor = controller.NewPathExecutor(0.15, 0.5)
+		rs.waypointThreshold = 0.1
+	}
+	utils.Logf("Path executor initialized: max_speed=%.3f, turn_speed=%.3f, waypoint_threshold=%.3f",
+		rs.pathExecutor.MaxSpeed(), rs.pathExecutor.TurnSpeed(), rs.waypointThreshold)
 
 	rs.webServer = ui.NewWebServer(":9086")
 
@@ -550,15 +563,56 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	rs.webServer.BroadcastTracks(trackingResult.Tracks)
 
-	if rs.CurrentGoal != [2]float64{0, 0} && rs.CurrentRobotID != 0 {
-		velocity, _ := rs.planner.ComputeVelocityWithDynamicObstacles(
-			rs.CurrentRobotID,
-			rs.CurrentGoal,
-			rs.DynamicObstacles,
-			minConfidence,
-		)
-		utils.Logf("Computed velocity with %d dynamic obstacles: (%.3f, %.3f)",
-			len(rs.DynamicObstacles), velocity[0], velocity[1])
+	for i := range trackingResult.Tracks {
+		track := &trackingResult.Tracks[i]
+		if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
+			continue
+		}
+
+		robotID := *track.TagID
+
+		if waypoint, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
+			if rs.positionEst == nil {
+				continue
+			}
+
+			px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+			worldPos := rs.positionEst.PixelToWorld(px, py)
+
+			robotDiameter := 0.18
+			if robotConfig := rs.cfg.GetRobotByTagID(robotID); robotConfig != nil {
+				robotDiameter = robotConfig.Diameter
+			}
+
+			robotState := planning.RobotState{
+				Position: [2]float64{worldPos.X, worldPos.Y},
+				Velocity: planning.Velocity{VX: 0, VY: 0},
+				RobotID:  robotID,
+				Diameter: robotDiameter,
+			}
+
+			velocity, _ := rs.planner.LocalPlanner().ComputeVelocityToWaypoint(
+				robotState, waypoint, rs.StaticObstacles, rs.DynamicObstacles, minConfidence)
+
+			dx := waypoint[0] - worldPos.X
+			dy := waypoint[1] - worldPos.Y
+			distToWaypoint := math.Sqrt(dx*dx + dy*dy)
+			if distToWaypoint < rs.waypointThreshold {
+				rs.planner.AdvanceWaypoint(robotID)
+				utils.Logf("Robot %d reached waypoint, advancing to next", robotID)
+				continue
+			}
+
+			if rs.pathExecutor != nil && rs.commandQueue != nil {
+				cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
+				rs.commandQueue.Enqueue(cmd)
+				utils.Logf("Path exec robot %d: waypoint (%.2f,%.2f) -> vel (%.3f,%.3f) -> cmd %c",
+					robotID, waypoint[0], waypoint[1], velocity[0], velocity[1], cmd)
+			}
+
+			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
+				[2]float64{velocity[0], velocity[1]})
+		}
 	}
 
 	overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult)

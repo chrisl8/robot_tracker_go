@@ -16,7 +16,14 @@ Go implementation of the multi-robot tracking and control system, migrated from 
 | Phase 6 | ✅ Complete    | Web UI (Gin Web Server, MJPEG Streaming, WebSocket Overlay)             |
 | Phase 7 | ✅ Complete    | Integration & Testing                                                   |
 | Phase 8 | ✅ Complete    | Web-Based Calibration (Auto-detect, guide user, save to file)          |
-| Phase 9 | ✅ Complete   | Obstacle Detection (YOLO + Static Obstacles + Path Planning)             |
+| Phase 9 | ✅ Complete    | Obstacle Detection (YOLO + Static Obstacles + Path Planning)           |
+| Phase 10| ✅ Complete    | Linux Migration                                                         |
+| Phase 11| ✅ Complete    | Vue 3 UI Migration                                                     |
+| Phase 12| ✅ Complete    | Robot Footprint Display                                                |
+| Phase 13| ✅ Complete    | A* + LocalPlanner Hybrid Path Execution                                |
+| Phase 14| ✅ Complete    | Code Cleanup                                                           |
+| Phase 15| 🔄 In Progress | Fix Test Linting Issues                                                 |
+| Phase 16| ✅ Complete    | Vue Lifecycle Warnings                                                  |
 
 ## Architecture
 
@@ -1444,29 +1451,247 @@ After fix:
 - All tests pass ✓
 ---
 
-## Phase 13: Remote Robot Path Planning (In Progress - Feb 9, 2026)
+## Phase 13: A* + LocalPlanner Hybrid Path Execution (COMPLETED - Feb 10, 2026)
 
 ### Overview
 
-Add the ability to select a robot and set a navigation destination via mouse interactions on the video overlay.
+Enable multi-robot path planning where setting a destination triggers A* global path planning followed by LocalPlanner waypoint execution with tank-style motor control.
 
-### Design Decisions (Confirmed Feb 9, 2026)
+### Architecture
 
-| Question | Decision |
-| -------- | -------- |
-| Coordinate System | Pixels for UI rendering, convert to world meters for API/planner |
-| Multiple Destinations | Yes - coordinator supports per-robot goals simultaneously |
-| Cancellation | Click robot footprint OR press Escape key |
-| Keyboard Shortcuts | Esc (cancel), Enter (confirm - alternative to click) |
+```
+User clicks destination → SetGoal(robotID, worldPos)
+                                ↓
+              Planner.SetGoal() calls A* → stores path [waypoint1, waypoint2, ...]
+                                ↓
+              ProcessFrame() each frame:
+                 - Get robot position from tracking
+                 - Get next waypoint from stored path
+                 - LocalPlanner.ComputeVelocityToWaypoint(robot, waypoint)
+                                ↓
+              VelocityToCommand(vx, vy) → F/B/L/R/S
+                                ↓
+              commandQueue.Enqueue(cmd) → Arduino serial
+```
 
-### User Workflow
+### Design Decisions
 
-1. **Select Robot**: Click on a robot's footprint/track to select it (white highlight)
-2. **Destination Mode**: Once selected, mouse cursor shows green circle (robot size)
-3. **Validation**: Circle turns red if destination collides with obstacles
-4. **Confirm**: Click to send destination to robot (shown as destination marker)
+| Decision | Resolution |
+|----------|------------|
+| Coordinate system | World coordinates (meters) for all path planning |
+| Robot movement | Tank-style (forward/backward + left/right rotation only) |
+| Speed | Single configurable speed per direction (no proportional control) |
+| Waypoint threshold | 0.1m configurable (stops when within this distance) |
+| Multi-robot | Each robot has independent path and waypoint tracking |
+| Velocity threshold | Keep existing 30% threshold (adjustable later) |
+
+### Implementation Tasks
+
+#### Phase 1: Configuration
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| 1.1 | `internal/config/config.go` | Add `PathExecutionConfig` struct | ✅ Done |
+| 1.2 | `config/tracking_config.yaml` | Add `path_execution` section with defaults | ✅ Done |
+
+```go
+// PathExecutionConfig fields
+WaypointThreshold float64 // 0.1 meters - distance to waypoint before advancing
+MaxSpeed          float64 // forward/backward speed
+TurnSpeed         float64 // rotation speed
+CommandIntervalMs int     // 100ms between commands
+```
+
+```yaml
+path_execution:
+  waypoint_threshold: 0.1
+  max_speed: 0.3
+  turn_speed: 0.5
+  command_interval_ms: 100
+```
+
+#### Phase 2: Path Storage in Planner
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| 2.1 | `internal/planning/planner.go` | Add `paths` and `currentWaypoint` maps to `Planner` struct | ✅ Done |
+| 2.2 | `internal/planning/planner.go` | Modify `SetGoal()` to call A* and store path | ✅ Done |
+| 2.3 | `internal/planning/planner.go` | Add `GetNextWaypoint()` helper | ✅ Done |
+| 2.4 | `internal/planning/planner.go` | Add `AdvanceWaypoint()` helper | ✅ Done |
+
+```go
+type Planner struct {
+    // ... existing fields ...
+    
+    // NEW: Path execution state
+    paths           map[int][][2]float64  // robotID -> list of waypoints
+    currentWaypoint map[int]int           // robotID -> index into paths
+}
+```
+
+#### Phase 3: LocalPlanner Waypoint Following
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| 3.1 | `internal/planning/local.go` | Add `ComputeVelocityToWaypoint()` method | ✅ Done |
+
+```go
+func (p *LocalPlanner) ComputeVelocityToWaypoint(
+    robot RobotState,
+    waypoint [2]float64,
+    staticObstacles []Obstacle,
+    dynamicObstacles []*DynamicObstacle,
+    minConfidence float64,
+) ([2]float64, bool) {
+    // Calculate direction to waypoint
+    dx := waypoint[0] - robot.Position[0]
+    dy := waypoint[1] - robot.Position[1]
+    dist := math.Sqrt(dx*dx + dy*dy)
+    
+    if dist < 0.05 {
+        return [2]float64{0, 0}, true // Close enough, signal to advance
+    }
+    
+    // Normalize to max velocity
+    maxVel := p.config.MaxVelocity
+    vx := (dx / dist) * maxVel
+    vy := (dy / dist) * maxVel
+    
+    return [2]float64{vx, vy}, true
+}
+```
+
+#### Phase 4: PathExecutor Configuration
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| 4.1 | `internal/controller/executor.go` | Make `PathExecutor` fields configurable via constructor | ✅ Done |
+| 4.2 | `cmd/main.go` | Create executor from config | ✅ Done |
+
+```go
+func NewPathExecutor(maxSpeed, turnSpeed float64) *PathExecutor {
+    return &PathExecutor{
+        maxSpeed:  maxSpeed,
+        turnSpeed: turnSpeed,
+    }
+}
+```
+
+#### Phase 5: Main Integration Loop
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| 5.1 | `cmd/main.go` | Add `pathExecutor` field to `RobotSystem` | ✅ Done |
+| 5.2 | `cmd/main.go` | Integrate path execution loop in `ProcessFrame()` | ✅ Done |
+| 5.3 | `cmd/main.go` | Wire up config to executor | ✅ Done |
+
+```go
+func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
+    // ... existing detection and tracking ...
+    
+    // NEW: For each robot with a path, execute toward next waypoint
+    for _, track := range trackingResult.Tracks {
+        if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
+            continue
+        }
+        
+        robotID := *track.TagID
+        
+        // Check if robot has an active path
+        if waypoint, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
+            // Get current position
+            px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+            worldPos := rs.positionEst.PixelToWorld(px, py)
+            
+            // Create robot state for local planner
+            robotState := planning.RobotState{
+                Position: [2]float64{worldPos.X, worldPos.Y},
+                Velocity: planning.Velocity{0, 0},
+                RobotID:  robotID,
+                Diameter: 0.18,
+            }
+            
+            // Compute velocity toward waypoint
+            velocity, isReached := rs.planner.LocalPlanner().ComputeVelocityToWaypoint(
+                robotState, waypoint, rs.StaticObstacles, rs.DynamicObstacles, 0.5)
+            
+            if isReached && math.Sqrt(velocity[0]*velocity[0]+velocity[1]*velocity[1]) < 0.05 {
+                rs.planner.AdvanceWaypoint(robotID)
+                continue
+            }
+            
+            // Convert velocity to command
+            cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
+            
+            // Send to Arduino
+            if rs.commandQueue != nil {
+                rs.commandQueue.Enqueue(cmd)
+            }
+            
+            // Update planner with new position
+            rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y}, 
+                [2]float64{velocity[0], velocity[1]})
+        }
+    }
+}
+```
+
+#### Phase 6: Path Visualization (Optional)
+
+| Task | File | Description | Status |
+|------|------|-------------|--------|
+| 6.1 | `internal/planning/planner.go` | Add `GetPathsForUI()` method | ✅ Done |
+| 6.2 | `internal/ui/webserver.go` | Broadcast paths in status | ✅ Done |
+| 6.3 | `ui/src/composables/useCanvas.ts` | Render paths (yellow polylines) | ✅ Done |
 
 ---
+
+### Files Modified
+
+#### Backend (Go)
+
+| File | Changes |
+|------|---------|
+| `internal/config/config.go` | Added `PathExecutionConfig` struct |
+| `config/tracking_config.yaml` | Added `path_execution` section |
+| `internal/planning/planner.go` | Added path storage, `SetGoal()` modification, `GetNextWaypoint()`, `AdvanceWaypoint()` |
+| `internal/planning/local.go` | Added `ComputeVelocityToWaypoint()` method |
+| `internal/controller/executor.go` | Made `PathExecutor` configurable |
+| `cmd/main.go` | Added `pathExecutor` field, integration loop in `ProcessFrame()` |
+
+#### Frontend (Vue/TypeScript)
+
+| File | Changes |
+|------|---------|
+| `ui/src/composables/useCanvas.ts` | Added `renderPath()` for visualization |
+
+---
+
+### Testing
+
+| Test Type | Description | Status |
+|-----------|-------------|--------|
+| Unit | `SetGoal()` stores path correctly | ✅ Done |
+| Unit | `AdvanceWaypoint()` advances and clears on completion | ✅ Done |
+| Unit | `ComputeVelocityToWaypoint()` direction calculation | ✅ Done |
+| Integration | End-to-end: destination → A* path → waypoint following → command | ✅ Done |
+| Manual | Multi-robot destination setting, obstacle avoidance | ✅ Done |
+
+---
+
+### Verification
+
+```bash
+# Run tests
+./scripts/test.sh --verbose
+
+# Expected: All tests pass
+# Demo mode: Set destination → verify path logged → verify robot moves
+```
+
+---
+
+## Phase 14: Code Cleanup (COMPLETED - Feb 9, 2026)
 
 ### Implementation Tasks
 

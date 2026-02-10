@@ -263,3 +263,43 @@ func (p *LocalPlanner) ComputeVelocityWithObstacles(
 	safeVel := p.applyVelocityObstacles(robot, desiredVel, filteredObstacles)
 	return safeVel, true
 }
+
+func (p *LocalPlanner) ComputeVelocityToWaypoint(
+	robot RobotState,
+	waypoint [2]float64,
+	staticObstacles []Obstacle,
+	dynamicObstacles []*DynamicObstacle,
+	minConfidence float64,
+) ([2]float64, bool) {
+	dx := waypoint[0] - robot.Position[0]
+	dy := waypoint[1] - robot.Position[1]
+	dist := math.Sqrt(dx*dx + dy*dy)
+
+	if dist < 0.05 {
+		return [2]float64{0, 0}, true
+	}
+
+	maxVel := p.config.MaxVelocity
+	vx := (dx / dist) * maxVel
+	vy := (dy / dist) * maxVel
+
+	desiredVel := [2]float64{vx, vy}
+
+	filteredObstacles := make([]RobotState, 0)
+	for _, obs := range staticObstacles {
+		obsState := RobotState{
+			Position: [2]float64{(obs.WorldTopLeft[0] + obs.WorldBottomRight[0]) / 2, (obs.WorldTopLeft[1] + obs.WorldBottomRight[1]) / 2},
+			Diameter: obs.WorldBottomRight[0] - obs.WorldTopLeft[0],
+		}
+		filteredObstacles = append(filteredObstacles, obsState)
+	}
+
+	for _, dyn := range dynamicObstacles {
+		if dyn.Confidence >= minConfidence && dyn.Radius > 0 {
+			filteredObstacles = append(filteredObstacles, dyn.ToRobotState())
+		}
+	}
+
+	safeVel := p.applyVelocityObstacles(robot, desiredVel, filteredObstacles)
+	return safeVel, true
+}

@@ -14,10 +14,15 @@ type Planner struct {
 	coordinator       *Coordinator
 	collisionDetector *CollisionDetector
 	obstacles         []Obstacle
+	paths             map[int][][2]float64 // robotID -> list of waypoints
+	currentWaypoint   map[int]int          // robotID -> index into paths
 }
 
 func NewPlanner(config *PlannerConfig) *Planner {
-	planner := &Planner{}
+	planner := &Planner{
+		paths:           make(map[int][][2]float64),
+		currentWaypoint: make(map[int]int),
+	}
 
 	if config != nil {
 		planner.globalPlanner = NewAStar(config.AStarConfig)
@@ -86,6 +91,15 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 
 func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 	p.coordinator.SetGoal(robotID, goal)
+
+	robot, exists := p.coordinator.GetRobotState(robotID)
+	if exists {
+		path, success := p.PlanPath(robotID, robot.Position, goal)
+		if success {
+			p.paths[robotID] = path
+			p.currentWaypoint[robotID] = 0
+		}
+	}
 }
 
 func (p *Planner) ComputeAllCommands() map[int][2]float64 {
@@ -161,4 +175,39 @@ func (p *Planner) GetPathCost(path [][2]float64) float64 {
 	}
 
 	return cost
+}
+
+func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
+	path, hasPath := p.paths[robotID]
+	if !hasPath {
+		return [2]float64{0, 0}, false
+	}
+	wpIndex := p.currentWaypoint[robotID]
+	if wpIndex >= len(path) {
+		return [2]float64{0, 0}, false
+	}
+	return path[wpIndex], true
+}
+
+func (p *Planner) AdvanceWaypoint(robotID int) bool {
+	p.currentWaypoint[robotID]++
+	path, hasPath := p.paths[robotID]
+	if !hasPath {
+		return false
+	}
+	if p.currentWaypoint[robotID] >= len(path) {
+		delete(p.paths, robotID)
+		delete(p.currentWaypoint, robotID)
+		p.coordinator.SetGoal(robotID, [2]float64{0, 0})
+		return false
+	}
+	return true
+}
+
+func (p *Planner) GetPaths() map[int][][2]float64 {
+	return p.paths
+}
+
+func (p *Planner) LocalPlanner() *LocalPlanner {
+	return p.localPlanner
 }
