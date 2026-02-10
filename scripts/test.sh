@@ -95,7 +95,7 @@ cd "$SCRIPT_DIR/.."
 
 echo "[TEST] Running Go code tests..."
 echo "[TEST] Running golang-lint..."
-golangci-lint run -tags=gocv ./... || exit 1
+golangci-lint run ./... || exit 1
 
 echo ""
 echo "[TEST] Running go vet..."
