@@ -4,6 +4,52 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[0;37m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# Section separator function
+section_header() {
+    local title="$1"
+    local color="${2:-$CYAN}"
+    echo ""
+    echo -e "${color}══════════════════════════════════════════════════════════════════════${RESET}"
+    echo -e "${color}  ${BOLD}${title}${RESET}"
+    echo -e "${color}══════════════════════════════════════════════════════════════════════${RESET}"
+    echo ""
+}
+
+# Subsection separator function
+subsection_header() {
+    local title="$1"
+    local color="${2:-$BLUE}"
+    echo ""
+    echo -e "${color}─── ${WHITE}${BOLD}${title}${RESET} ${color}────────────────────────────────────────${RESET}"
+}
+
+# Status functions
+test_passed() {
+    echo -e "${GREEN}✓${RESET} $1"
+}
+
+test_info() {
+    echo -e "${BLUE}ℹ${RESET} $1"
+}
+
+test_warning() {
+    echo -e "${YELLOW}⚠${RESET} $1"
+}
+
+test_error() {
+    echo -e "${RED}✗${RESET} $1"
+}
+
 VERBOSE=false
 
 # Parse arguments
@@ -29,46 +75,48 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "[TEST] Running Vue UI tests..."
+section_header "Vue UI Tests" "$CYAN"
 
 # Run Vue tests if ui directory exists
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     cd "$SCRIPT_DIR/../ui"
+
+    subsection_header "npm update" "$YELLOW"
     npm update 2>/dev/null || true
+
+    subsection_header "npm outdated" "$YELLOW"
     npm outdated || true
 
-    echo "[TEST] Running ESLint..."
+    subsection_header "ESLint" "$YELLOW"
     npm run lint:check || exit 1
 
-    echo "[TEST] Running Prettier format check..."
+    subsection_header "Prettier Format Check" "$YELLOW"
     npm run format:check || exit 1
 
-    echo "[TEST] Running TypeScript type check..."
+    subsection_header "TypeScript Type Check" "$YELLOW"
     npx vue-tsc --noEmit || exit 1
 
-    echo "[TEST] Running knip dead code check..."
+    subsection_header "Dead Code Check (knip)" "$YELLOW"
     # Note: knip may report false positives for:
     # - Dynamic imports in tests (test dependencies)
     # - API types exported for documentation purposes
     # - TRACK_COLORS (used via getTrackColor but not detected)
-    npm run knip:check 2>/dev/null || echo "[TEST] knip found issues (non-blocking)"
+    npm run knip:check 2>/dev/null || test_warning "knip found issues (non-blocking)"
 
-    # Run unit tests
-    echo "[TEST] Running Vue unit tests..."
+    subsection_header "Vue Unit Tests" "$YELLOW"
     npm run test:run
 
-    # Run integration tests
-    echo "[TEST] Running Playwright integration tests..."
+    subsection_header "Playwright Integration Tests" "$YELLOW"
     npm run test:integration
 
 
     cd "$SCRIPT_DIR/.."
-    echo "[TEST] Vue UI tests passed"
+    section_header "Vue UI Tests Passed" "$GREEN"
 else
-    echo "[TEST] Warning: ui/ directory not found, skipping Vue tests"
+    test_warning "ui/ directory not found, skipping Vue tests"
 fi
 
-echo "[TEST] Running Go tests..."
+section_header "Go Tests" "$CYAN"
 
 # Set up OpenCV environment for GoCV using CGO
 export OPENCV_DIR="/usr/local"
@@ -112,48 +160,42 @@ fi
 # Run Go tests
 cd "$SCRIPT_DIR/.."
 
-echo "[TEST] Running Go code tests..."
-echo "[TEST] Running golang-lint..."
+subsection_header "Go Code Analysis Tools" "$YELLOW"
+
+test_info "Running golang-lint..."
 golangci-lint run ./... || exit 1
 
-echo ""
-echo "[TEST] Running go vet..."
+test_info "Running go vet..."
 go vet -tags=gocv ./... || exit 1
 
-echo ""
-echo "[TEST] Running go staticcheck..."
+test_info "Running go staticcheck..."
 staticcheck -tags=gocv ./... || exit 1
 
-echo ""
-echo "[TEST] Running go errcheck..."
+test_info "Running go errcheck..."
 errcheck -tags=gocv ./... || exit 1
 
-echo ""
-echo "[TEST] Running go gocyclo..."
+test_info "Running go gocyclo..."
 gocyclo -over 25 . || exit 1
 
-echo ""
-echo "[TEST] Running go gosec..."
+test_info "Running go gosec..."
 gosec -quiet -tags=gocv ./... || exit 1
 
-echo ""
-echo "[TEST] Running govulncheck..."
+test_info "Running govulncheck..."
 govulncheck -tags=gocv ./... || exit 1
 
-echo ""
-echo "[TEST] Running go deadcode..."
+test_info "Running go deadcode..."
 deadcode ./... 2>/dev/null || true
 
-echo ""
-echo "[TEST] Running nilaway..."
+test_info "Running nilaway..."
 nilaway -tags=gocv ./... || exit 1
 
+subsection_header "Go Unit Tests" "$YELLOW"
 if [ "$VERBOSE" = true ]; then
-    echo "[TEST] Running Go tests (verbose with race detection)..."
+    test_info "Running Go tests (verbose with race detection)..."
     go test -race -tags=gocv ./... -coverprofile=coverage.out -v || exit 1
 else
-    echo "[TEST] Running Go tests (with race detection)..."
+    test_info "Running Go tests (with race detection)..."
     go test -race -tags=gocv ./... -coverprofile=coverage.out || exit 1
 fi
 
-echo "[TEST] Done"
+section_header "All Tests Passed!" "$GREEN"
