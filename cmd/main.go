@@ -467,7 +467,7 @@ func (rs *RobotSystem) Stop() {
 		rs.commandQueue.Stop()
 	}
 	if rs.arduino != nil {
-		rs.arduino.Disconnect()
+		_ = rs.arduino.Disconnect()
 	}
 	if rs.webServer != nil {
 		rs.webServer.Stop()
@@ -508,10 +508,11 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	height := bounds.Max.Y - bounds.Min.Y
 
 	rgbaImg, ok := img.(*image.RGBA)
-	if !ok {
+	if rgbaImg == nil {
 		rgbaImg = image.NewRGBA(bounds)
 		draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
 	}
+	_ = ok
 
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 
@@ -928,7 +929,9 @@ func main() {
 
 	rs := NewRobotSystem(cfg)
 	if cfg != nil {
-		rs.Initialize()
+		if err := rs.Initialize(); err != nil {
+			log.Printf("Warning: Failed to initialize robot system: %v", err)
+		}
 	} else {
 		rs.initDemoMode()
 	}
@@ -939,7 +942,9 @@ func main() {
 	if *selfTestMode {
 		rs := NewRobotSystem(cfg)
 		if cfg != nil {
-			rs.Initialize()
+			if err := rs.Initialize(); err != nil {
+				log.Printf("Warning: Failed to initialize robot system: %v", err)
+			}
 		}
 		RunSelfTest(rs)
 		return
@@ -948,7 +953,9 @@ func main() {
 	if *demoYOLOMode {
 		rs := NewRobotSystem(cfg)
 		if cfg != nil {
-			rs.Initialize()
+			if err := rs.Initialize(); err != nil {
+				log.Printf("Warning: Failed to initialize robot system: %v", err)
+			}
 		}
 		RunDemoYOLOMode(rs)
 		return
@@ -997,7 +1004,7 @@ func main() {
 
 	for *demoMode {
 		fmt.Println("Demo mode: Generating test pattern with AprilTag visualization...")
-		rs.StartCamera()
+		_ = rs.StartCamera()
 		frameNum := 0
 		for {
 			frame := generateTestPattern(640, 480, frameNum)

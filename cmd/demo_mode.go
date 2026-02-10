@@ -217,7 +217,7 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 		}
 	}
 
-	rs.StartCamera()
+	_ = rs.StartCamera()
 
 	for {
 		frame := generateTestPattern(width, height, frameNum)

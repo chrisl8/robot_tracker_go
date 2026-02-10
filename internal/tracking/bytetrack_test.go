@@ -47,6 +47,7 @@ func TestByteTrack_Update_EmptyDetections(t *testing.T) {
 
 	if result == nil {
 		t.Error("Update should return non-nil result")
+		return
 	}
 	if result.FrameIdx != 1 {
 		t.Errorf("FrameIdx = %d, want 1", result.FrameIdx)
@@ -156,9 +157,9 @@ func TestByteTrack_Update_SmallBoxFiltered(t *testing.T) {
 }
 
 func TestByteTrack_Reset(t *testing.T) {
-	bt := NewByteTrack(nil)
 	t.Skip("Skipping due to implementation bugs in matchTracks and track creation")
 
+	bt := NewByteTrack(nil)
 	bt.Update([]Detection{{Bbox: [4]int{10, 20, 100, 200}, Confidence: 0.6}}, 1000.0, 1)
 
 	if bt.GetTrackCount() != 1 {

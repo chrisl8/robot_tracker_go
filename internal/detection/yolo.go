@@ -74,8 +74,8 @@ func NewYOLODetector(config *YOLOConfig) (*YOLODetector, error) {
 		if config.Device != "" {
 			backend = gocv.ParseNetBackend(config.Device)
 		}
-		net.SetPreferableBackend(backend)
-		net.SetPreferableTarget(gocv.NetTargetCPU)
+		_ = net.SetPreferableBackend(backend)
+		_ = net.SetPreferableTarget(gocv.NetTargetCPU)
 
 		detector.net = net
 		detector.loaded = true
@@ -95,13 +95,13 @@ func (d *YOLODetector) Detect(imageBytes []byte, width, height int) []YOLODetect
 	if err != nil {
 		return detections
 	}
-	defer blob.Close()
+	defer func() { _ = blob.Close() }()
 
 	d.net.SetInput(blob, "")
 	out := d.net.Forward("")
 
 	boxes, confidences, classIDs := d.performDetection(out)
-	out.Close()
+	_ = out.Close()
 
 	if len(boxes) == 0 {
 		return detections
@@ -154,11 +154,11 @@ func (d *YOLODetector) preprocessImage(imageBytes []byte, width, height int) (go
 	if err != nil || img.Empty() {
 		return gocv.Mat{}, fmt.Errorf("failed to create image from bytes")
 	}
-	defer img.Close()
+	defer func() { _ = img.Close() }()
 
 	resized := gocv.NewMat()
-	gocv.Resize(img, &resized, image.Point{d.config.InputSize, d.config.InputSize}, 0, 0, gocv.InterpolationArea)
-	defer resized.Close()
+	_ = gocv.Resize(img, &resized, image.Point{d.config.InputSize, d.config.InputSize}, 0, 0, gocv.InterpolationArea)
+	defer func() { _ = resized.Close() }()
 
 	blob := gocv.BlobFromImage(resized, 1.0/255.0, image.Point{d.config.InputSize, d.config.InputSize}, gocv.Scalar{}, true, false)
 
@@ -231,18 +231,6 @@ func minInt(a, b int) int {
 	return b
 }
 
-func (d *YOLODetector) getOutputNames() []string {
-	var outputLayers []string
-	for _, i := range d.net.GetUnconnectedOutLayers() {
-		layer := d.net.GetLayer(i)
-		layerName := layer.GetName()
-		if layerName != "_input" {
-			outputLayers = append(outputLayers, layerName)
-		}
-	}
-	return outputLayers
-}
-
 func (d *YOLODetector) performDetection(out gocv.Mat) ([]image.Rectangle, []float32, []int) {
 	var classIds []int
 	var confidences []float32
@@ -253,7 +241,7 @@ func (d *YOLODetector) performDetection(out gocv.Mat) ([]image.Rectangle, []floa
 	}
 
 	tmp := gocv.NewMat()
-	gocv.TransposeND(out, []int{0, 2, 1}, &tmp)
+	_ = gocv.TransposeND(out, []int{0, 2, 1}, &tmp)
 
 	reshaped := tmp.Reshape(1, tmp.Size()[1])
 
@@ -261,8 +249,8 @@ func (d *YOLODetector) performDetection(out gocv.Mat) ([]image.Rectangle, []floa
 		row := reshaped.RowRange(i, i+1)
 		scoresCol := row.ColRange(4, reshaped.Cols())
 		_, confidence, _, classIDPoint := gocv.MinMaxLoc(scoresCol)
-		scoresCol.Close()
-		row.Close()
+		_ = scoresCol.Close()
+		_ = row.Close()
 
 		if confidence > float32(d.config.ConfThres) {
 			centerX := reshaped.GetFloatAt(i, 0)
@@ -281,8 +269,8 @@ func (d *YOLODetector) performDetection(out gocv.Mat) ([]image.Rectangle, []floa
 		}
 	}
 
-	reshaped.Close()
-	tmp.Close()
+	_ = reshaped.Close()
+	_ = tmp.Close()
 
 	return boxes, confidences, classIds
 }
@@ -349,7 +337,7 @@ func (d *YOLODetector) GetClassName(classID int) string {
 
 func (d *YOLODetector) Close() error {
 	if d.loaded {
-		d.net.Close()
+		_ = d.net.Close()
 		d.loaded = false
 	}
 	return nil

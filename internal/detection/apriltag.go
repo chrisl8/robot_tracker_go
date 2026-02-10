@@ -4,7 +4,6 @@ package detection
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -23,7 +22,7 @@ type AprilTagDetector struct {
 }
 
 func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
-	dictCode := gocv.ArucoDictAprilTag_36h11
+	var dictCode gocv.ArucoDictionaryCode
 	switch config.Family {
 	case "tag16h5":
 		dictCode = gocv.ArucoDictAprilTag_16h5
@@ -71,7 +70,7 @@ func (d *AprilTagDetector) Detect(image []byte, width, height int) []AprilTag {
 	if err != nil || img.Empty() {
 		return tags
 	}
-	defer img.Close()
+	defer func() { _ = img.Close() }()
 
 	markerCorners, markerIds, _ := d.detector.DetectMarkers(img)
 
@@ -254,32 +253,8 @@ func drawLabel(img *image.RGBA, x, y int, text string, textColor, bgColor color.
 
 func (d *AprilTagDetector) Close() error {
 	if d.detector != nil {
-		d.detector.Close()
+		_ = d.detector.Close()
 		d.detector = nil
 	}
 	return nil
-}
-
-func familyFromString(family string) string {
-	switch family {
-	case "tag16h5", "tag25h9", "tag36h10", "tag36h11":
-		return family
-	default:
-		return "tag36h11"
-	}
-}
-
-func dictionaryCodeFromFamily(family string) (gocv.ArucoDictionaryCode, error) {
-	switch family {
-	case "tag16h5":
-		return gocv.ArucoDictAprilTag_16h5, nil
-	case "tag25h9":
-		return gocv.ArucoDictAprilTag_25h9, nil
-	case "tag36h10":
-		return gocv.ArucoDictAprilTag_36h10, nil
-	case "tag36h11":
-		return gocv.ArucoDictAprilTag_36h11, nil
-	default:
-		return 0, fmt.Errorf("unknown AprilTag family: %s", family)
-	}
 }

@@ -6,7 +6,6 @@ import (
 )
 
 type IPCamera struct {
-	config    CameraConfig
 	name      string
 	width     int
 	height    int

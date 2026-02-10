@@ -201,13 +201,13 @@ func TestDetection(t *testing.T) {
 }
 
 func TestTrackerInterface(t *testing.T) {
-	var tracker Tracker
-	tracker = NewByteTrack(nil)
+	tracker := NewByteTrack(nil)
 
 	result := tracker.Update([]Detection{}, 1000.0, 1)
 
 	if result == nil {
 		t.Error("Update should return non-nil result")
+		return
 	}
 	if result.FrameIdx != 1 {
 		t.Errorf("FrameIdx = %d, want 1", result.FrameIdx)

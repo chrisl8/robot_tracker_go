@@ -8,7 +8,6 @@ import (
 	"image"
 	"io/fs"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,7 +30,6 @@ type WebServer struct {
 	addr          string
 	engine        *gin.Engine
 	stream        *mjpeg.Stream
-	wsUpgrader    websocket.Upgrader
 	clients       map[*websocket.Conn]bool
 	clientMutex   sync.RWMutex
 	isRunning     bool
@@ -87,10 +85,13 @@ type ObstaclesMessage struct {
 }
 
 type BBoxMessage struct {
-	X1, Y1, X2, Y2 int     `json:"x1,y1,x2,y2"`
-	Label          string  `json:"label"`
-	Color          string  `json:"color"`
-	Confidence     float64 `json:"confidence"`
+	X1         int     `json:"x1"`
+	Y1         int     `json:"y1"`
+	X2         int     `json:"x2"`
+	Y2         int     `json:"y2"`
+	Label      string  `json:"label"`
+	Color      string  `json:"color"`
+	Confidence float64 `json:"confidence"`
 }
 
 type TrackMessage struct {
@@ -249,7 +250,7 @@ func (s *WebServer) handleWebSocket(c *gin.Context) {
 
 func (s *WebServer) wsReader(conn *websocket.Conn) {
 	defer func() {
-		conn.Close()
+		_ = conn.Close()
 		s.clientMutex.Lock()
 		delete(s.clients, conn)
 		s.clientMutex.Unlock()
@@ -274,7 +275,7 @@ func (s *WebServer) broadcastCommand(cmd string) {
 	}
 	s.clientMutex.RLock()
 	for client := range s.clients {
-		client.WriteJSON(msg)
+		_ = client.WriteJSON(msg)
 	}
 	s.clientMutex.RUnlock()
 }
@@ -282,7 +283,7 @@ func (s *WebServer) broadcastCommand(cmd string) {
 func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
 	s.clientMutex.RLock()
 	for client := range s.clients {
-		client.WriteJSON(msg)
+		_ = client.WriteJSON(msg)
 	}
 	s.clientMutex.RUnlock()
 }
@@ -713,12 +714,6 @@ func (s *WebServer) handleCalibrationCancel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "cancelled"})
 }
 
-func distPoints(p1, p2 [2]float64) float64 {
-	dx := p2[0] - p1[0]
-	dy := p2[1] - p1[1]
-	return math.Sqrt(dx*dx + dy*dy)
-}
-
 func (s *WebServer) GetObstaclesPath() string {
 	if s.obstaclesPath != "" {
 		return s.obstaclesPath
@@ -909,10 +904,10 @@ func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstac
 
 	for i, obs := range obstacles {
 		yamlContent += fmt.Sprintf("  - name: %q\n", obs.Name)
-		yamlContent += fmt.Sprintf("    pixels:\n")
+		yamlContent += "    pixels:\n"
 		yamlContent += fmt.Sprintf("      top_left: [%d, %d]\n", obs.PixelsTopLeft[0], obs.PixelsTopLeft[1])
 		yamlContent += fmt.Sprintf("      bottom_right: [%d, %d]\n", obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
-		yamlContent += fmt.Sprintf("    world:\n")
+		yamlContent += "    world:\n"
 		yamlContent += fmt.Sprintf("      top_left: [%.4f, %.4f]\n", obs.WorldTopLeft[0], obs.WorldTopLeft[1])
 		yamlContent += fmt.Sprintf("      bottom_right: [%.4f, %.4f]\n", obs.WorldBottomRight[0], obs.WorldBottomRight[1])
 		if i < len(obstacles)-1 {

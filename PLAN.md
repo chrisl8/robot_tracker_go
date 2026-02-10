@@ -1653,3 +1653,202 @@ POST /api/destination
 - [ ] Destination validated by backend (collision check)
 - [ ] All tests pass
 
+
+---
+
+## Phase 15: Fix Test Linting Issues (COMPLETED - Feb 9, 2026)
+
+### Overview
+
+Fix 60 linting issues identified by the test script to ensure clean CI/CD pipeline.
+
+### Test Results Summary
+
+| Category | Result |
+|----------|--------|
+| Vue UI Tests | 68 passed, 19 integration ✅ PASSED (with warnings) |
+| Go Tests | 60 issues ❌ FAILED |
+
+### Go Issues Breakdown
+
+| Tool | Count | Severity |
+|------|-------|----------|
+| errcheck | 38 | High - unchecked error returns |
+| staticcheck | 11 | Medium - nil checks, unnecessary code |
+| unused | 8 | Medium - dead code |
+| govet | 1 | Low - duplicate tag |
+| ineffassign | 2 | Low - ineffectual assignments |
+
+### Priority 1: Fix errcheck Issues (38 issues)
+
+#### cmd/main.go and cmd/demo_mode.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `cmd/demo_mode.go` | 220 | `rs.StartCamera()` unchecked | Check error return |
+| `cmd/main.go` | 470 | `rs.arduino.Disconnect()` unchecked | Check error return |
+| `cmd/main.go` | 931 | `rs.Initialize()` unchecked | Check error return |
+| `cmd/main.go` | 942 | `rs.Initialize()` unchecked | Check error return |
+| `cmd/main.go` | 951 | `rs.Initialize()` unchecked | Check error return |
+| `cmd/main.go` | 1000 | `rs.StartCamera()` unchecked | Check error return |
+
+#### internal/camera/gocv_camera.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `gocv_camera.go` | 99 | `c.device.Close()` unchecked | Check error return |
+| `gocv_camera.go` | 102 | `c.cap.Close()` unchecked | Check error return |
+| `gocv_camera.go` | 112 | `defer img.Close()` unchecked | Assign to `_` or log |
+| `gocv_camera.go` | 142 | `defer img.Close()` unchecked | Assign to `_` or log |
+| `gocv_camera.go` | 193 | `defer img.Close()` unchecked | Assign to `_` or log |
+
+#### internal/controller/arduino.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `arduino.go` | 55 | `c.serial.SetReadTimeout()` unchecked | Check error return |
+| `arduino.go` | 66 | `c.serial.Close()` unchecked | Check error return |
+
+#### internal/detection/apriltag.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `apriltag.go` | 257 | `d.detector.Close()` unchecked | Check error return |
+
+#### internal/detection/yolo.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `yolo.go` | 77 | `net.SetPreferableBackend()` unchecked | Check error return |
+| `yolo.go` | 78 | `net.SetPreferableTarget()` unchecked | Check error return |
+| `yolo.go` | 98 | `defer blob.Close()` unchecked | Assign to `_` or log |
+| `yolo.go` | 104 | `out.Close()` unchecked | Check error return |
+| `yolo.go` | 160 | `gocv.Resize()` unchecked | Check error return |
+| `yolo.go` | 161 | `defer resized.Close()` unchecked | Assign to `_` or log |
+| `yolo.go` | 256 | `gocv.TransposeND()` unchecked | Check error return |
+| `yolo.go` | 264 | `scoresCol.Close()` unchecked | Check error return |
+| `yolo.go` | 265 | `row.Close()` unchecked | Check error return |
+| `yolo.go` | 284 | `reshaped.Close()` unchecked | Check error return |
+| `yolo.go` | 285 | `tmp.Close()` unchecked | Check error return |
+| `yolo.go` | 352 | `d.net.Close()` unchecked | Check error return |
+
+#### internal/position/homography.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `homography.go` | 156 | `defer file.Close()` unchecked | Check error return |
+| `homography.go` | 161 | `fmt.Fprint()` unchecked | Check error return |
+| `homography.go` | 163 | `fmt.Fprint()` unchecked | Check error return |
+| `homography.go` | 165 | `fmt.Fprintln()` unchecked | Check error return |
+| `homography.go` | 168 | `fmt.Fprintln()` unchecked | Check error return |
+| `homography.go` | 178 | `defer file.Close()` unchecked | Check error return |
+| `homography.go` | 189 | `fmt.Fscan()` unchecked | Check error return |
+
+#### internal/ui/webserver.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `webserver.go` | 252 | `conn.Close()` unchecked | Check error return |
+| `webserver.go` | 277 | `client.WriteJSON()` unchecked | Check error return |
+| `webserver.go` | 285 | `client.WriteJSON()` unchecked | Check error return |
+
+#### internal/config/config_test.go
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `config_test.go` | 34 | `defer os.Remove()` unchecked | Assign to `_` or log |
+| `config_test.go` | 39 | `tmpFile.Close()` unchecked | Check error return |
+
+### Priority 2: Fix Vue Lifecycle Warnings
+
+**Issue:** Vue warnings about `onMounted`/`onUnmounted` being called when there's no active component instance in async setup tests.
+
+**Files affected:**
+- `src/composables/__tests__/canvasRegression.test.ts`
+- `src/composables/__tests__/wideCanvasRegression.test.ts`
+- `src/composables/__tests__/visualizationRegression.test.ts`
+- `src/composables/__tests__/videoMaxSizeRegression.test.ts`
+
+**Solution:** Register lifecycle hooks before the first `await` statement in async setup functions.
+
+### Priority 3: Fix staticcheck Issues (11 issues)
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `config_test.go` | 51 | Nil pointer check suggestion | Review nil handling |
+| `config_test.go` | 54 | Possible nil dereference | Add nil check |
+| `estimator.go` | 261 | Unnecessary `fmt.Sprintf` | Use string literal |
+| `estimator.go` | 264 | Unnecessary `fmt.Sprintf` | Use string literal |
+| `bytetrack_test.go` | 48 | Nil pointer check suggestion | Review nil handling |
+| `bytetrack_test.go` | 51 | Possible nil dereference | Add nil check |
+| `bytetrack_test.go` | 159 | Unused variable `bt` | Remove or use |
+| `types_test.go` | 204 | Merge variable declaration | Refactor |
+| `types_test.go` | 209 | Nil pointer check suggestion | Review nil handling |
+| `types_test.go` | 212 | Possible nil dereference | Add nil check |
+| `webserver.go` | 912 | Unnecessary `fmt.Sprintf` | Use string literal |
+
+### Priority 4: Fix unused Code Issues (8 issues)
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `camera/ip.go` | 9 | Unused field `config` | Remove field |
+| `apriltag.go` | 26 | Unused variable `dictCode` | Remove or use |
+| `apriltag.go` | 263 | Unused function `familyFromString` | Remove function |
+| `apriltag.go` | 272 | Unused function `dictionaryCodeFromFamily` | Remove function |
+| `yolo.go` | 234 | Unused method `getOutputNames` | Remove method |
+| `bytetrack.go` | 201 | Unused method `getMatchedTrackID` | Remove method |
+| `bytetrack.go` | 205 | Unused method `getMatchedTrackIDFromLowConf` | Remove method |
+| `webserver.go` | 34 | Unused field `wsUpgrader` | Remove field |
+| `webserver.go` | 716 | Unused function `distPoints` | Remove function |
+
+### Priority 5: Fix govet Issue (1 issue)
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `webserver.go` | 90 | Duplicate JSON tag | Fix struct tag |
+
+### Priority 6: Fix ineffassign Issues (2 issues)
+
+| File | Line | Issue | Fix |
+|------|------|-------|-----|
+| `cmd/main.go` | 510 | Ineffectual assignment `rgbaImg` | Review assignment |
+| `apriltag.go` | 26 | Ineffectual assignment `dictCode` | Review assignment |
+
+### Implementation Plan
+
+| Task | Description | Status |
+|------|-------------|--------|
+| 15.1 | Fix errcheck issues in cmd/main.go and cmd/demo_mode.go | Pending |
+| 15.2 | Fix errcheck issues in internal/camera/gocv_camera.go | Pending |
+| 15.3 | Fix errcheck issues in internal/controller/arduino.go | Pending |
+| 15.4 | Fix errcheck issues in internal/detection/apriltag.go | Pending |
+| 15.5 | Fix errcheck issues in internal/detection/yolo.go | Pending |
+| 15.6 | Fix errcheck issues in internal/position/homography.go | Pending |
+| 15.7 | Fix errcheck issues in internal/ui/webserver.go | Pending |
+| 15.8 | Fix errcheck issues in internal/config/config_test.go | Pending |
+| 15.9 | Fix Vue lifecycle warnings in test files | Pending |
+| 15.10 | Fix staticcheck issues | Pending |
+| 15.11 | Remove unused code (functions, fields) | Pending |
+| 15.12 | Fix govet and ineffassign issues | Pending |
+| 15.13 | Run tests to verify all fixes | Pending |
+
+### Effort Estimate
+
+| Task | Time |
+|------|------|
+| Fix errcheck issues (~38 fixes) | 2-3 hours |
+| Fix Vue warnings (~4 files) | 30 min |
+| Fix staticcheck issues (~11 fixes) | 1 hour |
+| Remove unused code (~8 items) | 30 min |
+| Fix govet/ineffassign (~3 fixes) | 15 min |
+| **Total** | **4-5 hours** |
+
+### Verification
+
+```bash
+# Run tests to verify fixes
+./scripts/test.sh --verbose
+
+# Expected result: All tests pass with 0 issues
+```
+

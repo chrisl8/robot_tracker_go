@@ -258,10 +258,10 @@ func (e *PositionEstimator) SaveObstacles(path string, obstacles []Obstacle) err
 
 	for i, obs := range obstacles {
 		yamlContent += fmt.Sprintf("  - name: %q\n", obs.Name)
-		yamlContent += fmt.Sprintf("    pixels:\n")
+		yamlContent += "    pixels:\n"
 		yamlContent += fmt.Sprintf("      top_left: [%d, %d]\n", obs.PixelsTopLeft[0], obs.PixelsTopLeft[1])
 		yamlContent += fmt.Sprintf("      bottom_right: [%d, %d]\n", obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
-		yamlContent += fmt.Sprintf("    world:\n")
+		yamlContent += "    world:\n"
 		yamlContent += fmt.Sprintf("      top_left: [%.4f, %.4f]\n", obs.WorldTopLeft.X, obs.WorldTopLeft.Y)
 		yamlContent += fmt.Sprintf("      bottom_right: [%.4f, %.4f]\n", obs.WorldBottomRight.X, obs.WorldBottomRight.Y)
 		if i < len(obstacles)-1 {

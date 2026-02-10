@@ -96,10 +96,10 @@ func (c *GoCVCamera) Start() error {
 func (c *GoCVCamera) Stop() {
 	c.running = false
 	if c.device != nil && c.device.IsOpened() {
-		c.device.Close()
+		_ = c.device.Close()
 	}
 	if c.cap != nil && c.cap.IsOpened() {
-		c.cap.Close()
+		_ = c.cap.Close()
 	}
 }
 
@@ -109,7 +109,7 @@ func (c *GoCVCamera) GetFrame() (*Frame, error) {
 	}
 
 	img := gocv.NewMat()
-	defer img.Close()
+	defer func() { _ = img.Close() }()
 
 	if c.isFile {
 		if !c.cap.Read(&img) {
@@ -139,7 +139,7 @@ func (c *GoCVCamera) GetFrameAsImage() (interface{}, error) {
 	}
 
 	img := gocv.NewMat()
-	defer img.Close()
+	defer func() { _ = img.Close() }()
 
 	if c.isFile {
 		if !c.cap.Read(&img) {
@@ -190,7 +190,7 @@ func (c *GoCVCamera) GetRawJPEG() ([]byte, error) {
 	}
 
 	img := gocv.NewMat()
-	defer img.Close()
+	defer func() { _ = img.Close() }()
 
 	if c.isFile {
 		if !c.cap.Read(&img) {

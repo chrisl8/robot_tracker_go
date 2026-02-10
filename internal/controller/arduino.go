@@ -52,7 +52,7 @@ func (c *ArduinoController) Connect() error {
 		return fmt.Errorf("failed to connect to Arduino: %w", err)
 	}
 
-	c.serial.SetReadTimeout(c.timeout)
+	_ = c.serial.SetReadTimeout(c.timeout)
 	c.port = port
 	c.connected = true
 
@@ -63,7 +63,7 @@ func (c *ArduinoController) Connect() error {
 
 func (c *ArduinoController) Disconnect() error {
 	if c.serial != nil && c.connected {
-		c.serial.Close()
+		_ = c.serial.Close()
 		c.serial = nil
 		c.connected = false
 	}

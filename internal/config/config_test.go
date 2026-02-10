@@ -31,12 +31,14 @@ yolo:
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(content); err != nil {
 		t.Fatalf("Failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	cfg, err := Load(tmpFile.Name())
 	if err != nil {
@@ -50,6 +52,7 @@ yolo:
 	robot := cfg.GetRobotByTagID(1)
 	if robot == nil {
 		t.Error("GetRobotByTagID(1) returned nil")
+		return
 	}
 	if robot.Name != "robot_1" {
 		t.Errorf("robot.Name = %s, want robot_1", robot.Name)

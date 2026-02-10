@@ -153,19 +153,19 @@ func (h *Homography) Save(filename string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	for i := 0; i < 3; i++ {
 		for j := 0; j < 3; j++ {
 			if j > 0 {
-				fmt.Fprint(file, " ")
+				_, _ = fmt.Fprint(file, " ")
 			}
-			fmt.Fprint(file, h.H[i][j])
+			_, _ = fmt.Fprint(file, h.H[i][j])
 		}
-		fmt.Fprintln(file)
+		_, _ = fmt.Fprintln(file)
 	}
 
-	fmt.Fprintln(file, h.PixelsPerMeter)
+	_, _ = fmt.Fprintln(file, h.PixelsPerMeter)
 
 	return nil
 }
@@ -175,7 +175,7 @@ func (h *Homography) Load(filename string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var values [9]float64
 	for i := 0; i < 3; i++ {
@@ -186,7 +186,9 @@ func (h *Homography) Load(filename string) error {
 		}
 	}
 
-	fmt.Fscan(file, &h.PixelsPerMeter)
+	if _, err := fmt.Fscan(file, &h.PixelsPerMeter); err != nil {
+		return err
+	}
 
 	h.SetFromValues(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8])
 

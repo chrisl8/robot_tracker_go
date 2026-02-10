@@ -198,14 +198,6 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 	return matchedDetections, unmatchedDetections, matchedTrackIDs
 }
 
-func (t *ByteTrack) getMatchedTrackID(matchIdx int) int {
-	return matchIdx
-}
-
-func (t *ByteTrack) getMatchedTrackIDFromLowConf(matchIdx int) int {
-	return matchIdx
-}
-
 func (t *ByteTrack) createNewTrack(detection Detection, timestamp float64) {
 	track := NewTrack(t.nextTrackID, detection.Bbox, timestamp, detection.Confidence)
 	t.nextTrackID++
