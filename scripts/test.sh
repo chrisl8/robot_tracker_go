@@ -91,12 +91,38 @@ export CGO_LDFLAGS="-L/usr/local/lib $OPENCV_LIBS -Wl,-rpath,/usr/local/lib"
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 
 # Run Go tests
+cd "$SCRIPT_DIR/.."
+
+echo "[TEST] Running Go code tests..."
+echo "[TEST] Running golang-lint..."
+golangci-lint run -tags=gocv ./... || exit 1
+
+echo ""
+echo "[TEST] Running go vet..."
+go vet -tags=gocv ./... || exit 1
+
+echo ""
+echo "[TEST] Running go staticcheck..."
+staticcheck -tags=gocv ./... || exit 1
+
+echo ""
+echo "[TEST] Running go errcheck..."
+errcheck -tags=gocv ./... || exit 1
+
+echo ""
+echo "[TEST] Running go gocyclo..."
+gocyclo -tags=gocv ./... || exit 1
+
+echo ""
+echo "[TEST] Running go gosec..."
+gosec -tags=gocv ./... || exit 1
+
 if [ "$VERBOSE" = true ]; then
     echo "[TEST] Running Go tests (verbose)..."
-    go test ./... -v
+    go test -tags=gocv ./... -coverprofile=coverage.out -v || exit 1
 else
     echo "[TEST] Running Go tests..."
-    go test ./...
+    go test -tags=gocv ./... -coverprofile=coverage.out || exit 1
 fi
 
 echo "[TEST] Done"

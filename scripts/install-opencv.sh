@@ -246,8 +246,39 @@ cleanup() {
 }
 
 main() {
+
+
     log_info "OpenCV ${OPENCV_VERSION} Build Script"
     log_info "==================================="
+
+    log_info "Checking development dependencies..."
+    if ! command -v golangci-lint &> /dev/null; then
+        curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$HOME/bin" v2.8.0
+    fi
+
+    if ! command -v staticcheck &> /dev/null; then
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+        cd "$HOME/bin" || exit 1
+        ln -s ../go/bin/staticcheck .
+    fi
+
+    if ! command -v errcheck &> /dev/null; then
+        go install github.com/kisielk/errcheck@latest
+        cd "$HOME/bin" || exit 1
+        ln -s ../go/bin/errcheck .
+    fi
+
+    if ! command -v gocyclo &> /dev/null; then
+        go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+        cd "$HOME/bin" || exit 1
+        ln -s ../go/bin/gocyclo .
+    fi
+
+    if ! command -v gosec &> /dev/null; then
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        cd "$HOME/bin" || exit 1
+        ln -s ../go/bin/gosec .
+    fi
 
     install_dependencies
 

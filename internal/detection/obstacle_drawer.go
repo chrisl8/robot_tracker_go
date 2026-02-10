@@ -8,7 +8,6 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"log"
 )
 
 type Obstacle struct {
@@ -28,14 +27,16 @@ func NewObstacleDrawer() *ObstacleDrawer {
 
 func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstacles []Obstacle) []byte {
 	if len(imgData) == 0 || len(obstacles) == 0 {
-		log.Printf("OBSTACLE_DRAWER: Early exit - empty data or obstacles")
+		// TODO: Show this log message in verbose mode.
+		// log.Printf("OBSTACLE_DRAWER: Early exit - empty data or obstacles")
 		return imgData
 	}
 
 	reader := bytes.NewReader(imgData)
 	img, _, err := image.Decode(reader)
 	if err != nil {
-		log.Printf("OBSTACLE_DRAWER: Failed to decode image: %v", err)
+		// TODO: Show this log message in verbose mode.
+		// log.Printf("OBSTACLE_DRAWER: Failed to decode image: %v", err)
 		return imgData
 	}
 
@@ -57,7 +58,8 @@ func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstac
 		y2 := obs.PixelBottomRight[1]
 
 		if x1 >= width || y1 >= height || x2 <= 0 || y2 <= 0 {
-			log.Printf("OBSTACLE_DRAWER: Skipping '%s' - out of bounds", obs.ID)
+			// TODO: Show this log message in verbose mode.
+			// log.Printf("OBSTACLE_DRAWER: Skipping '%s' - out of bounds", obs.ID)
 			continue
 		}
 
@@ -77,7 +79,8 @@ func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstac
 
 	buf := new(bytes.Buffer)
 	if err := jpeg.Encode(buf, rgba, &jpeg.Options{Quality: 85}); err != nil {
-		log.Printf("OBSTACLE_DRAWER: Failed to encode output: %v", err)
+		// TODO: Show this log message in verbose mode.
+		// log.Printf("OBSTACLE_DRAWER: Failed to encode output: %v", err)
 		return imgData
 	}
 
