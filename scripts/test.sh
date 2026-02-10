@@ -81,8 +81,10 @@ section_header "Vue UI Tests" "$CYAN"
 if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     cd "$SCRIPT_DIR/../ui"
 
-    subsection_header "npm update" "$YELLOW"
-    npm update 2>/dev/null || true
+    # This is the slowest part and generally accomplishes nothing on a typical run.
+    # Return this to service if you are using test less often for only manually edited code.
+    # subsection_header "npm update" "$YELLOW"
+    # npm update 2>/dev/null || true
 
     subsection_header "npm outdated" "$YELLOW"
     npm outdated || true
@@ -97,11 +99,10 @@ if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     npx vue-tsc --noEmit || exit 1
 
     subsection_header "Dead Code Check (knip)" "$YELLOW"
-    # Note: knip may report false positives for:
-    # - Dynamic imports in tests (test dependencies)
-    # - API types exported for documentation purposes
-    # - TRACK_COLORS (used via getTrackColor but not detected)
-    npm run knip:check 2>/dev/null || test_warning "knip found issues (non-blocking)"
+    # Configuration in knip.jsonc ignores:
+    # - API types (src/types/api.ts, obstacle.ts) for OpenAPI documentation
+    # - @vueuse/core dependency (used but not detected)
+    npm run knip:check || exit 1
 
     subsection_header "Vue Unit Tests" "$YELLOW"
     npm run test:run

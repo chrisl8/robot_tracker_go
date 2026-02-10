@@ -1,0 +1,14 @@
+{
+    "$schema": "https://unpkg.com/knip@5/schema.json",
+    "entry": ["src/main.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],
+    "project": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"],
+    "ignore": [
+        // API documentation types - intentionally exported for OpenAPI/Swagger
+        "src/types/api.ts",
+        "src/types/obstacle.ts",
+    ],
+    "ignoreDependencies": [
+        // Known false positives
+        "@vueuse/core", // Used in CalibrationWizard.vue but not detected
+    ],
+}
