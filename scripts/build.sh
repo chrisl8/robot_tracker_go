@@ -19,6 +19,10 @@ else
     echo "[BUILD] Warning: ui/ directory not found, skipping Vue build"
 fi
 
+if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
+    export PATH="$HOME/go/bin:$PATH"
+fi
+
 # Set up OpenCV environment for GoCV using CGO
 export OPENCV_DIR="/usr/local"
 export CGO_CPPFLAGS="-I/usr/local/include/opencv4"

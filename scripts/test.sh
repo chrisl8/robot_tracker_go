@@ -37,6 +37,15 @@ if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     npm update 2>/dev/null || true
     npm outdated || true
 
+    echo "[TEST] Running ESLint..."
+    npm run lint:check || exit 1
+
+    echo "[TEST] Running Prettier format check..."
+    npm run format:check || exit 1
+
+    echo "[TEST] Running TypeScript type check..."
+    npx vue-tsc --noEmit || exit 1
+
     # Run unit tests
     echo "[TEST] Running Vue unit tests..."
     npm run test:run
@@ -89,6 +98,9 @@ fi
 export PKG_CONFIG_PATH="${PKG_CONFIG_DIR}:${PKG_CONFIG_PATH}"
 export CGO_LDFLAGS="-L/usr/local/lib $OPENCV_LIBS -Wl,-rpath,/usr/local/lib"
 export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
+    export PATH="$HOME/go/bin:$PATH"
+fi
 
 # Run Go tests
 cd "$SCRIPT_DIR/.."
@@ -117,12 +129,24 @@ echo ""
 echo "[TEST] Running go gosec..."
 gosec -tags=gocv ./... || exit 1
 
+echo ""
+echo "[TEST] Running govulncheck..."
+govulncheck -tags=gocv ./... || exit 1
+
+echo ""
+echo "[TEST] Running go deadcode..."
+deadcode ./... 2>/dev/null || true
+
+echo ""
+echo "[TEST] Running nilaway..."
+nilaway -tags=gocv ./... || exit 1
+
 if [ "$VERBOSE" = true ]; then
-    echo "[TEST] Running Go tests (verbose)..."
-    go test -tags=gocv ./... -coverprofile=coverage.out -v || exit 1
+    echo "[TEST] Running Go tests (verbose with race detection)..."
+    go test -race -tags=gocv ./... -coverprofile=coverage.out -v || exit 1
 else
-    echo "[TEST] Running Go tests..."
-    go test -tags=gocv ./... -coverprofile=coverage.out || exit 1
+    echo "[TEST] Running Go tests (with race detection)..."
+    go test -race -tags=gocv ./... -coverprofile=coverage.out || exit 1
 fi
 
 echo "[TEST] Done"
