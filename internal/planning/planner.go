@@ -2,8 +2,6 @@ package planning
 
 import (
 	"math"
-
-	"robot_tracker_go/internal/utils"
 )
 
 type PlannerConfig struct {
@@ -213,30 +211,20 @@ func (p *Planner) GetPaths() map[int][][2]float64 {
 }
 
 func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
-	utils.Logf("GPWG: coordinator.goals has %d entries", len(p.coordinator.goals))
 	for robotID, goal := range p.coordinator.goals {
-		utils.Logf("GPWG: Checking robot %d, goal=(%.2f, %.2f)", robotID, goal[0], goal[1])
 		if _, hasPath := p.paths[robotID]; !hasPath {
-			utils.Logf("GPWG: Robot %d has no path, checking if robot exists", robotID)
 			robot, exists := p.coordinator.GetRobotState(robotID)
+			startPos := [2]float64{0, 0}
 			if exists {
-				utils.Logf("GPWG: Robot %d exists at (%.2f, %.2f), planning path", robotID, robot.Position[0], robot.Position[1])
-				path, success := p.PlanPath(robotID, robot.Position, goal)
-				if success {
-					p.paths[robotID] = path
-					p.currentWaypoint[robotID] = 0
-					utils.Logf("GPWG: Planned %d waypoints for robot %d", len(path), robotID)
-				} else {
-					utils.Logf("GPWG: Planning failed for robot %d", robotID)
-				}
-			} else {
-				utils.Logf("GPWG: Robot %d NOT FOUND in coordinator (not tracked yet)", robotID)
+				startPos = robot.Position
 			}
-		} else {
-			utils.Logf("GPWG: Robot %d already has path with %d waypoints", robotID, len(p.paths[robotID]))
+			path, success := p.PlanPath(robotID, startPos, goal)
+			if success {
+				p.paths[robotID] = path
+				p.currentWaypoint[robotID] = 0
+			}
 		}
 	}
-	utils.Logf("GPWG: Returning %d paths total", len(p.paths))
 	return p.paths
 }
 
