@@ -122,6 +122,12 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		}
 	}
 
+	if !e.homography.IsValid() || !e.homography.HasTransformation() {
+		utils.Logf("WARNING: Invalid or identity homography in calibration file")
+		utils.Logf("Using fallback: identity transformation (pixel=world for testing)")
+		e.homography.SetIdentity()
+	}
+
 	if scale, ok := calibration["world_scale"].(float64); ok {
 		e.homography.SetPixelsPerMeter(scale)
 	}

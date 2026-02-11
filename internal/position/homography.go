@@ -201,6 +201,30 @@ func (h *Homography) IsValid() bool {
 	return h.Valid
 }
 
+func (h *Homography) HasTransformation() bool {
+	if !h.Valid {
+		return false
+	}
+	h0n0 := h.H[0][0]*h.H[0][0] + h.H[0][1]*h.H[0][1] + h.H[0][2]*h.H[0][2]
+	h1n0 := h.H[1][0]*h.H[1][0] + h.H[1][1]*h.H[1][1] + h.H[1][2]*h.H[1][2]
+	return h0n0 > 0.001 || h1n0 > 0.001
+}
+
+func (h *Homography) SetIdentity() {
+	h.H[0][0] = 1.0
+	h.H[0][1] = 0.0
+	h.H[0][2] = 0.0
+	h.H[1][0] = 0.0
+	h.H[1][1] = 1.0
+	h.H[1][2] = 0.0
+	h.H[2][0] = 0.0
+	h.H[2][1] = 0.0
+	h.H[2][2] = 1.0
+	h.Valid = true
+	h.ComputeInverse()
+	h.PixelsPerMeter = 100.0
+}
+
 func (h *Homography) GetPixelsPerMeter() float64 {
 	return h.PixelsPerMeter
 }
