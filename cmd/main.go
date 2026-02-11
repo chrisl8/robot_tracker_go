@@ -692,6 +692,7 @@ func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedD
 		det := tracking.Detection{
 			Bbox:       [4]int{bbox.X1, bbox.Y1, bbox.X2, bbox.Y2},
 			Confidence: f.Confidence,
+			Corners:    f.Corners,
 		}
 		if f.TagID != nil {
 			det.TagID = f.TagID
@@ -751,6 +752,17 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 					track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
 				}
 				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
+
+				// Compute heading from AprilTag corners
+				for _, tag := range detectionResult.Tags {
+					if tag.TagID == *track.TagID {
+						track.Corners = tag.Corners
+						w0 := rs.positionEst.PixelToWorld(int(tag.Corners[0][0]), int(tag.Corners[0][1]))
+						w1 := rs.positionEst.PixelToWorld(int(tag.Corners[1][0]), int(tag.Corners[1][1]))
+						track.Heading = math.Atan2(w1.Y-w0.Y, w1.X-w0.X)
+						break
+					}
+				}
 			}
 		}
 	}
@@ -800,7 +812,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				}
 
 				if rs.pathExecutor != nil && rs.commandQueue != nil {
-					cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
+					cmd := rs.pathExecutor.VelocityToCommandWithHeading(velocity[0], velocity[1], track.Heading)
 					rs.commandQueue.Enqueue(cmd)
 				}
 

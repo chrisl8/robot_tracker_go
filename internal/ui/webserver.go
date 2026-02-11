@@ -104,14 +104,16 @@ type BBoxMessage struct {
 }
 
 type TrackMessage struct {
-	ID          int      `json:"id"`
-	TagID       *int     `json:"tag_id,omitempty"`
-	BBox        []int    `json:"bbox"`
-	History     [][2]int `json:"history"`
-	Color       string   `json:"color"`
-	Confidence  float64  `json:"confidence"`
-	State       string   `json:"state"`
-	PixelRadius *float64 `json:"pixel_radius,omitempty"`
+	ID          int            `json:"id"`
+	TagID       *int           `json:"tag_id,omitempty"`
+	BBox        []int          `json:"bbox"`
+	History     [][2]int       `json:"history"`
+	Color       string         `json:"color"`
+	Confidence  float64        `json:"confidence"`
+	State       string         `json:"state"`
+	PixelRadius *float64       `json:"pixel_radius,omitempty"`
+	Heading     *float64       `json:"heading,omitempty"`
+	Corners     *[4][2]float64 `json:"corners,omitempty"`
 }
 
 type PathMessage struct {
@@ -352,6 +354,12 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
 		}
 		if track.PixelRadius <= 0 {
 			msg.PixelRadius = nil
+		}
+		if track.TagID != nil && track.Corners != [4][2]float64{} {
+			heading := track.Heading
+			corners := track.Corners
+			msg.Heading = &heading
+			msg.Corners = &corners
 		}
 		trackMessages = append(trackMessages, msg)
 	}

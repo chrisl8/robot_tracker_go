@@ -479,6 +479,40 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 ctx.value.font = 'bold 10px sans-serif'
                 ctx.value.fillText(`T${track.tag_id}`, scaled2.x - 22, scaled2.y + 8)
             }
+
+            // Draw heading arrow if available
+            if (track.heading !== undefined) {
+                const centerX = (scaled1.x + scaled2.x) / 2
+                const centerY = (scaled1.y + scaled2.y) / 2
+                const arrowLen = 30
+                const tipX = centerX + arrowLen * Math.cos(track.heading)
+                const tipY = centerY + arrowLen * Math.sin(track.heading)
+
+                // Draw arrow line
+                ctx.value.beginPath()
+                ctx.value.strokeStyle = '#00ff00'
+                ctx.value.lineWidth = 2
+                ctx.value.moveTo(centerX, centerY)
+                ctx.value.lineTo(tipX, tipY)
+                ctx.value.stroke()
+
+                // Draw arrowhead
+                const headLen = 8
+                const angle = Math.atan2(tipY - centerY, tipX - centerX)
+                ctx.value.beginPath()
+                ctx.value.fillStyle = '#00ff00'
+                ctx.value.moveTo(tipX, tipY)
+                ctx.value.lineTo(
+                    tipX - headLen * Math.cos(angle - Math.PI / 6),
+                    tipY - headLen * Math.sin(angle - Math.PI / 6)
+                )
+                ctx.value.lineTo(
+                    tipX - headLen * Math.cos(angle + Math.PI / 6),
+                    tipY - headLen * Math.sin(angle + Math.PI / 6)
+                )
+                ctx.value.closePath()
+                ctx.value.fill()
+            }
         }
     }
 

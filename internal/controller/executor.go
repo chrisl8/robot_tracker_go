@@ -1,6 +1,10 @@
 package controller
 
-import "robot_tracker_go/internal/utils"
+import (
+	"math"
+
+	"robot_tracker_go/internal/utils"
+)
 
 type Velocity struct {
 	VX float64
@@ -59,6 +63,14 @@ func (e *PathExecutor) VelocityToCommand(vx, vy float64) Command {
 	} else {
 		return CommandBackward
 	}
+}
+
+func (e *PathExecutor) VelocityToCommandWithHeading(worldVx, worldVy, heading float64) Command {
+	cosH := math.Cos(heading)
+	sinH := math.Sin(heading)
+	robotVx := worldVx*cosH + worldVy*sinH
+	robotVy := -worldVx*sinH + worldVy*cosH
+	return e.VelocityToCommand(robotVx, robotVy)
 }
 
 func (e *PathExecutor) CommandToVelocity(cmd Command) Velocity {

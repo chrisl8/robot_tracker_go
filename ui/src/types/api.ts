@@ -9,6 +9,8 @@ export interface Track {
     state: 'pending' | 'confirmed' | 'lost'
     history: [number, number][]
     pixel_radius?: number
+    heading?: number
+    corners?: [number, number][]
 }
 
 // Obstacle types (maps to internal/planning/static_obstacle.go)
