@@ -7,6 +7,7 @@ import (
 )
 
 var QuietMode bool
+var DebugMode bool
 
 func init() {
 	log.SetFlags(0)
@@ -28,4 +29,14 @@ func Log(v ...interface{}) {
 
 func Logf(format string, v ...interface{}) {
 	log.Printf(format, v...)
+}
+
+func SetDebugMode(d bool) {
+	DebugMode = d
+}
+
+func Debugf(format string, v ...interface{}) {
+	if DebugMode {
+		log.Printf("DEBUG "+format, v...)
+	}
 }

@@ -111,6 +111,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             robotStore.selectedTrackId,
             robotStore.destinationMode,
             robotStore.destination,
+            robotStore.paths,
             obstacleStore.obstacles,
             obstacleStore.drawRect,
             uiStore.selectedCalibrationTagId,

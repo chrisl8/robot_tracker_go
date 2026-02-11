@@ -1171,10 +1171,14 @@ func main() {
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
 	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
 	quiet := flag.Bool("quiet", false, "Suppress all logging output")
+	debug := flag.Bool("debug", false, "Enable debug logging for path planning")
 	flag.Parse()
 
 	if *quiet {
 		utils.SetQuietMode(true)
+	}
+	if *debug {
+		utils.SetDebugMode(true)
 	}
 
 	if *listPorts {

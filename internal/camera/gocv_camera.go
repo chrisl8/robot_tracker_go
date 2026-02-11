@@ -4,6 +4,7 @@ package camera
 
 import (
 	"fmt"
+	"sync"
 
 	"gocv.io/x/gocv"
 )
@@ -18,6 +19,12 @@ type GoCVCamera struct {
 	cameraID int
 	url      string
 	isFile   bool
+
+	mu          sync.Mutex
+	latestFrame *Frame
+	frameErr    error
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
 }
 
 func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
@@ -43,11 +50,12 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 	cap.Set(gocv.VideoCaptureFrameWidth, float64(width))
 	cap.Set(gocv.VideoCaptureFrameHeight, float64(height))
 	cap.Set(gocv.VideoCaptureFPS, float64(fps))
+	cap.Set(gocv.VideoCaptureBufferSize, 1)
 
 	actualWidth := int(cap.Get(gocv.VideoCaptureFrameWidth))
 	actualHeight := int(cap.Get(gocv.VideoCaptureFrameHeight))
 
-	return &GoCVCamera{
+	cam := &GoCVCamera{
 		device:   cap,
 		width:    actualWidth,
 		height:   actualHeight,
@@ -55,7 +63,11 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 		running:  true,
 		cameraID: config.CameraID,
 		isFile:   false,
-	}, nil
+		stopCh:   make(chan struct{}),
+	}
+	cam.wg.Add(1)
+	go cam.captureLoop()
+	return cam, nil
 }
 
 func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
@@ -88,6 +100,48 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 	}, nil
 }
 
+func (c *GoCVCamera) captureLoop() {
+	defer c.wg.Done()
+	img := gocv.NewMat()
+	defer func() { _ = img.Close() }()
+
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		default:
+		}
+
+		if !c.device.Read(&img) {
+			select {
+			case <-c.stopCh:
+				return
+			default:
+				c.mu.Lock()
+				c.frameErr = &CameraError{Message: "failed to read frame from camera"}
+				c.mu.Unlock()
+				return
+			}
+		}
+
+		if img.Empty() {
+			continue
+		}
+
+		frame := &Frame{
+			Data:     img.ToBytes(),
+			Width:    img.Cols(),
+			Height:   img.Rows(),
+			Channels: img.Channels(),
+		}
+
+		c.mu.Lock()
+		c.latestFrame = frame
+		c.frameErr = nil
+		c.mu.Unlock()
+	}
+}
+
 func (c *GoCVCamera) Start() error {
 	c.running = true
 	return nil
@@ -95,12 +149,16 @@ func (c *GoCVCamera) Start() error {
 
 func (c *GoCVCamera) Stop() {
 	c.running = false
+	if c.stopCh != nil {
+		close(c.stopCh)
+	}
 	if c.device != nil && c.device.IsOpened() {
 		_ = c.device.Close()
 	}
 	if c.cap != nil && c.cap.IsOpened() {
 		_ = c.cap.Close()
 	}
+	c.wg.Wait()
 }
 
 func (c *GoCVCamera) GetFrame() (*Frame, error) {
@@ -108,29 +166,36 @@ func (c *GoCVCamera) GetFrame() (*Frame, error) {
 		return nil, &CameraError{Message: "camera not running"}
 	}
 
-	img := gocv.NewMat()
-	defer func() { _ = img.Close() }()
-
 	if c.isFile {
+		img := gocv.NewMat()
+		defer func() { _ = img.Close() }()
+
 		if !c.cap.Read(&img) {
 			return nil, &CameraError{Message: "failed to read frame from video"}
 		}
-	} else {
-		if !c.device.Read(&img) {
-			return nil, &CameraError{Message: "failed to read frame from camera"}
+		if img.Empty() {
+			return nil, &CameraError{Message: "empty frame"}
 		}
+		return &Frame{
+			Data:     img.ToBytes(),
+			Width:    img.Cols(),
+			Height:   img.Rows(),
+			Channels: img.Channels(),
+		}, nil
 	}
 
-	if img.Empty() {
-		return nil, &CameraError{Message: "empty frame"}
-	}
+	c.mu.Lock()
+	frame := c.latestFrame
+	err := c.frameErr
+	c.mu.Unlock()
 
-	return &Frame{
-		Data:     img.ToBytes(),
-		Width:    img.Cols(),
-		Height:   img.Rows(),
-		Channels: img.Channels(),
-	}, nil
+	if err != nil {
+		return nil, err
+	}
+	if frame == nil {
+		return nil, &CameraError{Message: "no frame available yet"}
+	}
+	return frame, nil
 }
 
 func (c *GoCVCamera) GetFrameAsImage() (interface{}, error) {
@@ -138,20 +203,27 @@ func (c *GoCVCamera) GetFrameAsImage() (interface{}, error) {
 		return nil, &CameraError{Message: "camera not running"}
 	}
 
-	img := gocv.NewMat()
-	defer func() { _ = img.Close() }()
-
 	if c.isFile {
+		img := gocv.NewMat()
+		defer func() { _ = img.Close() }()
 		if !c.cap.Read(&img) {
 			return nil, &CameraError{Message: "failed to read frame"}
 		}
-	} else {
-		if !c.device.Read(&img) {
-			return nil, &CameraError{Message: "failed to read frame"}
-		}
+		return img, nil
 	}
 
-	return img, nil
+	// For USB cameras, use the cached frame from captureLoop to avoid
+	// racing with the background goroutine on c.device.Read().
+	frame, err := c.GetFrame()
+	if err != nil {
+		return nil, err
+	}
+
+	mat, err := gocv.NewMatFromBytes(frame.Height, frame.Width, gocv.MatTypeCV8UC3, frame.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mat from cached frame: %w", err)
+	}
+	return mat, nil
 }
 
 func (c *GoCVCamera) GetName() string {
@@ -189,28 +261,40 @@ func (c *GoCVCamera) GetRawJPEG() ([]byte, error) {
 		return nil, &CameraError{Message: "camera not running"}
 	}
 
-	img := gocv.NewMat()
-	defer func() { _ = img.Close() }()
-
 	if c.isFile {
+		img := gocv.NewMat()
+		defer func() { _ = img.Close() }()
 		if !c.cap.Read(&img) {
 			return nil, &CameraError{Message: "failed to read frame from video"}
 		}
-	} else {
-		if !c.device.Read(&img) {
-			return nil, &CameraError{Message: "failed to read frame from camera"}
+		if img.Empty() {
+			return nil, &CameraError{Message: "empty frame"}
 		}
+		jpegBytes, err := gocv.IMEncode(".jpg", img)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode frame: %v", err)
+		}
+		defer jpegBytes.Close()
+		return jpegBytes.GetBytes(), nil
 	}
 
-	if img.Empty() {
-		return nil, &CameraError{Message: "empty frame"}
-	}
-
-	jpegBytes, err := gocv.IMEncode(".jpg", img)
+	// For USB cameras, use the cached frame from captureLoop to avoid
+	// racing with the background goroutine on c.device.Read().
+	frame, err := c.GetFrame()
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode frame: %v", err)
+		return nil, err
+	}
+
+	mat, err := gocv.NewMatFromBytes(frame.Height, frame.Width, gocv.MatTypeCV8UC3, frame.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mat from cached frame: %w", err)
+	}
+	defer func() { _ = mat.Close() }()
+
+	jpegBytes, err := gocv.IMEncode(".jpg", mat)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode frame: %w", err)
 	}
 	defer jpegBytes.Close()
-
 	return jpegBytes.GetBytes(), nil
 }

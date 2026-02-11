@@ -2,6 +2,8 @@ package planning
 
 import (
 	"math"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type PlannerConfig struct {
@@ -100,7 +102,9 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 	// Only plan if the robot has a goal but no existing path
 	if _, hasPath := p.paths[id]; !hasPath {
 		if goal, hasGoal := p.coordinator.GetGoal(id); hasGoal {
+			utils.Debugf("AddRobot: robot %d has goal (%.2f,%.2f) but no path, planning...",id, goal[0], goal[1])
 			path, success := p.PlanPath(id, position, goal)
+			utils.Debugf("AddRobot: PlanPath success=%v pathLen=%d",success, len(path))
 			if success {
 				p.paths[id] = path
 				p.currentWaypoint[id] = 0
@@ -110,15 +114,21 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 }
 
 func (p *Planner) SetGoal(robotID int, goal [2]float64) {
+	utils.Debugf("SetGoal: robotID=%d goal=(%.2f,%.2f)",robotID, goal[0], goal[1])
 	p.coordinator.SetGoal(robotID, goal)
 
 	robot, exists := p.coordinator.GetRobotState(robotID)
+	utils.Debugf("SetGoal: robot exists=%v",exists)
 	if exists {
+		utils.Debugf("SetGoal: robot position=(%.2f,%.2f), planning path...",robot.Position[0], robot.Position[1])
 		path, success := p.PlanPath(robotID, robot.Position, goal)
+		utils.Debugf("SetGoal: PlanPath success=%v pathLen=%d",success, len(path))
 		if success {
 			p.paths[robotID] = path
 			p.currentWaypoint[robotID] = 0
 		}
+	} else {
+		utils.Debugf("SetGoal: robot %d NOT in planner yet, goal stored for later",robotID)
 	}
 }
 
@@ -249,6 +259,7 @@ func (p *Planner) GetPaths() map[int][][2]float64 {
 }
 
 func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
+	utils.Debugf("GetPathsWithGoals: %d goals, %d existing paths",len(p.coordinator.goals), len(p.paths))
 	for robotID, goal := range p.coordinator.goals {
 		if _, hasPath := p.paths[robotID]; !hasPath {
 			robot, exists := p.coordinator.GetRobotState(robotID)
@@ -256,7 +267,9 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 			if exists {
 				startPos = robot.Position
 			}
+			utils.Debugf("GetPathsWithGoals: planning for robot %d, start=(%.2f,%.2f) goal=(%.2f,%.2f)",robotID, startPos[0], startPos[1], goal[0], goal[1])
 			path, success := p.PlanPath(robotID, startPos, goal)
+			utils.Debugf("GetPathsWithGoals: PlanPath success=%v pathLen=%d",success, len(path))
 			if success {
 				p.paths[robotID] = path
 				p.currentWaypoint[robotID] = 0

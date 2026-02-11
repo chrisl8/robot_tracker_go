@@ -3,6 +3,8 @@ package planning
 import (
 	"container/heap"
 	"math"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type Node struct {
@@ -76,17 +78,25 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 	startNode := &Node{Pos: [2]int{int(start[0]/a.config.Resolution) + offsetX, int(start[1]/a.config.Resolution) + offsetY}}
 	goalNode := &Node{Pos: [2]int{int(goal[0]/a.config.Resolution) + offsetX, int(goal[1]/a.config.Resolution) + offsetY}}
 
+	utils.Debugf("A*: start world=(%.2f,%.2f) grid=(%d,%d), goal world=(%.2f,%.2f) grid=(%d,%d), gridSize=%dx%d, obstacles=%d\n",
+		start[0], start[1], startNode.Pos[0], startNode.Pos[1],
+		goal[0], goal[1], goalNode.Pos[0], goalNode.Pos[1],
+		gridWidth, gridHeight, len(obstacles))
+
 	if startNode.Pos[0] < 0 || startNode.Pos[0] >= gridWidth ||
 		startNode.Pos[1] < 0 || startNode.Pos[1] >= gridHeight {
+		utils.Debugf("A*: FAILED - start out of bounds")
 		return nil, false
 	}
 
 	if goalNode.Pos[0] < 0 || goalNode.Pos[0] >= gridWidth ||
 		goalNode.Pos[1] < 0 || goalNode.Pos[1] >= gridHeight {
+		utils.Debugf("A*: FAILED - goal out of bounds")
 		return nil, false
 	}
 
 	if startNode.Pos[0] == goalNode.Pos[0] && startNode.Pos[1] == goalNode.Pos[1] {
+		utils.Debugf("A*: FAILED - start == goal")
 		return nil, false
 	}
 
@@ -98,8 +108,44 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 		}
 	}
 
-	if obstacleMap[startNode.Pos] || obstacleMap[goalNode.Pos] {
+	if obstacleMap[goalNode.Pos] {
+		utils.Debugf("A*: FAILED - goal is inside obstacle")
 		return nil, false
+	}
+
+	// If the robot's current position is inside an expanded obstacle, find the
+	// nearest free cell so the planner can still route out of it.
+	if obstacleMap[startNode.Pos] {
+		utils.Debugf("A*: start is inside expanded obstacle, searching for nearest free cell...")
+		found := false
+		for radius := 1; radius <= 20; radius++ {
+			for dx := -radius; dx <= radius; dx++ {
+				for dy := -radius; dy <= radius; dy++ {
+					if abs(dx) != radius && abs(dy) != radius {
+						continue // only check the perimeter of this radius
+					}
+					candidate := [2]int{startNode.Pos[0] + dx, startNode.Pos[1] + dy}
+					if candidate[0] >= 0 && candidate[0] < gridWidth &&
+						candidate[1] >= 0 && candidate[1] < gridHeight &&
+						!obstacleMap[candidate] {
+						utils.Debugf("A*: found free cell at grid=(%d,%d), offset=(%d,%d) from start",candidate[0], candidate[1], dx, dy)
+						startNode.Pos = candidate
+						found = true
+						break
+					}
+				}
+				if found {
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			utils.Debugf("A*: FAILED - could not find free cell near start")
+			return nil, false
+		}
 	}
 
 	openSet := &PriorityQueue{}
@@ -114,13 +160,16 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 	for openSet.Len() > 0 {
 		iterations++
 		if iterations > a.config.MaxIterations {
+			utils.Debugf("A*: FAILED - exceeded max iterations (%d)",a.config.MaxIterations)
 			return nil, false
 		}
 
 		current := heap.Pop(openSet).(*Node)
 
 		if current.Pos == goalNode.Pos {
-			return a.reconstructPath(cameFrom, current, offsetX, offsetY), true
+			path := a.reconstructPath(cameFrom, current, offsetX, offsetY)
+			utils.Debugf("A*: SUCCESS - found path with %d waypoints in %d iterations",len(path), iterations)
+			return path, true
 		}
 
 		neighbors := a.getNeighbors(current, gridWidth, gridHeight, obstacleMap)
@@ -228,4 +277,11 @@ func worldToGrid(obs Obstacle, resolution float64, width, height int) [][2]int {
 	}
 
 	return cells
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

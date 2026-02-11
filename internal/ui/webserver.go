@@ -22,14 +22,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/hybridgroup/mjpeg"
 	"gopkg.in/yaml.v3"
 )
 
 type WebServer struct {
 	addr          string
 	engine        *gin.Engine
-	stream        *mjpeg.Stream
+	stream        *mjpegStream
 	clients       map[*websocket.Conn]bool
 	clientMutex   sync.RWMutex
 	isRunning     bool
@@ -186,7 +185,7 @@ func NewWebServer(addr string) *WebServer {
 	server := &WebServer{
 		addr:      addr,
 		engine:    engine,
-		stream:    mjpeg.NewStream(),
+		stream:    newMJPEGStream(),
 		clients:   make(map[*websocket.Conn]bool),
 		stopChan:  make(chan struct{}),
 		isRunning: false,
@@ -252,7 +251,7 @@ func (s *WebServer) handleIndex(c *gin.Context) {
 }
 
 func (s *WebServer) handleMJPEG(c *gin.Context) {
-	s.stream.ServeHTTP(c.Writer, c.Request)
+	s.stream.serveHTTP(c.Writer, c.Request)
 }
 
 func (s *WebServer) handleWebSocket(c *gin.Context) {
@@ -492,17 +491,21 @@ func (s *WebServer) pixelCornersToWorld(pixelTL, pixelBR [2]int) ([2]float64, [2
 
 func (s *WebServer) BroadcastPaths() {
 	if s.OnPathsChanged == nil {
+		utils.Debugf("BroadcastPaths: OnPathsChanged is nil, skipping")
 		return
 	}
 	if s.positionEstimator == nil {
+		utils.Debugf("BroadcastPaths: positionEstimator is nil, skipping")
 		return
 	}
 
 	paths := s.OnPathsChanged()
 	if len(paths) == 0 {
+		utils.Debugf("BroadcastPaths: no paths returned from OnPathsChanged")
 		return
 	}
 
+	utils.Debugf("BroadcastPaths: got %d paths, converting to pixels", len(paths))
 	pathMessages := make([]PathMessage, 0, len(paths))
 	for robotID, path := range paths {
 		if len(path) == 0 {
@@ -521,8 +524,10 @@ func (s *WebServer) BroadcastPaths() {
 			Points:  pixels,
 			Color:   color,
 		})
+		utils.Debugf("BroadcastPaths: robot %d has %d waypoints, first pixel=(%d,%d)", robotID, len(pixels), pixels[0][0], pixels[0][1])
 	}
 
+	utils.Debugf("BroadcastPaths: broadcasting %d path messages via WebSocket", len(pathMessages))
 	s.BroadcastOverlay(OverlayMessage{
 		Type:  "paths",
 		Paths: &PathsMessage{Paths: pathMessages},
@@ -799,14 +804,14 @@ func (s *WebServer) PushFrame(img image.Image) {
 			buf[idx+2] = byte(b >> 8)
 		}
 	}
-	s.stream.UpdateJPEG(buf)
+	s.stream.updateJPEG(buf)
 }
 
 func (s *WebServer) PushRawJPEG(jpegData []byte) {
 	if len(jpegData) == 0 {
 		return
 	}
-	s.stream.UpdateJPEG(jpegData)
+	s.stream.updateJPEG(jpegData)
 }
 
 func (s *WebServer) UpdateStats(tagCount, yoloCount int) {
