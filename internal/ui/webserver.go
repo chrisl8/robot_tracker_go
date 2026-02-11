@@ -453,6 +453,26 @@ func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
 	s.positionEstimator = pe
 }
 
+func (s *WebServer) pixelCornersToWorld(pixelTL, pixelBR [2]int) ([2]float64, [2]float64) {
+	if s.positionEstimator != nil && s.positionEstimator.IsCalibrated() {
+		wTL := s.positionEstimator.PixelToWorld(pixelTL[0], pixelTL[1])
+		wBR := s.positionEstimator.PixelToWorld(pixelBR[0], pixelBR[1])
+		worldTL := [2]float64{wTL.X, wTL.Y}
+		worldBR := [2]float64{wBR.X, wBR.Y}
+		// Normalize so TopLeft has min coords and BottomRight has max coords
+		if worldTL[0] > worldBR[0] {
+			worldTL[0], worldBR[0] = worldBR[0], worldTL[0]
+		}
+		if worldTL[1] > worldBR[1] {
+			worldTL[1], worldBR[1] = worldBR[1], worldTL[1]
+		}
+		return worldTL, worldBR
+	}
+	// Fallback when not calibrated: use pixel coords directly
+	return [2]float64{float64(pixelTL[0]), float64(pixelTL[1])},
+		[2]float64{float64(pixelBR[0]), float64(pixelBR[1])}
+}
+
 func (s *WebServer) BroadcastPaths() {
 	if s.OnPathsChanged == nil {
 		return
@@ -832,12 +852,14 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 
 	s.obstaclesMutex.Lock()
 
+	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
+
 	newObs := planning.Obstacle{
 		Name:              fmt.Sprintf("obstacle_%d", len(s.obstacles)+1),
 		PixelsTopLeft:     req.PixelTopLeft,
 		PixelsBottomRight: req.PixelBottomRight,
-		WorldTopLeft:      [2]float64{float64(req.PixelTopLeft[0]) / 100, float64(req.PixelTopLeft[1]) / 100},
-		WorldBottomRight:  [2]float64{float64(req.PixelBottomRight[0]) / 100, float64(req.PixelBottomRight[1]) / 100},
+		WorldTopLeft:      worldTL,
+		WorldBottomRight:  worldBR,
 	}
 
 	if req.Name != "" {
@@ -897,14 +919,16 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 
 	s.obstaclesMutex.Lock()
 
+	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
+
 	for i, obs := range s.obstacles {
 		if obs.Name == id {
 			s.obstacles[i] = planning.Obstacle{
 				Name:              id,
 				PixelsTopLeft:     req.PixelTopLeft,
 				PixelsBottomRight: req.PixelBottomRight,
-				WorldTopLeft:      [2]float64{float64(req.PixelTopLeft[0]) / 100, float64(req.PixelTopLeft[1]) / 100},
-				WorldBottomRight:  [2]float64{float64(req.PixelBottomRight[0]) / 100, float64(req.PixelBottomRight[1]) / 100},
+				WorldTopLeft:      worldTL,
+				WorldBottomRight:  worldBR,
 			}
 			break
 		}

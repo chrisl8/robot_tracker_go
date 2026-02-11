@@ -638,8 +638,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 			if rs.pathExecutor != nil && rs.commandQueue != nil {
 				cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
 				rs.commandQueue.Enqueue(cmd)
-				utils.Logf("Path exec robot %d: waypoint (%.2f,%.2f) -> vel (%.3f,%.3f) -> cmd %c",
-					robotID, waypoint[0], waypoint[1], velocity[0], velocity[1], cmd)
 			}
 
 			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
@@ -668,13 +666,9 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	if rs.frameNum%10 == 0 && rs.webServer != nil {
 		paths := rs.planner.GetPaths()
-		numPaths := len(paths)
 		totalWaypoints := 0
 		for _, path := range paths {
 			totalWaypoints += len(path)
-		}
-		if numPaths > 0 {
-			utils.Logf("PATH DEBUG: %d robots with paths, %d total waypoints", numPaths, totalWaypoints)
 		}
 		rs.webServer.BroadcastPaths()
 	}

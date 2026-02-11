@@ -42,7 +42,13 @@ func NewPlanner(config *PlannerConfig) *Planner {
 }
 
 func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, bool) {
-	obstacles := p.expandObstacles()
+	// Expand obstacles by the robot's radius so the path keeps the full body clear.
+	// Use a small additional safety margin (0.02m) beyond the radius.
+	margin := 0.05
+	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
+		margin = robot.Diameter/2 + 0.02
+	}
+	obstacles := p.expandObstacles(margin)
 	return p.globalPlanner.Plan(start, goal, obstacles)
 }
 
@@ -79,6 +85,7 @@ func (p *Planner) AddObstacle(obstacle Obstacle) {
 func (p *Planner) SetObstacles(obstacles []Obstacle) {
 	p.obstacles = obstacles
 	p.coordinator.SetObstacles(obstacles)
+	p.replanAllPaths()
 }
 
 func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
@@ -142,12 +149,30 @@ func (p *Planner) CheckCollision(robot RobotState) bool {
 	return len(collisions) > 0
 }
 
-func (p *Planner) expandObstacles() []Obstacle {
+func (p *Planner) expandObstacles(margin float64) []Obstacle {
 	expanded := make([]Obstacle, len(p.obstacles))
 	for i, obs := range p.obstacles {
-		expanded[i] = p.collisionDetector.ExpandObstacle(obs, 0.05)
+		expanded[i] = p.collisionDetector.ExpandObstacle(obs, margin)
 	}
 	return expanded
+}
+
+func (p *Planner) replanAllPaths() {
+	for robotID := range p.paths {
+		robot, exists := p.coordinator.GetRobotState(robotID)
+		if !exists {
+			continue
+		}
+		goal, hasGoal := p.coordinator.GetGoal(robotID)
+		if !hasGoal {
+			continue
+		}
+		path, success := p.PlanPath(robotID, robot.Position, goal)
+		if success {
+			p.paths[robotID] = path
+			p.currentWaypoint[robotID] = 0
+		}
+	}
 }
 
 func (p *Planner) RemoveObstacle(name string) {
@@ -159,11 +184,13 @@ func (p *Planner) RemoveObstacle(name string) {
 	}
 	p.obstacles = newObstacles
 	p.coordinator.SetObstacles(p.obstacles)
+	p.replanAllPaths()
 }
 
 func (p *Planner) ClearObstacles() {
 	p.obstacles = make([]Obstacle, 0)
 	p.coordinator.SetObstacles(p.obstacles)
+	p.replanAllPaths()
 }
 
 func (p *Planner) ClearAll() {
