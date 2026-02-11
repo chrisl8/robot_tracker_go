@@ -321,7 +321,16 @@ func (rs *RobotSystem) Initialize() error {
 	}
 
 	rs.webServer.OnPathsChanged = func() map[int][][2]float64 {
-		return rs.planner.GetPaths()
+		paths := rs.planner.GetPaths()
+		utils.Logf("PATHS: OnPathsChanged called, returned %d paths", len(paths))
+		for rid, path := range paths {
+			utils.Logf("  Robot %d: %d waypoints", rid, len(path))
+			if len(path) > 0 {
+				utils.Logf("    First: (%.2f, %.2f), Last: (%.2f, %.2f)",
+					path[0][0], path[0][1], path[len(path)-1][0], path[len(path)-1][1])
+			}
+		}
+		return paths
 	}
 
 	if rs.cam != nil {
@@ -329,8 +338,13 @@ func (rs *RobotSystem) Initialize() error {
 	}
 	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
 		rs.webServer.SetPositionEstimator(rs.positionEst)
+		utils.Logf("PATH VIS: PositionEstimator set on WebServer (calibrated=%v)",
+			rs.positionEst.IsCalibrated())
 		rs.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
 		utils.Logf("Calibration loaded from %s", calibrationPath)
+	} else {
+		utils.Logf("PATH VIS: WARNING - PositionEstimator NOT set! IsCalibrated()=%v",
+			rs.positionEst != nil && rs.positionEst.IsCalibrated())
 	}
 	rs.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
@@ -640,6 +654,15 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	rs.webServer.UpdateDetectedTags(detectedTags)
 
 	if rs.frameNum%10 == 0 && rs.webServer != nil {
+		paths := rs.planner.GetPaths()
+		numPaths := len(paths)
+		totalWaypoints := 0
+		for _, path := range paths {
+			totalWaypoints += len(path)
+		}
+		if numPaths > 0 {
+			utils.Logf("PATH DEBUG: %d robots with paths, %d total waypoints", numPaths, totalWaypoints)
+		}
 		rs.webServer.BroadcastPaths()
 	}
 }
@@ -975,7 +998,6 @@ func main() {
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
 	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
-	verbose := flag.Bool("verbose", false, "Enable verbose output (frame logging)")
 	quiet := flag.Bool("quiet", false, "Suppress all logging output")
 	flag.Parse()
 
@@ -1054,10 +1076,6 @@ func main() {
 					utils.Logf("Empty frame received")
 					time.Sleep(100 * time.Millisecond)
 					continue
-				}
-				if *verbose {
-					utils.Logf("Frame %d: %dx%d, %d bytes, channels=%d (capture time: %v)",
-						frameNum, frame.Width, frame.Height, len(frame.Data), frame.Channels, time.Since(startTime))
 				}
 				img := cameraFrameToImage(frame)
 				if img == nil {

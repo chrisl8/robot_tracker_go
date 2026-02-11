@@ -453,7 +453,12 @@ func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
 }
 
 func (s *WebServer) BroadcastPaths() {
-	if s.OnPathsChanged == nil || s.positionEstimator == nil {
+	if s.OnPathsChanged == nil {
+		utils.Logf("PATH VIS: BroadcastPaths skipped - OnPathsChanged is nil")
+		return
+	}
+	if s.positionEstimator == nil {
+		utils.Logf("PATH VIS: BroadcastPaths skipped - positionEstimator is nil")
 		return
 	}
 
@@ -461,6 +466,8 @@ func (s *WebServer) BroadcastPaths() {
 	if len(paths) == 0 {
 		return
 	}
+
+	utils.Logf("PATH VIS: Broadcasting %d paths to frontend", len(paths))
 
 	pathMessages := make([]PathMessage, 0, len(paths))
 	for robotID, path := range paths {
@@ -472,6 +479,10 @@ func (s *WebServer) BroadcastPaths() {
 		for i, wp := range path {
 			px, py := s.positionEstimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
 			pixels[i] = [2]int{px, py}
+			if i == 0 || i == len(path)-1 {
+				utils.Logf("PATH VIS: Robot %d waypoint %d: world(%.2f,%.2f) -> pixel(%d,%d)",
+					robotID, i, wp[0], wp[1], px, py)
+			}
 		}
 
 		color := fmt.Sprintf("#%06x", (robotID*12345)%0xFFFFFF)
