@@ -7,12 +7,12 @@ import (
 )
 
 func FuzzDecode(f *testing.F) {
-	f.Add([]byte("F\r\n"))
-	f.Add([]byte("B\r\n"))
-	f.Add([]byte("L\r\n"))
-	f.Add([]byte("R\r\n"))
-	f.Add([]byte("W\r\n"))
-	f.Add([]byte("S\r\n"))
+	f.Add([]byte("f\r\n"))
+	f.Add([]byte("b\r\n"))
+	f.Add([]byte("l\r\n"))
+	f.Add([]byte("r\r\n"))
+	f.Add([]byte("w\r\n"))
+	f.Add([]byte("s\r\n"))
 	f.Add([]byte("?\r\n"))
 	f.Add([]byte("d\r\n"))
 	f.Add([]byte{})

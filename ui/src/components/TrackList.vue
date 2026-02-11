@@ -22,8 +22,8 @@ function isSelected(trackId: number): boolean {
     return robotStore.selectedTrackId === trackId
 }
 
-function hasDestination(trackId: number): boolean {
-    return robotStore.destination?.robot_id === trackId
+function hasDestination(track: { id: number; tag_id?: number }): boolean {
+    return track.tag_id !== undefined && robotStore.destination?.robot_id === track.tag_id
 }
 </script>
 
@@ -38,7 +38,7 @@ function hasDestination(trackId: number): boolean {
                 class="track-item"
                 :class="{
                     selected: isSelected(track.id),
-                    'has-destination': hasDestination(track.id),
+                    'has-destination': hasDestination(track),
                 }"
                 @click="selectTrack(track)"
             >
@@ -50,7 +50,7 @@ function hasDestination(trackId: number): boolean {
                         {{ getTrackLabel(track) }}
                         <span v-if="track.tag_id" class="track-tag">Tag</span>
                         <span v-if="isSelected(track.id)" class="track-selected">Selected</span>
-                        <span v-if="hasDestination(track.id)" class="track-destination">Goal</span>
+                        <span v-if="hasDestination(track)" class="track-destination">Goal</span>
                     </div>
                     <div class="track-conf">
                         {{ (track.confidence * 100).toFixed(0) }}% confidence

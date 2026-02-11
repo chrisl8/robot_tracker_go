@@ -132,18 +132,27 @@ export const useRobotStore = defineStore('robot', () => {
             return false
         }
 
+        // Look up the selected track to get its AprilTag ID (used by the planner)
+        const track = tracks.value.find(t => t.id === selectedTrackId.value)
+        if (!track || track.tag_id === undefined) {
+            console.error('[DEST] Selected track has no tag_id, cannot set destination')
+            return false
+        }
+        const robotId = track.tag_id
+
         // Use the SAME canvasToNatural function as useCanvas.ts for consistency
         const naturalCoords = canvasToNaturalShared(canvasX, canvasY)
 
         console.log('[DEST DEBUG] Click (canvas):', { canvasX, canvasY })
         console.log('[DEST DEBUG] Stored (natural):', naturalCoords)
+        console.log('[DEST DEBUG] Robot tag_id:', robotId)
 
         try {
             const response = await fetch('/api/destination', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    robot_id: selectedTrackId.value,
+                    robot_id: robotId,
                     x: naturalCoords.x,
                     y: naturalCoords.y,
                 }),
@@ -152,8 +161,8 @@ export const useRobotStore = defineStore('robot', () => {
             if (response.ok) {
                 await response.json()
                 destination.value = {
-                    id: `${selectedTrackId.value}-${Date.now()}`,
-                    robot_id: selectedTrackId.value,
+                    id: `${robotId}-${Date.now()}`,
+                    robot_id: robotId,
                     x: naturalCoords.x,
                     y: naturalCoords.y,
                 }

@@ -104,8 +104,17 @@ func (rs *RobotSystem) SetControlMode(mode ControlMode) {
 	if rs.emergencyStopped {
 		return
 	}
+	prev := rs.controlMode
 	rs.controlMode = mode
 	utils.Logf("Control mode changed to: %s", mode)
+
+	// When leaving Manual or Autonomous, clear active command and stop the robot
+	if prev != mode && (prev == ControlModeManual || prev == ControlModeAutonomous) {
+		if rs.commandQueue != nil {
+			rs.commandQueue.ClearActiveCommand()
+			rs.commandQueue.Enqueue(controller.CommandStop)
+		}
+	}
 }
 
 func (rs *RobotSystem) IsEmergencyStopped() bool {

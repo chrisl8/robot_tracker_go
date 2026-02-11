@@ -106,6 +106,7 @@ type BBoxMessage struct {
 
 type TrackMessage struct {
 	ID          int      `json:"id"`
+	TagID       *int     `json:"tag_id,omitempty"`
 	BBox        []int    `json:"bbox"`
 	History     [][2]int `json:"history"`
 	Color       string   `json:"color"`
@@ -343,6 +344,7 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
 		}
 		msg := TrackMessage{
 			ID:          track.TrackID,
+			TagID:       track.TagID,
 			BBox:        bbox,
 			History:     history,
 			Confidence:  track.Confidence,

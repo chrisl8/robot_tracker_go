@@ -6,14 +6,16 @@ import (
 )
 
 type CommandQueue struct {
-	controller   *ArduinoController
-	commandCh    chan Command
-	stopCh       chan struct{}
-	running      bool
-	interval     time.Duration
-	lastCommand  Command
-	lastSentTime time.Time
-	mu           sync.Mutex
+	controller       *ArduinoController
+	commandCh        chan Command
+	stopCh           chan struct{}
+	running          bool
+	interval         time.Duration
+	lastCommand      Command
+	lastSentTime     time.Time
+	activeCommand    Command // currently desired command (re-sent each tick)
+	hasActiveCommand bool    // whether activeCommand is set
+	mu               sync.Mutex
 }
 
 func NewCommandQueue(controller *ArduinoController, intervalMs int) *CommandQueue {
@@ -46,11 +48,24 @@ func (q *CommandQueue) Stop() {
 		return
 	}
 
+	q.mu.Lock()
+	q.hasActiveCommand = false
+	q.mu.Unlock()
+
 	q.running = false
 	close(q.stopCh)
 }
 
 func (q *CommandQueue) Enqueue(cmd Command) {
+	q.mu.Lock()
+	if cmd == CommandStop {
+		q.hasActiveCommand = false
+	} else {
+		q.activeCommand = cmd
+		q.hasActiveCommand = true
+	}
+	q.mu.Unlock()
+
 	select {
 	case q.commandCh <- cmd:
 	default:
@@ -58,10 +73,22 @@ func (q *CommandQueue) Enqueue(cmd Command) {
 }
 
 func (q *CommandQueue) EmergencyStop() {
+	q.mu.Lock()
+	q.hasActiveCommand = false
+	q.mu.Unlock()
+
 	// Send stop directly to controller, bypassing the queue to avoid
 	// racing with channel close
 	_ = q.controller.SendCommand(CommandStop)
 	q.Stop()
+}
+
+// ClearActiveCommand clears the active command without stopping the queue.
+// Used on mode transitions to stop re-sending movement commands.
+func (q *CommandQueue) ClearActiveCommand() {
+	q.mu.Lock()
+	q.hasActiveCommand = false
+	q.mu.Unlock()
 }
 
 func (q *CommandQueue) runLoop() {
@@ -74,7 +101,14 @@ func (q *CommandQueue) runLoop() {
 			q.sendCommand(cmd)
 
 		case <-ticker.C:
-			if q.controller.IsConnected() && time.Since(q.lastSentTime) > HeartbeatTimeoutMs*time.Millisecond {
+			q.mu.Lock()
+			active := q.hasActiveCommand
+			cmd := q.activeCommand
+			q.mu.Unlock()
+
+			if active {
+				q.sendCommand(cmd)
+			} else if q.controller.IsConnected() && time.Since(q.lastSentTime) > HeartbeatTimeoutMs*time.Millisecond {
 				q.sendCommand(CommandStop)
 			}
 
@@ -87,10 +121,6 @@ func (q *CommandQueue) runLoop() {
 func (q *CommandQueue) sendCommand(cmd Command) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-
-	if cmd == q.lastCommand && time.Since(q.lastSentTime) < q.interval {
-		return
-	}
 
 	if err := q.controller.SendCommand(cmd); err == nil {
 		q.lastCommand = cmd

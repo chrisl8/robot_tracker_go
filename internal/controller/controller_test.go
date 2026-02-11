@@ -12,12 +12,12 @@ func TestSerialProtocol_EncodeCommand(t *testing.T) {
 		cmd      Command
 		expected []byte
 	}{
-		{"Forward", CommandForward, []byte{'F', '\r', '\n'}},
-		{"Backward", CommandBackward, []byte{'B', '\r', '\n'}},
-		{"Left", CommandLeft, []byte{'L', '\r', '\n'}},
-		{"Right", CommandRight, []byte{'R', '\r', '\n'}},
-		{"Weapon", CommandWeapon, []byte{'W', '\r', '\n'}},
-		{"Stop", CommandStop, []byte{'S', '\r', '\n'}},
+		{"Forward", CommandForward, []byte{'f', '\r', '\n'}},
+		{"Backward", CommandBackward, []byte{'b', '\r', '\n'}},
+		{"Left", CommandLeft, []byte{'l', '\r', '\n'}},
+		{"Right", CommandRight, []byte{'r', '\r', '\n'}},
+		{"Weapon", CommandWeapon, []byte{'w', '\r', '\n'}},
+		{"Stop", CommandStop, []byte{'s', '\r', '\n'}},
 		{"Debug", CommandDebug, []byte{'d', '\r', '\n'}},
 	}
 

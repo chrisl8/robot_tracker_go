@@ -343,7 +343,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const dest = robotStore.destination
         if (!ctx.value || !dest) return
 
-        const selectedTrack = robotStore.confirmedTracks.find(t => t.id === dest.robot_id)
+        const selectedTrack = robotStore.confirmedTracks.find(t => t.tag_id === dest.robot_id)
         const selectedPixelRadius = selectedTrack?.pixel_radius
 
         if (videoScale.value.x === 0 || videoScale.value.y === 0) return

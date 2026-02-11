@@ -66,6 +66,12 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 
 	t.predictAllTracks()
 
+	// Age all tracks — matched tracks get reset to 0 below
+	for _, tt := range t.tracks {
+		tt.timeSinceUpdate++
+		tt.track.AgeTrack()
+	}
+
 	matchedDetections, unmatchedDetections, matchedTrackIDs := t.matchTracks(highConfDetections)
 
 	// Update matched tracks
@@ -200,6 +206,15 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 }
 
 func (t *ByteTrack) createNewTrack(detection Detection, timestamp float64) {
+	// If this detection has a TagID, remove any existing track with the same TagID
+	if detection.TagID != nil {
+		for id, tt := range t.tracks {
+			if tt.track.TagID != nil && *tt.track.TagID == *detection.TagID {
+				delete(t.tracks, id)
+			}
+		}
+	}
+
 	track := NewTrack(t.nextTrackID, detection.Bbox, timestamp, detection.Confidence)
 	t.nextTrackID++
 

@@ -5,12 +5,12 @@ import "fmt"
 type Command byte
 
 const (
-	CommandForward  Command = 'F'
-	CommandBackward Command = 'B'
-	CommandLeft     Command = 'L'
-	CommandRight    Command = 'R'
-	CommandWeapon   Command = 'W'
-	CommandStop     Command = 'S'
+	CommandForward  Command = 'f'
+	CommandBackward Command = 'b'
+	CommandLeft     Command = 'l'
+	CommandRight    Command = 'r'
+	CommandWeapon   Command = 'w'
+	CommandStop     Command = 's'
 	CommandQuery    Command = '?'
 	CommandDebug    Command = 'd'
 )
