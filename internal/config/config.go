@@ -46,12 +46,13 @@ type CameraConfig struct {
 }
 
 type RobotConfig struct {
-	TagID             int     `yaml:"tag_id"`
-	Name              string  `yaml:"name"`
-	Diameter          float64 `yaml:"diameter"`
-	Speed             float64 `yaml:"speed"`
-	AvoidanceStrength float64 `yaml:"avoidance_strength"`
-	PauseThreshold    float64 `yaml:"pause_threshold"`
+	TagID                int     `yaml:"tag_id"`
+	Name                 string  `yaml:"name"`
+	Diameter             float64 `yaml:"diameter"`
+	Speed                float64 `yaml:"speed"`
+	AvoidanceStrength    float64 `yaml:"avoidance_strength"`
+	PauseThreshold       float64 `yaml:"pause_threshold"`
+	HeadingOffsetDegrees float64 `yaml:"heading_offset_degrees"`
 }
 
 type PlanningConfig struct {

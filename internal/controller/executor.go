@@ -70,7 +70,10 @@ func (e *PathExecutor) VelocityToCommandWithHeading(worldVx, worldVy, heading fl
 	sinH := math.Sin(heading)
 	robotVx := worldVx*cosH + worldVy*sinH
 	robotVy := -worldVx*sinH + worldVy*cosH
-	return e.VelocityToCommand(robotVx, robotVy)
+	cmd := e.VelocityToCommand(robotVx, robotVy)
+	utils.Debugf("HEADING: world=(%.3f,%.3f) heading=%.2f° robot=(%.3f,%.3f) -> %c",
+		worldVx, worldVy, heading*180/math.Pi, robotVx, robotVy, cmd)
+	return cmd
 }
 
 func (e *PathExecutor) CommandToVelocity(cmd Command) Velocity {

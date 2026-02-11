@@ -480,13 +480,20 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 ctx.value.fillText(`T${track.tag_id}`, scaled2.x - 22, scaled2.y + 8)
             }
 
-            // Draw heading arrow if available
-            if (track.heading !== undefined) {
+            // Draw heading arrow from AprilTag corners in pixel space
+            if (track.corners && track.corners.length === 4) {
+                const botMidX = (track.corners[2][0] + track.corners[3][0]) / 2
+                const botMidY = (track.corners[2][1] + track.corners[3][1]) / 2
+                const topMidX = (track.corners[0][0] + track.corners[1][0]) / 2
+                const topMidY = (track.corners[0][1] + track.corners[1][1]) / 2
+                const pixelHeading = Math.atan2(topMidY - botMidY, topMidX - botMidX)
+                    + (track.heading_offset || 0)
+
                 const centerX = (scaled1.x + scaled2.x) / 2
                 const centerY = (scaled1.y + scaled2.y) / 2
                 const arrowLen = 30
-                const tipX = centerX + arrowLen * Math.cos(track.heading)
-                const tipY = centerY + arrowLen * Math.sin(track.heading)
+                const tipX = centerX + arrowLen * Math.cos(pixelHeading)
+                const tipY = centerY + arrowLen * Math.sin(pixelHeading)
 
                 // Draw arrow line
                 ctx.value.beginPath()

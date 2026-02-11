@@ -111,9 +111,10 @@ type TrackMessage struct {
 	Color       string         `json:"color"`
 	Confidence  float64        `json:"confidence"`
 	State       string         `json:"state"`
-	PixelRadius *float64       `json:"pixel_radius,omitempty"`
-	Heading     *float64       `json:"heading,omitempty"`
-	Corners     *[4][2]float64 `json:"corners,omitempty"`
+	PixelRadius   *float64       `json:"pixel_radius,omitempty"`
+	Heading       *float64       `json:"heading,omitempty"`
+	Corners       *[4][2]float64 `json:"corners,omitempty"`
+	HeadingOffset *float64       `json:"heading_offset,omitempty"`
 }
 
 type PathMessage struct {
@@ -358,8 +359,10 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
 		if track.TagID != nil && track.Corners != [4][2]float64{} {
 			heading := track.Heading
 			corners := track.Corners
+			headingOffset := track.HeadingOffset
 			msg.Heading = &heading
 			msg.Corners = &corners
+			msg.HeadingOffset = &headingOffset
 		}
 		trackMessages = append(trackMessages, msg)
 	}

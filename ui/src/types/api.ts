@@ -10,6 +10,7 @@ export interface Track {
     history: [number, number][]
     pixel_radius?: number
     heading?: number
+    heading_offset?: number
     corners?: [number, number][]
 }
 

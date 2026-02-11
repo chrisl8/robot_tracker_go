@@ -21,8 +21,9 @@ type Track struct {
 	History     []TrackHistoryPoint
 	WorldPos    [2]float64
 	PixelRadius float64
-	Heading     float64
-	Corners     [4][2]float64
+	Heading       float64
+	HeadingOffset float64
+	Corners       [4][2]float64
 }
 
 type TrackHistoryPoint struct {

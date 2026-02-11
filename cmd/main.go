@@ -753,13 +753,25 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				}
 				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
 
-				// Compute heading from AprilTag corners
+				// Compute heading from AprilTag corners using tag's "upward" direction as forward
+				// Corner order: [0]=top-left, [1]=top-right, [2]=bottom-right, [3]=bottom-left
+				// Use bottom-center → top-center to get the tag's canonical forward direction
 				for _, tag := range detectionResult.Tags {
 					if tag.TagID == *track.TagID {
 						track.Corners = tag.Corners
-						w0 := rs.positionEst.PixelToWorld(int(tag.Corners[0][0]), int(tag.Corners[0][1]))
-						w1 := rs.positionEst.PixelToWorld(int(tag.Corners[1][0]), int(tag.Corners[1][1]))
-						track.Heading = math.Atan2(w1.Y-w0.Y, w1.X-w0.X)
+						botMidX := (tag.Corners[2][0] + tag.Corners[3][0]) / 2
+						botMidY := (tag.Corners[2][1] + tag.Corners[3][1]) / 2
+						topMidX := (tag.Corners[0][0] + tag.Corners[1][0]) / 2
+						topMidY := (tag.Corners[0][1] + tag.Corners[1][1]) / 2
+						wBot := rs.positionEst.PixelToWorld(int(botMidX), int(botMidY))
+						wTop := rs.positionEst.PixelToWorld(int(topMidX), int(topMidY))
+						track.Heading = math.Atan2(wTop.Y-wBot.Y, wTop.X-wBot.X)
+						// Apply configurable mounting offset
+						if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+							offset := robotConfig.HeadingOffsetDegrees * math.Pi / 180
+							track.Heading += offset
+							track.HeadingOffset = offset
+						}
 						break
 					}
 				}

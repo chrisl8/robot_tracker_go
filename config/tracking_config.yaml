@@ -131,6 +131,7 @@ robots:
     diameter: 0.18 # meters (for obstacle avoidance)
     speed: 0.15 # m/s (max forward speed)
     turn_rate: 1.0 # rad/s (max turn speed)
+    heading_offset_degrees: 0 # adjust if arrow doesn't point forward (try 90, -90, 180)
 
   # Add more robots by their tag IDs:
   # - tag_id: 5
