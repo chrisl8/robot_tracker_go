@@ -108,6 +108,33 @@
 
 Format: `{command}\r\n` (e.g., `F\r\n`)
 
+### REST API Endpoints
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| POST | `/api/obstacles` | Add obstacle |
+| DELETE | `/api/obstacles/:id` | Delete obstacle |
+| POST | `/api/obstacles/save` | Save to YAML |
+| POST | `/api/command` | Send robot command |
+| POST | `/api/destination` | Set navigation target |
+
+### WebSocket Message Types
+
+| Type | Purpose |
+| ---- | ------- |
+| `track` | Single track update |
+| `tracks` | Batch track update |
+| `obstacles` | Obstacle list |
+| `status` | System status |
+| `calibration` | Calibration state |
+
+### Go ↔ Vue Type Mapping
+
+| Go Type | Vue Type | File |
+| ------- | -------- | ---- |
+| `Track` | `Track` | `ui/src/types/api.ts` |
+| `Obstacle` | `Obstacle` | `ui/src/types/api.ts` |
+
 ---
 
 ## What Remains
@@ -154,7 +181,12 @@ robot_tracker_go/
     ├── PLAN.md                   # This file
     ├── AGENTS.md                 # Build commands
     ├── BUGS.md                   # Active bugs
-    └── ARCHIVED_BUGS.md          # Resolved bugs
+    └── archived/
+        ├── ARCHIVED_BUGS.md      # Resolved bug history
+        ├── ARCHIVED_PLAN.md      # Historical implementation notes
+        └── PHASE_11_MIGRATION/   # Vue 3 migration documentation
+            ├── PHASE_11_PLAN.md
+            └── PHASE_11_REFERENCE.md
 ```
 
 ---
@@ -165,8 +197,8 @@ robot_tracker_go/
 |----------|---------|
 | [AGENTS.md](AGENTS.md) | Build commands and environment setup |
 | [BUGS.md](BUGS.md) | Active bug tracker |
-| [ARCHIVED_BUGS.md](ARCHIVED_BUGS.md) | Resolved bug history |
-| [ARCHIVED_PLAN.md](ARCHIVED_PLAN.md) | Historical implementation notes |
+| [docs/archived/ARCHIVED_BUGS.md](docs/archived/ARCHIVED_BUGS.md) | Resolved bug history |
+| [docs/archived/ARCHIVED_PLAN.md](docs/archived/ARCHIVED_PLAN.md) | Historical implementation notes |
 
 ---
 
