@@ -44,7 +44,7 @@ The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems v
 - **`internal/tracking/`** — ByteTrack multi-object tracker with Kalman filter; outputs `Track` objects with world positions
 - **`internal/position/`** — Homography calibration maps pixel↔world coordinates; saved to `config/calibration_<camera>.yaml`
 - **`internal/planning/`** — Three-layer: A\* global path, velocity obstacle local planner, multi-robot `Coordinator`
-- **`internal/controller/`** — Arduino serial at 115200 baud; single ASCII commands (F/B/L/R/S + `\r\n`); `CommandQueue` + `PathExecutor`
+- **`internal/controller/`** — Arduino serial at 9600 baud; single ASCII commands (F/B/L/R/S + `\r\n`); `CommandQueue` + `PathExecutor`
 - **`internal/ui/`** — Gin HTTP server; MJPEG stream at `/stream`; WebSocket at `/ws` for real-time overlay; REST API for calibration/obstacles/goals
 - **`ui/src/`** — Vue 3 + TypeScript frontend; Pinia stores (`robotStore`, `obstacleStore`, `uiStore`); canvas overlay renders tracks/paths
 

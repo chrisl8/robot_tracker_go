@@ -208,9 +208,6 @@ go build -race -o robot_tracker ./cmd/main.go
 # Run the application
 ./robot_tracker
 
-# Run with specific serial port (Linux)
-./robot_tracker --port /dev/ttyUSB0
-
 # List available serial ports
 ./robot_tracker --list-ports
 ```

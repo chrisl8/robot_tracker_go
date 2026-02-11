@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +29,36 @@ import (
 	"robot_tracker_go/internal/ui"
 	"robot_tracker_go/internal/utils"
 )
+
+type ControlMode int
+
+const (
+	ControlModeIdle       ControlMode = iota
+	ControlModeManual
+	ControlModeAutonomous
+)
+
+func (m ControlMode) String() string {
+	switch m {
+	case ControlModeManual:
+		return "manual"
+	case ControlModeAutonomous:
+		return "autonomous"
+	default:
+		return "idle"
+	}
+}
+
+func ParseControlMode(s string) ControlMode {
+	switch s {
+	case "manual":
+		return ControlModeManual
+	case "autonomous":
+		return ControlModeAutonomous
+	default:
+		return ControlModeIdle
+	}
+}
 
 type RobotSystem struct {
 	cfg               *config.Config
@@ -47,6 +78,9 @@ type RobotSystem struct {
 	CurrentRobotID    int
 	CurrentGoal       [2]float64
 	waypointThreshold float64
+	controlMode       ControlMode
+	emergencyStopped  bool
+	controlMu         sync.RWMutex
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -56,6 +90,56 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		frameNum:      0,
 		CurrentGoal:   [2]float64{0, 0},
 	}
+}
+
+func (rs *RobotSystem) GetControlMode() ControlMode {
+	rs.controlMu.RLock()
+	defer rs.controlMu.RUnlock()
+	return rs.controlMode
+}
+
+func (rs *RobotSystem) SetControlMode(mode ControlMode) {
+	rs.controlMu.Lock()
+	defer rs.controlMu.Unlock()
+	if rs.emergencyStopped {
+		return
+	}
+	rs.controlMode = mode
+	utils.Logf("Control mode changed to: %s", mode)
+}
+
+func (rs *RobotSystem) IsEmergencyStopped() bool {
+	rs.controlMu.RLock()
+	defer rs.controlMu.RUnlock()
+	return rs.emergencyStopped
+}
+
+func (rs *RobotSystem) EmergencyStop() {
+	rs.controlMu.Lock()
+	rs.emergencyStopped = true
+	rs.controlMode = ControlModeIdle
+	rs.controlMu.Unlock()
+
+	// Send stop directly to Arduino, bypassing queue for reliability
+	if rs.arduino != nil {
+		_ = rs.arduino.SendCommand(controller.CommandStop)
+	}
+	if rs.commandQueue != nil {
+		rs.commandQueue.EmergencyStop()
+	}
+	utils.Logf("EMERGENCY STOP activated")
+}
+
+func (rs *RobotSystem) ClearEmergencyStop() {
+	rs.controlMu.Lock()
+	rs.emergencyStopped = false
+	rs.controlMu.Unlock()
+
+	// Restart the command queue so it can accept commands again
+	if rs.commandQueue != nil {
+		rs.commandQueue.Start()
+	}
+	utils.Logf("Emergency stop cleared")
 }
 
 func getLocalIP() string {
@@ -265,14 +349,34 @@ func (rs *RobotSystem) Initialize() error {
 		utils.Logf("Position estimator initialized")
 	}
 
-	rs.arduino = controller.NewArduinoController("auto", controller.BaudRate)
-	if err := rs.arduino.Connect(); err != nil {
-		utils.Logf("Warning: Could not connect to Arduino: %v", err)
-	} else {
-		utils.Logf("Connected to Arduino on %s", rs.arduino.GetPort())
+	// Initialize Arduino controller using config values
+	serialPort := "auto"
+	serialBaud := controller.BaudRate
+	controllerEnabled := true
+	commandIntervalMs := controller.CommandIntervalMs
+	if rs.cfg.Controller.Serial.Port != "" {
+		serialPort = rs.cfg.Controller.Serial.Port
+	}
+	if rs.cfg.Controller.Serial.BaudRate > 0 {
+		serialBaud = rs.cfg.Controller.Serial.BaudRate
+	}
+	controllerEnabled = rs.cfg.Controller.Enabled
+	if rs.cfg.Controller.CommandInterval > 0 {
+		commandIntervalMs = int(rs.cfg.Controller.CommandInterval * 1000)
 	}
 
-	rs.commandQueue = controller.NewCommandQueue(rs.arduino, controller.CommandIntervalMs)
+	rs.arduino = controller.NewArduinoController(serialPort, serialBaud)
+	if controllerEnabled {
+		if err := rs.arduino.Connect(); err != nil {
+			utils.Logf("Warning: Could not connect to Arduino: %v", err)
+		} else {
+			utils.Logf("Connected to Arduino on %s at %d baud", rs.arduino.GetPort(), serialBaud)
+		}
+	} else {
+		utils.Logf("Controller disabled in config, skipping Arduino connection")
+	}
+
+	rs.commandQueue = controller.NewCommandQueue(rs.arduino, commandIntervalMs)
 	rs.commandQueue.Start()
 	utils.Logf("Command queue started")
 
@@ -344,6 +448,55 @@ func (rs *RobotSystem) Initialize() error {
 			}
 		}
 		return paths
+	}
+
+	rs.webServer.OnCommand = func(cmdStr string) error {
+		if rs.IsEmergencyStopped() {
+			return fmt.Errorf("emergency stop is active")
+		}
+		if rs.GetControlMode() != ControlModeManual {
+			return fmt.Errorf("not in manual mode (current: %s)", rs.GetControlMode())
+		}
+		var cmd controller.Command
+		switch cmdStr {
+		case "F":
+			cmd = controller.CommandForward
+		case "B":
+			cmd = controller.CommandBackward
+		case "L":
+			cmd = controller.CommandLeft
+		case "R":
+			cmd = controller.CommandRight
+		case "S":
+			cmd = controller.CommandStop
+		default:
+			return fmt.Errorf("unknown command: %s", cmdStr)
+		}
+		if rs.commandQueue != nil {
+			rs.commandQueue.Enqueue(cmd)
+		}
+		return nil
+	}
+
+	rs.webServer.OnModeChange = func(mode string) error {
+		if rs.IsEmergencyStopped() {
+			return fmt.Errorf("cannot change mode while emergency stop is active")
+		}
+		rs.SetControlMode(ParseControlMode(mode))
+		return nil
+	}
+
+	rs.webServer.OnEmergencyStop = func() {
+		rs.EmergencyStop()
+	}
+
+	rs.webServer.OnClearEmergencyStop = func() error {
+		rs.ClearEmergencyStop()
+		return nil
+	}
+
+	rs.webServer.OnGetControlState = func() (string, bool) {
+		return rs.GetControlMode().String(), rs.IsEmergencyStopped()
 	}
 
 	if rs.cam != nil {
@@ -595,53 +748,56 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	rs.webServer.BroadcastTracks(trackingResult.Tracks)
 
-	for i := range trackingResult.Tracks {
-		track := &trackingResult.Tracks[i]
-		if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
-			continue
-		}
-
-		robotID := *track.TagID
-
-		if waypoint, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
-			if rs.positionEst == nil {
+	// Only execute autonomous path-following when in autonomous mode and not e-stopped
+	if rs.GetControlMode() == ControlModeAutonomous && !rs.IsEmergencyStopped() {
+		for i := range trackingResult.Tracks {
+			track := &trackingResult.Tracks[i]
+			if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
 				continue
 			}
 
-			px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-			worldPos := rs.positionEst.PixelToWorld(px, py)
+			robotID := *track.TagID
 
-			robotDiameter := 0.18
-			if robotConfig := rs.cfg.GetRobotByTagID(robotID); robotConfig != nil {
-				robotDiameter = robotConfig.Diameter
+			if waypoint, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
+				if rs.positionEst == nil {
+					continue
+				}
+
+				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
+				worldPos := rs.positionEst.PixelToWorld(px, py)
+
+				robotDiameter := 0.18
+				if robotConfig := rs.cfg.GetRobotByTagID(robotID); robotConfig != nil {
+					robotDiameter = robotConfig.Diameter
+				}
+
+				robotState := planning.RobotState{
+					Position: [2]float64{worldPos.X, worldPos.Y},
+					Velocity: planning.Velocity{VX: 0, VY: 0},
+					RobotID:  robotID,
+					Diameter: robotDiameter,
+				}
+
+				velocity, _ := rs.planner.LocalPlanner().ComputeVelocityToWaypoint(
+					robotState, waypoint, rs.StaticObstacles, rs.DynamicObstacles, minConfidence)
+
+				dx := waypoint[0] - worldPos.X
+				dy := waypoint[1] - worldPos.Y
+				distToWaypoint := math.Sqrt(dx*dx + dy*dy)
+				if distToWaypoint < rs.waypointThreshold {
+					rs.planner.AdvanceWaypoint(robotID)
+					utils.Logf("Robot %d reached waypoint, advancing to next", robotID)
+					continue
+				}
+
+				if rs.pathExecutor != nil && rs.commandQueue != nil {
+					cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
+					rs.commandQueue.Enqueue(cmd)
+				}
+
+				rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
+					[2]float64{velocity[0], velocity[1]})
 			}
-
-			robotState := planning.RobotState{
-				Position: [2]float64{worldPos.X, worldPos.Y},
-				Velocity: planning.Velocity{VX: 0, VY: 0},
-				RobotID:  robotID,
-				Diameter: robotDiameter,
-			}
-
-			velocity, _ := rs.planner.LocalPlanner().ComputeVelocityToWaypoint(
-				robotState, waypoint, rs.StaticObstacles, rs.DynamicObstacles, minConfidence)
-
-			dx := waypoint[0] - worldPos.X
-			dy := waypoint[1] - worldPos.Y
-			distToWaypoint := math.Sqrt(dx*dx + dy*dy)
-			if distToWaypoint < rs.waypointThreshold {
-				rs.planner.AdvanceWaypoint(robotID)
-				utils.Logf("Robot %d reached waypoint, advancing to next", robotID)
-				continue
-			}
-
-			if rs.pathExecutor != nil && rs.commandQueue != nil {
-				cmd := rs.pathExecutor.VelocityToCommand(velocity[0], velocity[1])
-				rs.commandQueue.Enqueue(cmd)
-			}
-
-			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
-				[2]float64{velocity[0], velocity[1]})
 		}
 	}
 

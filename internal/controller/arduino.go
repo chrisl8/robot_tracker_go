@@ -70,14 +70,25 @@ func (c *ArduinoController) Disconnect() error {
 	return nil
 }
 
+func (c *ArduinoController) writeAll(data []byte) error {
+	totalWritten := 0
+	for totalWritten < len(data) {
+		n, err := c.serial.Write(data[totalWritten:])
+		if err != nil {
+			return err
+		}
+		totalWritten += n
+	}
+	return nil
+}
+
 func (c *ArduinoController) SendCommand(cmd Command) error {
 	if !c.connected || c.serial == nil {
 		return ErrNotConnected
 	}
 
 	data := []byte{byte(cmd), '\r', '\n'}
-	_, err := c.serial.Write(data)
-	if err != nil {
+	if err := c.writeAll(data); err != nil {
 		c.connected = false
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
@@ -91,8 +102,7 @@ func (c *ArduinoController) SendMode(mode Mode) error {
 	}
 
 	data := []byte{byte(mode), '\r', '\n'}
-	_, err := c.serial.Write(data)
-	if err != nil {
+	if err := c.writeAll(data); err != nil {
 		c.connected = false
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
@@ -106,8 +116,7 @@ func (c *ArduinoController) SendSubmode(submode Submode) error {
 	}
 
 	data := []byte{byte(submode), '\r', '\n'}
-	_, err := c.serial.Write(data)
-	if err != nil {
+	if err := c.writeAll(data); err != nil {
 		c.connected = false
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
@@ -121,8 +130,7 @@ func (c *ArduinoController) ToggleDebug() error {
 	}
 
 	data := []byte{byte(CommandDebug), '\r', '\n'}
-	_, err := c.serial.Write(data)
-	if err != nil {
+	if err := c.writeAll(data); err != nil {
 		c.connected = false
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}

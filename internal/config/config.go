@@ -19,6 +19,20 @@ type Config struct {
 	Output        OutputConfig        `yaml:"output"`
 	Tracking      TrackingConfig      `yaml:"tracking"`
 	Cameras       []CameraConfig      `yaml:"cameras"`
+	Controller    ControllerConfig    `yaml:"controller"`
+}
+
+type ControllerConfig struct {
+	Enabled          bool         `yaml:"enabled"`
+	Serial           SerialConfig `yaml:"serial"`
+	CommandInterval  float64      `yaml:"command_interval"`
+	HeartbeatTimeout float64      `yaml:"heartbeat_timeout"`
+}
+
+type SerialConfig struct {
+	Port     string  `yaml:"port"`
+	BaudRate int     `yaml:"baudrate"`
+	Timeout  float64 `yaml:"timeout"`
 }
 
 type CameraConfig struct {

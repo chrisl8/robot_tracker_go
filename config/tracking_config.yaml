@@ -49,12 +49,12 @@ april_tags:
 yolo:
   model: "assets/yolov8n.onnx"
   input_size: 640
-  conf_thres: 0.25           # Lowered to detect smaller objects
-  iou_thres: 0.45           # NMS threshold
-  device: ""                 # Empty = auto (CUDA if available, else CPU)
-  min_obstacle_size: 0.005    # 0.5cm minimum (detect small objects like cups)
-  pixels_per_meter: 1000     # Scale factor for size filtering
-  classes:                   # Indoor-relevant classes
+  conf_thres: 0.25 # Lowered to detect smaller objects
+  iou_thres: 0.45 # NMS threshold
+  device: "" # Empty = auto (CUDA if available, else CPU)
+  min_obstacle_size: 0.005 # 0.5cm minimum (detect small objects like cups)
+  pixels_per_meter: 1000 # Scale factor for size filtering
+  classes: # Indoor-relevant classes
     - person
     - cup
     - chair
@@ -116,7 +116,7 @@ multi_camera:
 controller:
   enabled: true # Set to true to enable robot control
   serial:
-    port: "auto" # "auto" for auto-detect, or specify "COM3", "/dev/ttyUSB0"
+    port: "/dev/ttyUSB0" # "auto" for auto-detect, or specify "COM3", "/dev/ttyUSB0"
     baudrate: 9600
     timeout: 0.1 # seconds
   command_interval: 0.05 # seconds between commands (50ms)
@@ -183,7 +183,7 @@ local_planning:
 
 # Path Execution Settings (A* + LocalPlanner hybrid)
 path_execution:
-  waypoint_threshold: 0.1  # meters - distance to waypoint before advancing
-  max_speed: 0.15           # forward/backward speed (m/s)
-  turn_speed: 0.5           # rotation speed (rad/s)
-  command_interval_ms: 100   # milliseconds between commands
+  waypoint_threshold: 0.1 # meters - distance to waypoint before advancing
+  max_speed: 0.15 # forward/backward speed (m/s)
+  turn_speed: 0.5 # rotation speed (rad/s)
+  command_interval_ms: 100 # milliseconds between commands

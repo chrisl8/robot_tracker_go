@@ -25,6 +25,8 @@ export const useRobotStore = defineStore('robot', () => {
     const destinationMode = ref(false)
     const destination = ref<Destination | null>(null)
     const paths = ref<PathMessage[]>([])
+    const controlMode = ref<'idle' | 'manual' | 'autonomous'>('idle')
+    const emergencyStopped = ref(false)
 
     // Computed
     const confirmedTracks = computed(() => {
@@ -173,6 +175,72 @@ export const useRobotStore = defineStore('robot', () => {
         paths.value = []
     }
 
+    async function setControlMode(mode: 'idle' | 'manual' | 'autonomous'): Promise<boolean> {
+        try {
+            const response = await fetch('/api/mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode }),
+            })
+            if (response.ok) {
+                controlMode.value = mode
+                return true
+            }
+            const data = await response.json()
+            console.error('Failed to set mode:', data.error)
+            return false
+        } catch (error) {
+            console.error('Failed to set mode:', error)
+            return false
+        }
+    }
+
+    async function emergencyStop(): Promise<boolean> {
+        try {
+            const response = await fetch('/api/emergency-stop', {
+                method: 'POST',
+            })
+            if (response.ok) {
+                emergencyStopped.value = true
+                controlMode.value = 'idle'
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error('Failed to activate emergency stop:', error)
+            return false
+        }
+    }
+
+    async function clearEmergencyStop(): Promise<boolean> {
+        try {
+            const response = await fetch('/api/clear-emergency-stop', {
+                method: 'POST',
+            })
+            if (response.ok) {
+                emergencyStopped.value = false
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error('Failed to clear emergency stop:', error)
+            return false
+        }
+    }
+
+    async function fetchControlState(): Promise<void> {
+        try {
+            const response = await fetch('/api/control-state')
+            if (response.ok) {
+                const data = await response.json()
+                controlMode.value = data.mode
+                emergencyStopped.value = data.emergency_stopped
+            }
+        } catch {
+            // ignore fetch errors
+        }
+    }
+
     return {
         // State
         tracks,
@@ -181,6 +249,8 @@ export const useRobotStore = defineStore('robot', () => {
         destinationMode,
         destination,
         paths,
+        controlMode,
+        emergencyStopped,
         // Computed
         confirmedTracks,
         confirmedCount,
@@ -198,5 +268,9 @@ export const useRobotStore = defineStore('robot', () => {
         confirmDestination,
         setDestination,
         clearPaths,
+        setControlMode,
+        emergencyStop,
+        clearEmergencyStop,
+        fetchControlState,
     }
 })

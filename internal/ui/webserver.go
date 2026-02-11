@@ -61,6 +61,11 @@ type WebServer struct {
 	OnObstaclesChanged     func([]planning.Obstacle)
 	OnDestinationSet       func(int, [2]float64)
 	OnCalibrationComplete  func(string)
+	OnCommand              func(string) error
+	OnModeChange           func(string) error
+	OnEmergencyStop        func()
+	OnClearEmergencyStop   func() error
+	OnGetControlState      func() (string, bool)
 
 	OnPathsChanged    func() map[int][][2]float64
 	positionEstimator *position.PositionEstimator
@@ -227,6 +232,10 @@ func (s *WebServer) setupRoutes() {
 	s.engine.GET("/api/calibration/detected-tags", s.handleCalibrationDetectedTags)
 	s.engine.POST("/api/calibration/compute", s.handleCalibrationCompute)
 	s.engine.POST("/api/calibration/cancel", s.handleCalibrationCancel)
+	s.engine.POST("/api/mode", s.handleSetMode)
+	s.engine.POST("/api/emergency-stop", s.handleEmergencyStop)
+	s.engine.POST("/api/clear-emergency-stop", s.handleClearEmergencyStop)
+	s.engine.GET("/api/control-state", s.handleControlState)
 }
 
 func (s *WebServer) handleIndex(c *gin.Context) {
@@ -356,6 +365,12 @@ func (s *WebServer) handleCommand(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if s.OnCommand != nil {
+		if err := s.OnCommand(req.Command); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "command": req.Command})
 }
@@ -1035,4 +1050,61 @@ func (s *WebServer) GetAllObstacles() []planning.Obstacle {
 	s.obstaclesMutex.RLock()
 	defer s.obstaclesMutex.RUnlock()
 	return s.obstacles
+}
+
+type ModeRequest struct {
+	Mode string `json:"mode"`
+}
+
+type ControlStateResponse struct {
+	Mode             string `json:"mode"`
+	EmergencyStopped bool   `json:"emergency_stopped"`
+}
+
+func (s *WebServer) handleSetMode(c *gin.Context) {
+	var req ModeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Mode != "idle" && req.Mode != "manual" && req.Mode != "autonomous" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mode, must be idle/manual/autonomous"})
+		return
+	}
+	if s.OnModeChange != nil {
+		if err := s.OnModeChange(req.Mode); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "mode": req.Mode})
+}
+
+func (s *WebServer) handleEmergencyStop(c *gin.Context) {
+	if s.OnEmergencyStop != nil {
+		s.OnEmergencyStop()
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "emergency_stopped": true})
+}
+
+func (s *WebServer) handleClearEmergencyStop(c *gin.Context) {
+	if s.OnClearEmergencyStop != nil {
+		if err := s.OnClearEmergencyStop(); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "emergency_stopped": false})
+}
+
+func (s *WebServer) handleControlState(c *gin.Context) {
+	mode := "idle"
+	eStopped := false
+	if s.OnGetControlState != nil {
+		mode, eStopped = s.OnGetControlState()
+	}
+	c.JSON(http.StatusOK, ControlStateResponse{
+		Mode:             mode,
+		EmergencyStopped: eStopped,
+	})
 }

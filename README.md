@@ -89,9 +89,6 @@ go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 # Run with camera
 ./scripts/run.sh
 
-# Run with specific serial port
-./scripts/run.sh --port /dev/ttyUSB0
-
 # List available ports
 ./scripts/run.sh --list-ports
 

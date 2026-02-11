@@ -34,6 +34,9 @@ func (q *CommandQueue) Start() {
 		return
 	}
 
+	// Recreate channels so queue can restart after Stop
+	q.commandCh = make(chan Command, 10)
+	q.stopCh = make(chan struct{})
 	q.running = true
 	go q.runLoop()
 }
@@ -43,8 +46,8 @@ func (q *CommandQueue) Stop() {
 		return
 	}
 
-	close(q.stopCh)
 	q.running = false
+	close(q.stopCh)
 }
 
 func (q *CommandQueue) Enqueue(cmd Command) {
@@ -55,7 +58,9 @@ func (q *CommandQueue) Enqueue(cmd Command) {
 }
 
 func (q *CommandQueue) EmergencyStop() {
-	q.Enqueue(CommandStop)
+	// Send stop directly to controller, bypassing the queue to avoid
+	// racing with channel close
+	_ = q.controller.SendCommand(CommandStop)
 	q.Stop()
 }
 
