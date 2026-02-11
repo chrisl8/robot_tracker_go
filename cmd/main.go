@@ -315,13 +315,15 @@ func (rs *RobotSystem) Initialize() error {
 			return
 		}
 		worldPos := rs.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
+		utils.Logf("DEST: pixel(%d,%d) -> world(%.2f,%.2f) BEFORE SetGoal",
+			int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 		rs.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
 	rs.webServer.OnPathsChanged = func() map[int][][2]float64 {
-		paths := rs.planner.GetPaths()
+		paths := rs.planner.GetPathsWithGoals()
 		utils.Logf("PATHS: OnPathsChanged called, returned %d paths", len(paths))
 		for rid, path := range paths {
 			utils.Logf("  Robot %d: %d waypoints", rid, len(path))

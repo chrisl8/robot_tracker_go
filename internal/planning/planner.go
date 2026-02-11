@@ -208,6 +208,22 @@ func (p *Planner) GetPaths() map[int][][2]float64 {
 	return p.paths
 }
 
+func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
+	for robotID, goal := range p.coordinator.goals {
+		if _, hasPath := p.paths[robotID]; !hasPath {
+			robot, exists := p.coordinator.GetRobotState(robotID)
+			if exists {
+				path, success := p.PlanPath(robotID, robot.Position, goal)
+				if success {
+					p.paths[robotID] = path
+					p.currentWaypoint[robotID] = 0
+				}
+			}
+		}
+	}
+	return p.paths
+}
+
 func (p *Planner) LocalPlanner() *LocalPlanner {
 	return p.localPlanner
 }
