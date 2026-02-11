@@ -60,6 +60,9 @@ type WebServer struct {
 
 	OnObstaclesChanged func([]planning.Obstacle)
 	OnDestinationSet   func(int, [2]float64)
+
+	OnPathsChanged    func() map[int][][2]float64
+	positionEstimator *position.PositionEstimator
 }
 
 type OverlayMessage struct {
@@ -68,6 +71,7 @@ type OverlayMessage struct {
 	Track       *TrackMessage             `json:"track,omitempty"`
 	Tracks      *TracksMessage            `json:"tracks,omitempty"`
 	Path        *PathMessage              `json:"path,omitempty"`
+	Paths       *PathsMessage             `json:"paths,omitempty"`
 	Status      *StatusMessage            `json:"status,omitempty"`
 	Command     *CommandMessage           `json:"command,omitempty"`
 	Calibration *CalibrationStatusMessage `json:"calibration,omitempty"`
@@ -105,8 +109,13 @@ type TrackMessage struct {
 }
 
 type PathMessage struct {
-	Points [][2]int `json:"points"`
-	Color  string   `json:"color"`
+	RobotID int      `json:"robot_id"`
+	Points  [][2]int `json:"points"`
+	Color   string   `json:"color"`
+}
+
+type PathsMessage struct {
+	Paths []PathMessage `json:"paths"`
 }
 
 type StatusMessage struct {
@@ -436,6 +445,46 @@ func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize
 			Filename: filename,
 			TagSize:  tagSize,
 		},
+	})
+}
+
+func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
+	s.positionEstimator = pe
+}
+
+func (s *WebServer) BroadcastPaths() {
+	if s.OnPathsChanged == nil || s.positionEstimator == nil {
+		return
+	}
+
+	paths := s.OnPathsChanged()
+	if len(paths) == 0 {
+		return
+	}
+
+	pathMessages := make([]PathMessage, 0, len(paths))
+	for robotID, path := range paths {
+		if len(path) == 0 {
+			continue
+		}
+
+		pixels := make([][2]int, len(path))
+		for i, wp := range path {
+			px, py := s.positionEstimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
+			pixels[i] = [2]int{px, py}
+		}
+
+		color := fmt.Sprintf("#%06x", (robotID*12345)%0xFFFFFF)
+		pathMessages = append(pathMessages, PathMessage{
+			RobotID: robotID,
+			Points:  pixels,
+			Color:   color,
+		})
+	}
+
+	s.BroadcastOverlay(OverlayMessage{
+		Type:  "paths",
+		Paths: &PathsMessage{Paths: pathMessages},
 	})
 }
 

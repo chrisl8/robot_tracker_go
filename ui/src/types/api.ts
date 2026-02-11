@@ -75,6 +75,7 @@ export type WebSocketMessage =
     | CalibrationMessage
     | CalibrationTagsMessage
     | DestinationMessage
+    | PathsMessage
 
 export interface TrackMessage {
     type: 'track'
@@ -89,6 +90,17 @@ export interface TracksMessage {
 export interface TracksNestedResponse {
     tracks: Track[]
     count: number
+}
+
+export interface PathMessage {
+    robot_id: number
+    points: [number, number][]
+    color: string
+}
+
+export interface PathsMessage {
+    type: 'paths'
+    paths: PathMessage[]
 }
 
 export interface ObstaclesMessage {

@@ -6,6 +6,7 @@ import type {
     WebSocketMessage,
     Destination,
     TracksNestedResponse,
+    PathMessage,
 } from '@/types/api'
 import { canvasToNaturalShared } from '@/composables/useCanvas'
 import { useUIStore } from './uiStore'
@@ -23,6 +24,7 @@ export const useRobotStore = defineStore('robot', () => {
     const selectedTrackId = ref<number | null>(null)
     const destinationMode = ref(false)
     const destination = ref<Destination | null>(null)
+    const paths = ref<PathMessage[]>([])
 
     // Computed
     const confirmedTracks = computed(() => {
@@ -78,6 +80,11 @@ export const useRobotStore = defineStore('robot', () => {
                         x: dest.x,
                         y: dest.y,
                     })
+                }
+                break
+            case 'paths':
+                if (data.paths && Array.isArray(data.paths)) {
+                    paths.value = data.paths
                 }
                 break
         }
@@ -162,6 +169,10 @@ export const useRobotStore = defineStore('robot', () => {
         destination.value = dest
     }
 
+    function clearPaths(): void {
+        paths.value = []
+    }
+
     return {
         // State
         tracks,
@@ -169,6 +180,7 @@ export const useRobotStore = defineStore('robot', () => {
         selectedTrackId,
         destinationMode,
         destination,
+        paths,
         // Computed
         confirmedTracks,
         confirmedCount,
@@ -185,5 +197,6 @@ export const useRobotStore = defineStore('robot', () => {
         cancelDestinationMode,
         confirmDestination,
         setDestination,
+        clearPaths,
     }
 })

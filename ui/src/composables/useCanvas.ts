@@ -158,6 +158,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         renderDestinationMarker()
         renderFootprints()
         renderDestinationCursor()
+        renderPaths()
         renderDrawingBox()
         renderTracks()
         renderCalibrationTag()
@@ -165,6 +166,37 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     }
 
     // renderObstacles removed - obstacles are now drawn by the backend
+
+    function renderPaths(): void {
+        const pathMessages = robotStore.paths
+        if (!ctx.value || !Array.isArray(pathMessages) || pathMessages.length === 0) return
+
+        for (const path of pathMessages) {
+            if (!path.points || path.points.length < 2) continue
+
+            ctx.value.beginPath()
+            ctx.value.strokeStyle = path.color || '#FFFF00'
+            ctx.value.lineWidth = 2
+
+            const first = path.points[0]
+            ctx.value.moveTo(first[0], first[1])
+
+            for (let i = 1; i < path.points.length; i++) {
+                const p = path.points[i]
+                ctx.value.lineTo(p[0], p[1])
+            }
+            ctx.value.stroke()
+
+            // Draw waypoint dots
+            ctx.value.fillStyle = path.color || '#FFFF00'
+            for (let i = 0; i < path.points.length; i++) {
+                const p = path.points[i]
+                ctx.value.beginPath()
+                ctx.value.arc(p[0], p[1], 4, 0, Math.PI * 2)
+                ctx.value.fill()
+            }
+        }
+    }
 
     function renderFootprints(): void {
         const tracks = robotStore.confirmedTracks

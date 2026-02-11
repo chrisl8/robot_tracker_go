@@ -320,8 +320,8 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 			fmt.Printf("Demo YOLO: %d YOLO detections, %d dynamic obstacles",
 				len(fakeYOLO), len(rs.DynamicObstacles))
 			for _, obs := range demoObstacles {
-				if obs.moving {
-					fmt.Printf(" | %s at (%d, %d)", obs.className, obs.x, obs.y)
+				if obs.Moving {
+					fmt.Printf(" | %s at (%d, %d)", obs.ClassName, obs.X, obs.Y)
 				}
 			}
 			fmt.Println()

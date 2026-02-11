@@ -320,10 +320,15 @@ func (rs *RobotSystem) Initialize() error {
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
+	rs.webServer.OnPathsChanged = func() map[int][][2]float64 {
+		return rs.planner.GetPaths()
+	}
+
 	if rs.cam != nil {
 		rs.webServer.SetCameraName(rs.cam.GetName())
 	}
 	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
+		rs.webServer.SetPositionEstimator(rs.positionEst)
 		rs.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
 		utils.Logf("Calibration loaded from %s", calibrationPath)
 	}
@@ -633,6 +638,10 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		})
 	}
 	rs.webServer.UpdateDetectedTags(detectedTags)
+
+	if rs.frameNum%10 == 0 && rs.webServer != nil {
+		rs.webServer.BroadcastPaths()
+	}
 }
 
 func decodeToImage(data []byte, width, height int) image.Image {
