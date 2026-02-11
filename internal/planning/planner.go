@@ -89,6 +89,17 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 		Diameter: diameter,
 	}
 	p.coordinator.AddRobot(id, robot)
+
+	// Only plan if the robot has a goal but no existing path
+	if _, hasPath := p.paths[id]; !hasPath {
+		if goal, hasGoal := p.coordinator.GetGoal(id); hasGoal {
+			path, success := p.PlanPath(id, position, goal)
+			if success {
+				p.paths[id] = path
+				p.currentWaypoint[id] = 0
+			}
+		}
+	}
 }
 
 func (p *Planner) SetGoal(robotID int, goal [2]float64) {
@@ -225,7 +236,16 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 			}
 		}
 	}
-	return p.paths
+
+	// Return only remaining waypoints (from current waypoint onward)
+	remaining := make(map[int][][2]float64)
+	for robotID, path := range p.paths {
+		wpIdx := p.currentWaypoint[robotID]
+		if wpIdx < len(path) {
+			remaining[robotID] = path[wpIdx:]
+		}
+	}
+	return remaining
 }
 
 func (p *Planner) LocalPlanner() *LocalPlanner {

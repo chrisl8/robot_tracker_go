@@ -178,21 +178,21 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             ctx.value.strokeStyle = path.color || '#FFFF00'
             ctx.value.lineWidth = 2
 
-            const first = path.points[0]
-            ctx.value.moveTo(first[0], first[1])
+            const first = naturalToCanvas(path.points[0][0], path.points[0][1])
+            ctx.value.moveTo(first.x, first.y)
 
             for (let i = 1; i < path.points.length; i++) {
-                const p = path.points[i]
-                ctx.value.lineTo(p[0], p[1])
+                const p = naturalToCanvas(path.points[i][0], path.points[i][1])
+                ctx.value.lineTo(p.x, p.y)
             }
             ctx.value.stroke()
 
             // Draw waypoint dots
             ctx.value.fillStyle = path.color || '#FFFF00'
             for (let i = 0; i < path.points.length; i++) {
-                const p = path.points[i]
+                const p = naturalToCanvas(path.points[i][0], path.points[i][1])
                 ctx.value.beginPath()
-                ctx.value.arc(p[0], p[1], 4, 0, Math.PI * 2)
+                ctx.value.arc(p.x, p.y, 4, 0, Math.PI * 2)
                 ctx.value.fill()
             }
         }

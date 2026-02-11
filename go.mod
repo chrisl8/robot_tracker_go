@@ -1,6 +1,6 @@
 module robot_tracker_go
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/gin-gonic/gin v1.11.0
@@ -8,6 +8,7 @@ require (
 	github.com/hybridgroup/mjpeg v0.0.0-20250330094202-16d243df0e35
 	go.bug.st/serial v1.6.0
 	gocv.io/x/gocv v0.43.0
+	gonum.org/v1/gonum v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

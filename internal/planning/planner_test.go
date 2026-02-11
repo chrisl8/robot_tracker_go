@@ -178,3 +178,21 @@ func TestPlanner_MultipleRobots(t *testing.T) {
 		t.Error("Both robots should have paths")
 	}
 }
+
+func TestPlanner_AddRobot_WithExistingGoal(t *testing.T) {
+	planner := NewPlanner(nil)
+
+	planner.SetGoal(1, [2]float64{5, 5})
+
+	_, hasPathBefore := planner.GetNextWaypoint(1)
+	if hasPathBefore {
+		t.Error("Should not have path before robot is added")
+	}
+
+	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
+
+	_, hasPathAfter := planner.GetNextWaypoint(1)
+	if !hasPathAfter {
+		t.Error("Should have path after robot is added with existing goal")
+	}
+}

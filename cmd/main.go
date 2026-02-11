@@ -322,9 +322,20 @@ func (rs *RobotSystem) Initialize() error {
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
+	rs.webServer.OnCalibrationComplete = func(calibFile string) {
+		utils.Logf("Calibration complete, reloading from %s", calibFile)
+		if rs.positionEst != nil {
+			if err := rs.positionEst.LoadCalibration(calibFile); err != nil {
+				utils.Logf("Failed to reload calibration: %v", err)
+				return
+			}
+			rs.webServer.SetPositionEstimator(rs.positionEst)
+			utils.Logf("Calibration reloaded: IsCalibrated=%v", rs.positionEst.IsCalibrated())
+		}
+	}
+
 	rs.webServer.OnPathsChanged = func() map[int][][2]float64 {
 		paths := rs.planner.GetPathsWithGoals()
-		utils.Logf("PATHS: OnPathsChanged called, returned %d paths", len(paths))
 		for rid, path := range paths {
 			utils.Logf("  Robot %d: %d waypoints", rid, len(path))
 			if len(path) > 0 {
@@ -570,14 +581,14 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 			rs.CurrentRobotID = *track.TagID
 			if rs.positionEst != nil {
-				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 				worldPos := rs.positionEst.PixelToWorld(px, py)
 				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 				track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
 				if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
 					track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
 				}
-				rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
+				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
 			}
 		}
 	}
@@ -597,7 +608,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				continue
 			}
 
-			px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+			px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 			worldPos := rs.positionEst.PixelToWorld(px, py)
 
 			robotDiameter := 0.18
@@ -949,7 +960,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 				rs.CurrentRobotID = *track.TagID
 				if rs.positionEst != nil {
-					px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+					px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 					worldPos := rs.positionEst.PixelToWorld(px, py)
 					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 					track.WorldPos = [2]float64{worldPos.X, worldPos.Y}

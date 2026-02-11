@@ -58,8 +58,9 @@ type WebServer struct {
 	destinationMutex sync.RWMutex
 	destination      DestinationMessage
 
-	OnObstaclesChanged func([]planning.Obstacle)
-	OnDestinationSet   func(int, [2]float64)
+	OnObstaclesChanged     func([]planning.Obstacle)
+	OnDestinationSet       func(int, [2]float64)
+	OnCalibrationComplete  func(string)
 
 	OnPathsChanged    func() map[int][][2]float64
 	positionEstimator *position.PositionEstimator
@@ -454,11 +455,9 @@ func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
 
 func (s *WebServer) BroadcastPaths() {
 	if s.OnPathsChanged == nil {
-		utils.Logf("PATH VIS: BroadcastPaths skipped - OnPathsChanged is nil")
 		return
 	}
 	if s.positionEstimator == nil {
-		utils.Logf("PATH VIS: BroadcastPaths skipped - positionEstimator is nil")
 		return
 	}
 
@@ -466,8 +465,6 @@ func (s *WebServer) BroadcastPaths() {
 	if len(paths) == 0 {
 		return
 	}
-
-	utils.Logf("PATH VIS: Broadcasting %d paths to frontend", len(paths))
 
 	pathMessages := make([]PathMessage, 0, len(paths))
 	for robotID, path := range paths {
@@ -479,10 +476,6 @@ func (s *WebServer) BroadcastPaths() {
 		for i, wp := range path {
 			px, py := s.positionEstimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
 			pixels[i] = [2]int{px, py}
-			if i == 0 || i == len(path)-1 {
-				utils.Logf("PATH VIS: Robot %d waypoint %d: world(%.2f,%.2f) -> pixel(%d,%d)",
-					robotID, i, wp[0], wp[1], px, py)
-			}
 		}
 
 		color := fmt.Sprintf("#%06x", (robotID*12345)%0xFFFFFF)
@@ -568,9 +561,9 @@ func (s *WebServer) handleCalibrationDetectedTags(c *gin.Context) {
 }
 
 type CalibrationComputeRequest struct {
-	TagID   int           `json:"tagId"`
-	TagSize float64       `json:"tagSize"`
-	Corners [4][2]float64 `json:"corners"`
+	TagID   int         `json:"tagId"`
+	TagSize float64     `json:"tagSize"`
+	Corners [][]float64 `json:"corners"`
 }
 
 type CalibrationComputeResponse struct {
@@ -592,9 +585,16 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 		return
 	}
 
+	utils.Logf("Calibration compute: tagId=%d, tagSize=%.3f, corners=%v", req.TagID, req.TagSize, req.Corners)
+
 	tagSize := req.TagSize
 	if tagSize <= 0 {
 		tagSize = 0.15
+	}
+
+	if len(req.Corners) < 4 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "need at least 4 corner points"})
+		return
 	}
 
 	halfSize := tagSize / 2.0
@@ -616,9 +616,12 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 	h := position.NewHomography()
 	err := h.ComputeFromPoints(srcPoints, dstPoints)
 	if err != nil {
+		utils.Logf("Homography compute failed: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to compute homography: %v", err)})
 		return
 	}
+
+	utils.Logf("Homography computed: valid=%v, H=%v", h.IsValid(), h.H)
 
 	computedWidth := tagSize
 	computedHeight := tagSize
@@ -684,6 +687,10 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 
 	if err := saveToFile(cameraFile); err != nil {
 		utils.Logf("Warning: failed to save calibration: %v", err)
+	}
+
+	if s.OnCalibrationComplete != nil {
+		s.OnCalibrationComplete(cameraFile)
 	}
 
 	s.SetCalibrationState("complete",

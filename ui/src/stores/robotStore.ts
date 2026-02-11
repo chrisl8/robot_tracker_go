@@ -83,8 +83,8 @@ export const useRobotStore = defineStore('robot', () => {
                 }
                 break
             case 'paths':
-                if (data.paths && Array.isArray(data.paths)) {
-                    paths.value = data.paths
+                if (data.paths && Array.isArray(data.paths.paths)) {
+                    paths.value = data.paths.paths
                 }
                 break
         }

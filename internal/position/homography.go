@@ -3,6 +3,8 @@ package position
 import (
 	"fmt"
 	"os"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 type Homography struct {
@@ -40,7 +42,7 @@ func (h *Homography) ComputeFromPoints(srcPixels, dstPixels []Point2D) error {
 		A[idx+5] = 0
 		A[idx+6] = -sp.X * dp.X
 		A[idx+7] = -sp.Y * dp.X
-		A[idx+8] = dp.X
+		A[idx+8] = -dp.X
 
 		idx += 9
 		A[idx+0] = 0
@@ -51,10 +53,29 @@ func (h *Homography) ComputeFromPoints(srcPixels, dstPixels []Point2D) error {
 		A[idx+5] = 1
 		A[idx+6] = -sp.X * dp.Y
 		A[idx+7] = -sp.Y * dp.Y
-		A[idx+8] = dp.Y
+		A[idx+8] = -dp.Y
 	}
 
-	h.EstimateScale()
+	h.H = solveDLT(A)
+	h.ComputeInverse()
+
+	// Estimate scale from pixel/world diagonal ratio
+	pixDiag1 := sqrt((srcPixels[0].X-srcPixels[2].X)*(srcPixels[0].X-srcPixels[2].X) +
+		(srcPixels[0].Y-srcPixels[2].Y)*(srcPixels[0].Y-srcPixels[2].Y))
+	pixDiag2 := sqrt((srcPixels[1].X-srcPixels[3].X)*(srcPixels[1].X-srcPixels[3].X) +
+		(srcPixels[1].Y-srcPixels[3].Y)*(srcPixels[1].Y-srcPixels[3].Y))
+	worldDiag1 := sqrt((dstPixels[0].X-dstPixels[2].X)*(dstPixels[0].X-dstPixels[2].X) +
+		(dstPixels[0].Y-dstPixels[2].Y)*(dstPixels[0].Y-dstPixels[2].Y))
+	worldDiag2 := sqrt((dstPixels[1].X-dstPixels[3].X)*(dstPixels[1].X-dstPixels[3].X) +
+		(dstPixels[1].Y-dstPixels[3].Y)*(dstPixels[1].Y-dstPixels[3].Y))
+	avgPixDiag := (pixDiag1 + pixDiag2) / 2.0
+	avgWorldDiag := (worldDiag1 + worldDiag2) / 2.0
+	if avgWorldDiag > 0 && avgPixDiag > 0 {
+		h.PixelsPerMeter = avgPixDiag / avgWorldDiag
+	} else {
+		h.PixelsPerMeter = 100.0
+	}
+
 	h.Valid = true
 	return nil
 }
@@ -290,16 +311,41 @@ func (h *Homography) ComputeFromAprilTag(imgCorners [][2]float64, worldCorners [
 func solveDLT(a []float64) [3][3]float64 {
 	var H [3][3]float64
 
-	_, V := eigenDecomposition(a)
-
-	// #nosec G602
-	for j := 0; j < 9; j++ {
-		H[j/3][j%3] = V[8][j]
+	A := mat.NewDense(8, 9, a)
+	var SVD mat.SVD
+	ok := SVD.Factorize(A, mat.SVDFull)
+	if !ok {
+		return H
 	}
 
-	// #nosec G602
+	var V mat.Dense
+	SVD.VTo(&V)
+
+	// For an 8×9 DLT matrix, V is 9×9 with SVDFull.
+	// Singular values are in descending order, so the last column (index 8)
+	// of V is the right singular vector for the smallest singular value —
+	// this is the null-space vector (the homography solution).
+	v := make([]float64, 9)
+	for j := 0; j < 9; j++ {
+		v[j] = V.At(j, 8)
+	}
+
+	norm := 0.0
+	for i := 0; i < 9; i++ {
+		norm += v[i] * v[i]
+	}
+	if norm > 0 {
+		for i := 0; i < 9; i++ {
+			v[i] /= sqrt(norm)
+		}
+	}
+
+	for j := 0; j < 9; j++ {
+		H[j/3][j%3] = v[j]
+	}
+
 	scale := H[2][2]
-	if scale != 0 {
+	if abs(scale) > 1e-10 {
 		for i := 0; i < 3; i++ {
 			for j := 0; j < 3; j++ {
 				H[i][j] /= scale
@@ -308,24 +354,6 @@ func solveDLT(a []float64) [3][3]float64 {
 	}
 
 	return H
-}
-
-func eigenDecomposition(a []float64) ([]float64, [][]float64) {
-	n := 8
-	eigenvalues := make([]float64, n)
-	eigenvectors := make([][]float64, n)
-	for i := 0; i < n; i++ {
-		eigenvectors[i] = make([]float64, n)
-	}
-
-	for i := 0; i < n; i++ {
-		eigenvalues[i] = 1.0
-		for j := 0; j < n; j++ {
-			eigenvectors[i][j] = a[i*9+j%9]
-		}
-	}
-
-	return eigenvalues, eigenvectors
 }
 
 func dist3D(p1, p2 [3]float64) float64 {

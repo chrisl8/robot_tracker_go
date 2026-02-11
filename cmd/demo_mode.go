@@ -264,7 +264,7 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 				rs.CurrentRobotID = *track.TagID
 				if rs.positionEst != nil {
-					px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+					px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 					worldPos := rs.positionEst.PixelToWorld(px, py)
 					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 					rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
@@ -284,7 +284,7 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 					continue
 				}
 
-				px, py := track.Bbox[0]+track.Bbox[2]/2, track.Bbox[1]+track.Bbox[3]/2
+				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 				worldPos := rs.positionEst.PixelToWorld(px, py)
 
 				robotState := planning.RobotState{

@@ -2,12 +2,13 @@
 import { ref, computed, watch } from 'vue'
 import { useDraggable } from '@vueuse/core'
 import { useUIStore } from '@/stores/uiStore'
+import type { DetectedTagInfo } from '@/types/api'
 import tagDiagramUrl from '@/assets/april-tag-how-to-measure-for-website.png?url'
 
 const uiStore = useUIStore()
 
 const isOpen = computed(() => uiStore.panels.calibrationOpen)
-const detectedTags = computed(() => uiStore.detectedTags)
+const detectedTags = ref<DetectedTagInfo[]>([])
 const selectedTagId = computed({
     get: () => uiStore.selectedCalibrationTagId,
     set: value => uiStore.setSelectedCalibrationTag(value),
@@ -60,11 +61,16 @@ function isTagSelected(tagId: number): boolean {
     return uiStore.selectedCalibrationTagId === tagId
 }
 
+function getSelectedTagCorners(): [number, number][] | null {
+    const selected = detectedTags.value.find(tag => tag.id === uiStore.selectedCalibrationTagId)
+    return selected?.corners || null
+}
+
 async function fetchDetectedTags(): Promise<void> {
     try {
         const response = await fetch('/api/calibration/detected-tags')
         const data = await response.json()
-        uiStore.setDetectedTags(data.tags || [])
+        detectedTags.value = data.tags || []
     } catch (e) {
         console.error('Failed to fetch detected tags:', e)
     }
@@ -76,13 +82,20 @@ async function computeCalibration(): Promise<void> {
         return
     }
 
+    const corners = getSelectedTagCorners()
+    if (!corners) {
+        uiStore.showToast('Tag corners not available', 'error')
+        return
+    }
+
     try {
         const response = await fetch('/api/calibration/compute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                tag_id: uiStore.selectedCalibrationTagId,
-                tag_size: tagSize.value,
+                tagId: uiStore.selectedCalibrationTagId,
+                tagSize: tagSize.value,
+                corners: corners,
             }),
         })
 

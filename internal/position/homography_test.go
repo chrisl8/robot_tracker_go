@@ -19,38 +19,77 @@ func TestNewHomography(t *testing.T) {
 }
 
 func TestHomography_ComputeFromPoints(t *testing.T) {
-	tests := []struct {
-		name        string
-		srcPixels   []Point2D
-		dstPixels   []Point2D
-		expectError bool
-	}{
-		{
-			name:        "too few points",
-			srcPixels:   []Point2D{{0, 0}, {1, 0}, {1, 1}},
-			dstPixels:   []Point2D{{0, 0}, {100, 0}, {100, 100}},
-			expectError: true,
-		},
-		{
-			name:        "exactly 4 points",
-			srcPixels:   []Point2D{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
-			dstPixels:   []Point2D{{0, 0}, {100, 0}, {100, 100}, {0, 100}},
-			expectError: false,
-		},
-	}
+	t.Run("too few points", func(t *testing.T) {
+		h := NewHomography()
+		err := h.ComputeFromPoints(
+			[]Point2D{{0, 0}, {1, 0}, {1, 1}},
+			[]Point2D{{0, 0}, {100, 0}, {100, 100}},
+		)
+		if err == nil {
+			t.Error("Expected error for fewer than 4 points, got nil")
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			h := NewHomography()
-			err := h.ComputeFromPoints(tt.srcPixels, tt.dstPixels)
-			if tt.expectError && err == nil {
-				t.Errorf("Expected error, got nil")
+	t.Run("computes non-zero H matrix", func(t *testing.T) {
+		h := NewHomography()
+		err := h.ComputeFromPoints(
+			[]Point2D{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
+			[]Point2D{{0, 0}, {100, 0}, {100, 100}, {0, 100}},
+		)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if !h.Valid {
+			t.Fatal("Expected homography to be valid")
+		}
+		hasNonZero := false
+		for i := 0; i < 3; i++ {
+			for j := 0; j < 3; j++ {
+				if math.Abs(h.H[i][j]) > 1e-10 {
+					hasNonZero = true
+				}
 			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got %v", err)
+		}
+		if !hasNonZero {
+			t.Errorf("H matrix is all zeros: %v", h.H)
+		}
+	})
+
+	t.Run("round-trip pixel-to-world transform", func(t *testing.T) {
+		// src pixel corners map to dst world corners (e.g., 100x100 pixel tag → 1x1 world unit)
+		src := []Point2D{{0, 0}, {100, 0}, {100, 100}, {0, 100}}
+		dst := []Point2D{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+		h := NewHomography()
+		if err := h.ComputeFromPoints(src, dst); err != nil {
+			t.Fatalf("ComputeFromPoints failed: %v", err)
+		}
+		for i, sp := range src {
+			world := h.PixelToWorld(sp)
+			if math.Abs(world.X-dst[i].X) > 1e-3 || math.Abs(world.Y-dst[i].Y) > 1e-3 {
+				t.Errorf("PixelToWorld(%v) = (%.4f, %.4f), want (%.4f, %.4f)",
+					sp, world.X, world.Y, dst[i].X, dst[i].Y)
 			}
-		})
-	}
+		}
+	})
+
+	t.Run("pixels-per-meter estimated from corners", func(t *testing.T) {
+		// 100-pixel tag maps to 0.15m tag: diagonal = 141.4px / 0.2121m ≈ 667 px/m
+		halfSize := 0.075
+		src := []Point2D{{0, 0}, {100, 0}, {100, 100}, {0, 100}}
+		dst := []Point2D{
+			{-halfSize, -halfSize},
+			{halfSize, -halfSize},
+			{halfSize, halfSize},
+			{-halfSize, halfSize},
+		}
+		h := NewHomography()
+		if err := h.ComputeFromPoints(src, dst); err != nil {
+			t.Fatalf("ComputeFromPoints failed: %v", err)
+		}
+		if h.PixelsPerMeter <= 0 {
+			t.Errorf("PixelsPerMeter = %f, want > 0", h.PixelsPerMeter)
+		}
+	})
 }
 
 func TestHomography_ComputeInverse(t *testing.T) {

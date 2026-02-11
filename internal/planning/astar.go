@@ -66,11 +66,15 @@ func NewAStar(config *AStarConfig) *AStar {
 }
 
 func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64, bool) {
-	startNode := &Node{Pos: [2]int{int(start[0] / a.config.Resolution), int(start[1] / a.config.Resolution)}}
-	goalNode := &Node{Pos: [2]int{int(goal[0] / a.config.Resolution), int(goal[1] / a.config.Resolution)}}
-
 	gridWidth := int(float64(a.config.GridWidth) / a.config.Resolution)
 	gridHeight := int(float64(a.config.GridHeight) / a.config.Resolution)
+
+	// Offset so world (0,0) maps to grid center, allowing negative world coordinates
+	offsetX := gridWidth / 2
+	offsetY := gridHeight / 2
+
+	startNode := &Node{Pos: [2]int{int(start[0]/a.config.Resolution) + offsetX, int(start[1]/a.config.Resolution) + offsetY}}
+	goalNode := &Node{Pos: [2]int{int(goal[0]/a.config.Resolution) + offsetX, int(goal[1]/a.config.Resolution) + offsetY}}
 
 	if startNode.Pos[0] < 0 || startNode.Pos[0] >= gridWidth ||
 		startNode.Pos[1] < 0 || startNode.Pos[1] >= gridHeight {
@@ -116,7 +120,7 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 		current := heap.Pop(openSet).(*Node)
 
 		if current.Pos == goalNode.Pos {
-			return a.reconstructPath(cameFrom, current, start, goal), true
+			return a.reconstructPath(cameFrom, current, offsetX, offsetY), true
 		}
 
 		neighbors := a.getNeighbors(current, gridWidth, gridHeight, obstacleMap)
@@ -182,10 +186,10 @@ func (a *AStar) dist(aPos, bPos [2]int) float64 {
 	return math.Sqrt(dx*dx + dy*dy)
 }
 
-func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, start, goal [2]float64) [][2]float64 {
+func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, offsetX, offsetY int) [][2]float64 {
 	path := make([][2]float64, 0)
 
-	currentPos := [2]float64{float64(current.Pos[0]) * a.config.Resolution, float64(current.Pos[1]) * a.config.Resolution}
+	currentPos := [2]float64{float64(current.Pos[0]-offsetX) * a.config.Resolution, float64(current.Pos[1]-offsetY) * a.config.Resolution}
 	path = append(path, currentPos)
 
 	for {
@@ -193,7 +197,7 @@ func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, start,
 			break
 		}
 		current = cameFrom[current.Pos]
-		pos := [2]float64{float64(current.Pos[0]) * a.config.Resolution, float64(current.Pos[1]) * a.config.Resolution}
+		pos := [2]float64{float64(current.Pos[0]-offsetX) * a.config.Resolution, float64(current.Pos[1]-offsetY) * a.config.Resolution}
 		path = append(path, pos)
 	}
 
@@ -207,10 +211,13 @@ func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, start,
 func worldToGrid(obs Obstacle, resolution float64, width, height int) [][2]int {
 	cells := make([][2]int, 0)
 
-	x1 := int(obs.WorldTopLeft[0] / resolution)
-	y1 := int(obs.WorldTopLeft[1] / resolution)
-	x2 := int(obs.WorldBottomRight[0] / resolution)
-	y2 := int(obs.WorldBottomRight[1] / resolution)
+	offsetX := width / 2
+	offsetY := height / 2
+
+	x1 := int(obs.WorldTopLeft[0]/resolution) + offsetX
+	y1 := int(obs.WorldTopLeft[1]/resolution) + offsetY
+	x2 := int(obs.WorldBottomRight[0]/resolution) + offsetX
+	y2 := int(obs.WorldBottomRight[1]/resolution) + offsetY
 
 	for x := x1; x <= x2; x++ {
 		for y := y1; y <= y2; y++ {
