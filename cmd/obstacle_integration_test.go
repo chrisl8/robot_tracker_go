@@ -129,8 +129,8 @@ func TestEmptyObstacles(t *testing.T) {
 
 func TestDemoToDetection(t *testing.T) {
 	demo := []DemoObstacle{
-		{name: "Person", x: 320, y: 240, width: 80, height: 120},
-		{name: "Cup", x: 500, y: 400, width: 30, height: 30},
+		{Name: "Person", X: 320, Y: 240, Width: 80, Height: 120},
+		{Name: "Cup", X: 500, Y: 400, Width: 30, Height: 30},
 	}
 
 	conv := convertDemoObstaclesToDetection(demo)

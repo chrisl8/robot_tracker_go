@@ -9,9 +9,9 @@ func convertDemoObstaclesToDetection(demoObstacles []DemoObstacle) []detection.O
 	result := make([]detection.Obstacle, len(demoObstacles))
 	for i, obs := range demoObstacles {
 		result[i] = detection.Obstacle{
-			ID:               obs.name,
-			PixelTopLeft:     [2]int{obs.x - obs.width/2, obs.y - obs.height/2},
-			PixelBottomRight: [2]int{obs.x + obs.width/2, obs.y + obs.height/2},
+			ID:               obs.Name,
+			PixelTopLeft:     [2]int{obs.X - obs.Width/2, obs.Y - obs.Height/2},
+			PixelBottomRight: [2]int{obs.X + obs.Width/2, obs.Y + obs.Height/2},
 			Clearance:        0.05,
 		}
 	}

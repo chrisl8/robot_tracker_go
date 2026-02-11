@@ -18,22 +18,22 @@ import (
 )
 
 var demoObstacles = []DemoObstacle{
-	{"Person 1", "person", 400, 300, 80, 120, 0.92, true, 2, 1},
-	{"Cup", "cup", 800, 200, 40, 40, 0.88, false, 0, 0},
-	{"Chair", "chair", 200, 500, 100, 100, 0.95, false, 0, 0},
-	{"Laptop", "laptop", 600, 400, 70, 50, 0.78, true, -1, 0},
+	{Name: "Person 1", ClassName: "person", X: 400, Y: 300, Width: 80, Height: 120, Confidence: 0.92, Moving: true, VX: 2, VY: 1},
+	{Name: "Cup", ClassName: "cup", X: 800, Y: 200, Width: 40, Height: 40, Confidence: 0.88, Moving: false, VX: 0, VY: 0},
+	{Name: "Chair", ClassName: "chair", X: 200, Y: 500, Width: 100, Height: 100, Confidence: 0.95, Moving: false, VX: 0, VY: 0},
+	{Name: "Laptop", ClassName: "laptop", X: 600, Y: 400, Width: 70, Height: 50, Confidence: 0.78, Moving: true, VX: -1, VY: 0},
 }
 
 func updateDemoObstacles() {
 	for i := range demoObstacles {
-		if demoObstacles[i].moving {
-			demoObstacles[i].x += demoObstacles[i].vx
-			demoObstacles[i].y += demoObstacles[i].vy
-			if demoObstacles[i].x < 50 || demoObstacles[i].x > 1190 {
-				demoObstacles[i].vx *= -1
+		if demoObstacles[i].Moving {
+			demoObstacles[i].X += demoObstacles[i].VX
+			demoObstacles[i].Y += demoObstacles[i].VY
+			if demoObstacles[i].X < 50 || demoObstacles[i].X > 1190 {
+				demoObstacles[i].VX *= -1
 			}
-			if demoObstacles[i].y < 50 || demoObstacles[i].y > 670 {
-				demoObstacles[i].vy *= -1
+			if demoObstacles[i].Y < 50 || demoObstacles[i].Y > 670 {
+				demoObstacles[i].VY *= -1
 			}
 		}
 	}
@@ -44,13 +44,13 @@ func demoObstaclesToYOLO() []detection.YOLODetection {
 	for _, obs := range demoObstacles {
 		detections = append(detections, detection.YOLODetection{
 			Bbox: &detection.BoundingBox{
-				X1: obs.x - obs.width/2,
-				Y1: obs.y - obs.height/2,
-				X2: obs.x + obs.width/2,
-				Y2: obs.y + obs.height/2,
+				X1: obs.X - obs.Width/2,
+				Y1: obs.Y - obs.Height/2,
+				X2: obs.X + obs.Width/2,
+				Y2: obs.Y + obs.Height/2,
 			},
-			ClassName:  obs.className,
-			Confidence: obs.confidence,
+			ClassName:  obs.ClassName,
+			Confidence: obs.Confidence,
 		})
 	}
 	return detections
@@ -65,13 +65,13 @@ func drawDemoObstaclesOnImage(img *image.RGBA, obstacles []DemoObstacle) {
 	}
 
 	for _, obs := range obstacles {
-		x1 := obs.x - obs.width/2
-		y1 := obs.y - obs.height/2
-		x2 := obs.x + obs.width/2
-		y2 := obs.y + obs.height/2
+		x1 := obs.X - obs.Width/2
+		y1 := obs.Y - obs.Height/2
+		x2 := obs.X + obs.Width/2
+		y2 := obs.Y + obs.Height/2
 
 		rect := image.Rect(x1, y1, x2, y2)
-		c := colors[obs.className]
+		c := colors[obs.ClassName]
 		draw.Draw(img, rect, &image.Uniform{C: c}, image.Point{}, draw.Src)
 
 		for x := x1; x <= x2; x++ {
@@ -156,7 +156,7 @@ func RunSelfTest(rs *RobotSystem) {
 	fmt.Println("  Demo obstacles available:")
 	for _, obs := range demoObstacles {
 		fmt.Printf("    - %s (%s) at (%d, %d) moving=%v\n",
-			obs.name, obs.className, obs.x, obs.y, obs.moving)
+			obs.Name, obs.ClassName, obs.X, obs.Y, obs.Moving)
 	}
 
 	fmt.Println()

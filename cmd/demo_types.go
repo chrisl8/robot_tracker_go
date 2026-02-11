@@ -1,12 +1,12 @@
 package main
 
 type DemoObstacle struct {
-	name       string
-	className  string
-	x, y       int
-	width      int
-	height     int
-	confidence float64
-	moving     bool
-	vx, vy     int
+	Name       string
+	ClassName  string
+	X, Y       int
+	Width      int
+	Height     int
+	Confidence float64
+	Moving     bool
+	VX, VY     int
 }

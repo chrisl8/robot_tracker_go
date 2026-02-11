@@ -12,24 +12,24 @@ import (
 func TestConvertDemoObstacles_ToDetection(t *testing.T) {
 	demoObs := []DemoObstacle{
 		{
-			name:       "Person 1",
-			x:          400,
-			y:          300,
-			width:      80,
-			height:     120,
-			confidence: 0.92,
-			moving:     true,
-			vx:         2,
-			vy:         1,
+			Name:       "Person 1",
+			X:          400,
+			Y:          300,
+			Width:      80,
+			Height:     120,
+			Confidence: 0.92,
+			Moving:     true,
+			VX:         2,
+			VY:         1,
 		},
 		{
-			name:       "Cup",
-			x:          800,
-			y:          200,
-			width:      40,
-			height:     40,
-			confidence: 0.88,
-			moving:     false,
+			Name:       "Cup",
+			X:          800,
+			Y:          200,
+			Width:      40,
+			Height:     40,
+			Confidence: 0.88,
+			Moving:     false,
 		},
 	}
 
@@ -71,11 +71,11 @@ func TestConvertDemoObstacles_Empty(t *testing.T) {
 func TestConvertDemoObstacles_SingleMoving(t *testing.T) {
 	demoObs := []DemoObstacle{
 		{
-			name:   "Laptop",
-			x:      600,
-			y:      400,
-			width:  70,
-			height: 50,
+			Name:   "Laptop",
+			X:      600,
+			Y:      400,
+			Width:  70,
+			Height: 50,
 		},
 	}
 
@@ -121,11 +121,11 @@ func TestDetectionPipeline_SetObstacles_FromDemo(t *testing.T) {
 
 	demoObs := []DemoObstacle{
 		{
-			name:   "Chair",
-			x:      200,
-			y:      500,
-			width:  100,
-			height: 100,
+			Name:   "Chair",
+			X:      200,
+			Y:      500,
+			Width:  100,
+			Height: 100,
 		},
 	}
 
