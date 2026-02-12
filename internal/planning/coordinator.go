@@ -31,6 +31,10 @@ func (c *Coordinator) SetGoal(robotID int, goal [2]float64) {
 	c.goals[robotID] = goal
 }
 
+func (c *Coordinator) ClearGoal(robotID int) {
+	delete(c.goals, robotID)
+}
+
 func (c *Coordinator) SetObstacles(obstacles []Obstacle) {
 	c.obstacles = obstacles
 }

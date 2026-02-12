@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"math"
 	"testing"
 )
 
@@ -153,6 +154,48 @@ func TestPathExecutor_CommandToVelocity(t *testing.T) {
 			if got.VX != tt.want.VX || got.VY != tt.want.VY {
 				t.Errorf("CommandToVelocity(%c) = (%f, %f), want (%f, %f)",
 					tt.cmd, got.VX, got.VY, tt.want.VX, tt.want.VY)
+			}
+		})
+	}
+}
+
+func TestPathExecutor_BearingToCommand(t *testing.T) {
+	executor := NewPathExecutor(0.15, 1.0)
+	deg := math.Pi / 180
+
+	tests := []struct {
+		name         string
+		heading      float64
+		bearing      float64
+		headingDelta float64
+		want         Command
+	}{
+		// Rule 1: aligned and stable → Forward
+		{"Aligned stable", 0, 10 * deg, 0, CommandForward},
+		{"Aligned stable negative", 0, -15 * deg, 0, CommandForward},
+		// Rule 2: spinning toward target → Stop (brake)
+		{"Spinning toward close", 51 * deg, 52 * deg, -35 * deg, CommandStop},
+		{"Spinning toward within brake zone", 30 * deg, 51 * deg, 15 * deg, CommandStop},
+		// Rule 3: facing away → always Right
+		{"Rear facing positive", 0, 170 * deg, 0, CommandRight},
+		{"Rear facing negative", 0, -170 * deg, 0, CommandRight},
+		{"Rear facing spinning", 0, 175 * deg, 20 * deg, CommandRight},
+		// Rule 4: normal turn
+		{"Turn right", 0, 60 * deg, 0, CommandRight},
+		{"Turn left", 0, -60 * deg, 0, CommandLeft},
+		// Aligned but spinning → not Forward (either Stop or turn to oppose)
+		{"Aligned but spinning fast", 0, 5 * deg, 15 * deg, CommandStop},
+		// Zero delta backward compat: same as old behavior for small angles
+		{"Zero delta forward", 45 * deg, 50 * deg, 0, CommandForward},
+		{"Zero delta turn", 0, 90 * deg, 0, CommandRight},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := executor.BearingToCommand(tt.heading, tt.bearing, tt.headingDelta)
+			if got != tt.want {
+				t.Errorf("BearingToCommand(heading=%.1f°, bearing=%.1f°, delta=%.1f°) = %c, want %c",
+					tt.heading/deg, tt.bearing/deg, tt.headingDelta/deg, got, tt.want)
 			}
 		})
 	}

@@ -76,6 +76,50 @@ func (e *PathExecutor) VelocityToCommandWithHeading(worldVx, worldVy, heading fl
 	return cmd
 }
 
+func (e *PathExecutor) BearingToCommand(robotHeading, bearingToWaypoint, headingDelta float64) Command {
+	angleDiff := bearingToWaypoint - robotHeading
+	// Normalize to [-π, π]
+	for angleDiff > math.Pi {
+		angleDiff -= 2 * math.Pi
+	}
+	for angleDiff < -math.Pi {
+		angleDiff += 2 * math.Pi
+	}
+
+	forwardThreshold := math.Pi / 6       // 30°
+	rearThreshold := math.Pi * 8 / 9      // 160°
+	spinThreshold := 10 * math.Pi / 180   // 10°/frame
+
+	isSpinning := math.Abs(headingDelta) > spinThreshold
+	// Spinning toward target: delta and diff have same sign (closing the gap)
+	spinningToward := angleDiff*headingDelta > 0
+
+	var cmd Command
+	switch {
+	case math.Abs(angleDiff) > rearThreshold:
+		// Rule 3: facing away — always turn Right to break ±180° oscillation
+		cmd = CommandRight
+	case isSpinning && spinningToward && math.Abs(angleDiff) < forwardThreshold+math.Abs(headingDelta)*2:
+		// Rule 2: spinning toward target and close enough — brake before overshoot
+		cmd = CommandStop
+	case math.Abs(angleDiff) < forwardThreshold && !isSpinning:
+		// Rule 1: aligned and heading is stable — drive forward
+		cmd = CommandForward
+	default:
+		// Rule 4: turn toward target
+		if angleDiff > 0 {
+			cmd = CommandRight
+		} else {
+			cmd = CommandLeft
+		}
+	}
+
+	utils.Debugf("STEERING: heading=%.2f° bearing=%.2f° diff=%.2f° delta=%.2f° spinning=%v -> %c",
+		robotHeading*180/math.Pi, bearingToWaypoint*180/math.Pi,
+		angleDiff*180/math.Pi, headingDelta*180/math.Pi, isSpinning, byte(cmd))
+	return cmd
+}
+
 func (e *PathExecutor) CommandToVelocity(cmd Command) Velocity {
 	switch cmd {
 	case CommandForward:

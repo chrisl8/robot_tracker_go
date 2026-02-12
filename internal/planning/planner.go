@@ -248,9 +248,64 @@ func (p *Planner) AdvanceWaypoint(robotID int) bool {
 	if p.currentWaypoint[robotID] >= len(path) {
 		delete(p.paths, robotID)
 		delete(p.currentWaypoint, robotID)
-		p.coordinator.SetGoal(robotID, [2]float64{0, 0})
+		p.coordinator.ClearGoal(robotID)
 		return false
 	}
+	return true
+}
+
+// AdvancePastWaypoints skips past any waypoints the robot has reached or overshot.
+// It returns true if there are still waypoints remaining, false if the path is complete.
+func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold float64) bool {
+	path, hasPath := p.paths[robotID]
+	if !hasPath {
+		return false
+	}
+
+	wpIdx := p.currentWaypoint[robotID]
+	advanced := 0
+
+	for wpIdx < len(path) {
+		dx := path[wpIdx][0] - pos[0]
+		dy := path[wpIdx][1] - pos[1]
+		distToCurrent := math.Sqrt(dx*dx + dy*dy)
+
+		// Within threshold — advance past this waypoint
+		if distToCurrent < threshold {
+			wpIdx++
+			advanced++
+			continue
+		}
+
+		// Check if we overshot: closer to next waypoint than current one
+		if wpIdx+1 < len(path) {
+			nx := path[wpIdx+1][0] - pos[0]
+			ny := path[wpIdx+1][1] - pos[1]
+			distToNext := math.Sqrt(nx*nx + ny*ny)
+			if distToNext < distToCurrent {
+				wpIdx++
+				advanced++
+				continue
+			}
+		}
+
+		break
+	}
+
+	if advanced > 0 {
+		utils.Logf("Robot %d skipped %d waypoints", robotID, advanced)
+	}
+
+	p.currentWaypoint[robotID] = wpIdx
+
+	// All waypoints consumed — path complete
+	if wpIdx >= len(path) {
+		delete(p.paths, robotID)
+		delete(p.currentWaypoint, robotID)
+		p.coordinator.ClearGoal(robotID)
+		return false
+	}
+
 	return true
 }
 
@@ -286,6 +341,16 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 		}
 	}
 	return remaining
+}
+
+func (p *Planner) GetGoal(robotID int) ([2]float64, bool) {
+	return p.coordinator.GetGoal(robotID)
+}
+
+func (p *Planner) CompletePath(robotID int) {
+	delete(p.paths, robotID)
+	delete(p.currentWaypoint, robotID)
+	p.coordinator.ClearGoal(robotID)
 }
 
 func (p *Planner) LocalPlanner() *LocalPlanner {

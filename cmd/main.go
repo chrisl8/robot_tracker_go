@@ -81,6 +81,8 @@ type RobotSystem struct {
 	controlMode       ControlMode
 	emergencyStopped  bool
 	controlMu         sync.RWMutex
+	lastHeading       map[int]float64
+	headingDelta      map[int]float64
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -89,6 +91,8 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		cameraRunning: false,
 		frameNum:      0,
 		CurrentGoal:   [2]float64{0, 0},
+		lastHeading:   make(map[int]float64),
+		headingDelta:  make(map[int]float64),
 	}
 }
 
@@ -712,7 +716,8 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	}
 
 	rs.frameNum++
-	timestamp := float64(time.Now().UnixNano()) / 1e9
+	frameStart := time.Now()
+	timestamp := float64(frameStart.UnixNano()) / 1e9
 
 	bounds := img.Bounds()
 	width := bounds.Max.X - bounds.Min.X
@@ -726,6 +731,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	_ = ok
 
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
+	detectTime := time.Since(frameStart)
 
 	relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
 	minConfidence := rs.cfg.LocalPlanning.MinConfidence
@@ -775,6 +781,28 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 						break
 					}
 				}
+
+				// Track heading delta (angular velocity) and cache heading
+				if track.Heading == 0 {
+					if cached, ok := rs.lastHeading[*track.TagID]; ok {
+						track.Heading = cached
+					}
+					rs.headingDelta[*track.TagID] = 0
+				} else {
+					if prev, ok := rs.lastHeading[*track.TagID]; ok {
+						delta := track.Heading - prev
+						for delta > math.Pi {
+							delta -= 2 * math.Pi
+						}
+						for delta < -math.Pi {
+							delta += 2 * math.Pi
+						}
+						rs.headingDelta[*track.TagID] = delta
+					} else {
+						rs.headingDelta[*track.TagID] = 0
+					}
+					rs.lastHeading[*track.TagID] = track.Heading
+				}
 			}
 		}
 	}
@@ -783,6 +811,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	// Only execute autonomous path-following when in autonomous mode and not e-stopped
 	if rs.GetControlMode() == ControlModeAutonomous && !rs.IsEmergencyStopped() {
+		commandIssued := false
 		for i := range trackingResult.Tracks {
 			track := &trackingResult.Tracks[i]
 			if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
@@ -791,7 +820,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 			robotID := *track.TagID
 
-			if waypoint, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
+			if _, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
 				if rs.positionEst == nil {
 					continue
 				}
@@ -799,38 +828,61 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 				worldPos := rs.positionEst.PixelToWorld(px, py)
 
-				robotDiameter := 0.18
-				if robotConfig := rs.cfg.GetRobotByTagID(robotID); robotConfig != nil {
-					robotDiameter = robotConfig.Diameter
+				// Check if robot is close to final destination
+				if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
+					dx := worldPos.X - goal[0]
+					dy := worldPos.Y - goal[1]
+					distToGoal := math.Sqrt(dx*dx + dy*dy)
+					if distToGoal < rs.waypointThreshold {
+						rs.planner.CompletePath(robotID)
+						utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
+						if rs.commandQueue != nil {
+							rs.commandQueue.Enqueue(controller.CommandStop)
+							commandIssued = true
+						}
+						continue
+					}
 				}
 
-				robotState := planning.RobotState{
-					Position: [2]float64{worldPos.X, worldPos.Y},
-					Velocity: planning.Velocity{VX: 0, VY: 0},
-					RobotID:  robotID,
-					Diameter: robotDiameter,
-				}
-
-				velocity, _ := rs.planner.LocalPlanner().ComputeVelocityToWaypoint(
-					robotState, waypoint, rs.StaticObstacles, rs.DynamicObstacles, minConfidence)
-
-				dx := waypoint[0] - worldPos.X
-				dy := waypoint[1] - worldPos.Y
-				distToWaypoint := math.Sqrt(dx*dx + dy*dy)
-				if distToWaypoint < rs.waypointThreshold {
-					rs.planner.AdvanceWaypoint(robotID)
-					utils.Logf("Robot %d reached waypoint, advancing to next", robotID)
+				// Advance past any reached or overshot waypoints
+				if !rs.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.waypointThreshold) {
+					// Path complete — stop the robot
+					utils.Logf("Robot %d reached final waypoint, stopping", robotID)
+					if rs.commandQueue != nil {
+						rs.commandQueue.Enqueue(controller.CommandStop)
+						commandIssued = true
+					}
 					continue
 				}
 
+				// Get updated waypoint after advancing
+				waypoint, stillHasPath := rs.planner.GetNextWaypoint(robotID)
+				if !stillHasPath {
+					continue
+				}
+
+				// Heading-based steering: turn to face waypoint, then drive forward
+				dx := waypoint[0] - worldPos.X
+				dy := waypoint[1] - worldPos.Y
+				bearingToWaypoint := math.Atan2(dy, dx)
+
 				if rs.pathExecutor != nil && rs.commandQueue != nil {
-					cmd := rs.pathExecutor.VelocityToCommandWithHeading(velocity[0], velocity[1], track.Heading)
+					delta := rs.headingDelta[robotID]
+					cmd := rs.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
 					rs.commandQueue.Enqueue(cmd)
+					commandIssued = true
 				}
 
 				rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
-					[2]float64{velocity[0], velocity[1]})
+					[2]float64{0, 0})
+			} else if rs.commandQueue != nil && rs.commandQueue.IsRunning() {
+				// No path for this robot — ensure we're not still sending stale movement commands
+				rs.commandQueue.ClearActiveCommand()
 			}
+		}
+		// Safety: stop re-sending stale commands when no robot is tracked
+		if !commandIssued && rs.commandQueue != nil {
+			rs.commandQueue.ClearActiveCommand()
 		}
 	}
 
@@ -860,6 +912,13 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 			totalWaypoints += len(path)
 		}
 		rs.webServer.BroadcastPaths()
+	}
+
+	if rs.frameNum%30 == 0 {
+		totalTime := time.Since(frameStart)
+		trackPlanTime := totalTime - detectTime
+		utils.Logf("FRAME TIMING: detect=%dms track+plan=%dms total=%dms",
+			detectTime.Milliseconds(), trackPlanTime.Milliseconds(), totalTime.Milliseconds())
 	}
 }
 
