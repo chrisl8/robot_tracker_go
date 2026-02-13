@@ -84,6 +84,8 @@ if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     npm run test:run
 
     subsection_header "Playwright Integration Tests" "$YELLOW"
+    # Ensure Playwright browsers are installed (idempotent — skips if already present)
+    npx playwright install
     npm run test:integration
 
     cd "$SCRIPT_DIR/../.."
