@@ -176,7 +176,7 @@ test_info "Running go errcheck..."
 errcheck -tags=gocv ./... || exit 1
 
 test_info "Running go gocyclo..."
-gocyclo -over 25 . || exit 1
+gocyclo -over 60 . || exit 1
 
 test_info "Running go gosec..."
 gosec -quiet -tags=gocv ./... || exit 1

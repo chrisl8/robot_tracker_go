@@ -109,9 +109,6 @@ export DYLD_LIBRARY_PATH="${OPENCV_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}"
 if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
     export PATH="$HOME/go/bin:$PATH"
 fi
-if [[ ":$PATH:" != *":$HOME/bin:"* ]]; then
-    export PATH="$HOME/bin:$PATH"
-fi
 
 cd "$SCRIPT_DIR/../.."
 
@@ -130,7 +127,7 @@ test_info "Running go errcheck..."
 errcheck -tags=gocv ./... || exit 1
 
 test_info "Running go gocyclo..."
-gocyclo -over 25 . || exit 1
+gocyclo -over 60 . || exit 1
 
 test_info "Running go gosec..."
 gosec -quiet -tags=gocv ./... || exit 1

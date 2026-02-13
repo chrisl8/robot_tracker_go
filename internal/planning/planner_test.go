@@ -267,10 +267,8 @@ func TestPlanner_AdvancePastWaypoints(t *testing.T) {
 				if _, hasGoal := p.coordinator.goals[1]; hasGoal {
 					t.Error("goal should be removed when path completes")
 				}
-			} else {
-				if p.currentWaypoint[1] != tt.wantWpIndex {
-					t.Errorf("currentWaypoint = %d, want %d", p.currentWaypoint[1], tt.wantWpIndex)
-				}
+			} else if p.currentWaypoint[1] != tt.wantWpIndex {
+				t.Errorf("currentWaypoint = %d, want %d", p.currentWaypoint[1], tt.wantWpIndex)
 			}
 		})
 	}

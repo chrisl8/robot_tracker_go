@@ -51,16 +51,23 @@ func TestOpenCVEnvironment(t *testing.T) {
 				t.Log("Hint: Run: $env:PATH = 'C:\\opencv\\build\\install\\x64\\mingw\\bin;' + $env:PATH")
 			}
 		} else {
-			// Check for OpenCV libraries on Linux
+			// Check for OpenCV libraries on Linux/macOS
 			openCVDir := os.Getenv("OPENCV_DIR")
 			if openCVDir == "" {
 				openCVDir = "/usr/local"
 			}
 
-			libs, err := filepath.Glob(filepath.Join(openCVDir, "lib", "libopencv_*.so*"))
+			var libPattern string
+			if runtime.GOOS == "darwin" {
+				libPattern = filepath.Join(openCVDir, "lib", "libopencv_*.dylib")
+			} else {
+				libPattern = filepath.Join(openCVDir, "lib", "libopencv_*.so*")
+			}
+
+			libs, err := filepath.Glob(libPattern)
 			if err != nil || len(libs) == 0 {
 				t.Error("OpenCV libraries not found")
-				t.Log("Install with: ./scripts/install-opencv.sh")
+				t.Log("Install with: ./scripts/install-dependencies.sh")
 			} else {
 				t.Logf("Found %d OpenCV libraries", len(libs))
 			}
@@ -91,8 +98,14 @@ func TestOpenCVEnvironment(t *testing.T) {
 				t.Logf("OPENCV_DIR = %s", openCVDir)
 			}
 
-			// Verify library exists
-			libPath := filepath.Join(openCVDir, "lib", "libopencv_core.so")
+			// Verify library exists (platform-specific extension)
+			var libName string
+			if runtime.GOOS == "darwin" {
+				libName = "libopencv_core.dylib"
+			} else {
+				libName = "libopencv_core.so"
+			}
+			libPath := filepath.Join(openCVDir, "lib", libName)
 			if _, err := os.Stat(libPath); os.IsNotExist(err) {
 				t.Errorf("OpenCV core library not found: %s", libPath)
 			} else {

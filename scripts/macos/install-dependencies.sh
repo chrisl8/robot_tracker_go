@@ -48,13 +48,16 @@ fi
 
 log_info "Installing Go analysis tools..."
 
-if ! command -v golangci-lint &>/dev/null; then
-    log_info "Installing golangci-lint..."
-    curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$HOME/bin" v2.8.0
+# golangci-lint via Homebrew (stays in sync with system Go version)
+if brew list golangci-lint &>/dev/null; then
+    log_info "Upgrading golangci-lint..."
+    brew upgrade golangci-lint 2>/dev/null || true
 else
-    log_info "golangci-lint already installed"
+    log_info "Installing golangci-lint..."
+    brew install golangci-lint
 fi
 
+# Go tools installed via go install (always rebuild to match current Go version)
 GO_TOOLS=(
     "honnef.co/go/tools/cmd/staticcheck@latest"
     "github.com/kisielk/errcheck@latest"
@@ -65,17 +68,10 @@ GO_TOOLS=(
     "go.uber.org/nilaway/cmd/nilaway@latest"
 )
 
-TOOL_NAMES=(staticcheck errcheck gocyclo gosec govulncheck deadcode nilaway)
-
-for i in "${!GO_TOOLS[@]}"; do
-    tool="${TOOL_NAMES[$i]}"
-    pkg="${GO_TOOLS[$i]}"
-    if ! command -v "$tool" &>/dev/null; then
-        log_info "Installing $tool..."
-        go install "$pkg"
-    else
-        log_info "$tool already installed"
-    fi
+for pkg in "${GO_TOOLS[@]}"; do
+    tool=$(basename "${pkg%%@*}")
+    log_info "Installing $tool..."
+    go install "$pkg"
 done
 
 log_info ""

@@ -810,9 +810,9 @@ func (s *WebServer) PushFrame(img image.Image) {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, _ := img.At(x, y).RGBA()
 			idx := ((y-bounds.Min.Y)*width + (x - bounds.Min.X)) * 3
-			buf[idx+0] = byte(r >> 8)
-			buf[idx+1] = byte(g >> 8)
-			buf[idx+2] = byte(b >> 8)
+			buf[idx+0] = byte(r >> 8) // #nosec G115 -- intentional truncation for RGB pixel
+			buf[idx+1] = byte(g >> 8) // #nosec G115
+			buf[idx+2] = byte(b >> 8) // #nosec G115
 		}
 	}
 	s.stream.updateJPEG(buf)

@@ -373,7 +373,6 @@ func (rs *RobotSystem) Initialize() error {
 	// Initialize Arduino controller using config values
 	serialPort := "auto"
 	serialBaud := controller.BaudRate
-	controllerEnabled := true
 	commandIntervalMs := controller.CommandIntervalMs
 	if rs.cfg.Controller.Serial.Port != "" {
 		serialPort = rs.cfg.Controller.Serial.Port
@@ -381,7 +380,7 @@ func (rs *RobotSystem) Initialize() error {
 	if rs.cfg.Controller.Serial.BaudRate > 0 {
 		serialBaud = rs.cfg.Controller.Serial.BaudRate
 	}
-	controllerEnabled = rs.cfg.Controller.Enabled
+	controllerEnabled := rs.cfg.Controller.Enabled
 	if rs.cfg.Controller.CommandInterval > 0 {
 		commandIntervalMs = int(rs.cfg.Controller.CommandInterval * 1000)
 	}
