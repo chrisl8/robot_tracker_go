@@ -86,18 +86,25 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 		return nil, fmt.Errorf("failed to open video file: %s: %w", url, &CameraError{Message: "file not accessible"})
 	}
 
+	// Minimize frame buffering to reduce video lag from network streams
+	cap.Set(gocv.VideoCaptureBufferSize, 1)
+
 	actualWidth := int(cap.Get(gocv.VideoCaptureFrameWidth))
 	actualHeight := int(cap.Get(gocv.VideoCaptureFrameHeight))
 
-	return &GoCVCamera{
-		cap:     cap,
+	cam := &GoCVCamera{
+		device:  cap,
 		width:   actualWidth,
 		height:  actualHeight,
 		fps:     fps,
 		running: true,
 		url:     url,
-		isFile:  true,
-	}, nil
+		isFile:  false,
+		stopCh:  make(chan struct{}),
+	}
+	cam.wg.Add(1)
+	go cam.captureLoop()
+	return cam, nil
 }
 
 func (c *GoCVCamera) captureLoop() {
@@ -227,17 +234,20 @@ func (c *GoCVCamera) GetFrameAsImage() (interface{}, error) {
 }
 
 func (c *GoCVCamera) GetName() string {
-	if c.isFile {
+	if c.url != "" {
 		return fmt.Sprintf("Video: %s", c.url)
 	}
 	return fmt.Sprintf("Camera %d", c.cameraID)
 }
 
 func (c *GoCVCamera) IsConnected() bool {
-	if c.isFile {
+	if c.device != nil {
+		return c.device.IsOpened()
+	}
+	if c.cap != nil {
 		return c.cap.IsOpened()
 	}
-	return c.device.IsOpened()
+	return false
 }
 
 func (c *GoCVCamera) GetWidth() int {

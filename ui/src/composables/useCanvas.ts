@@ -486,8 +486,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 const botMidY = (track.corners[2][1] + track.corners[3][1]) / 2
                 const topMidX = (track.corners[0][0] + track.corners[1][0]) / 2
                 const topMidY = (track.corners[0][1] + track.corners[1][1]) / 2
-                const pixelHeading = Math.atan2(topMidY - botMidY, topMidX - botMidX)
-                    + (track.heading_offset || 0)
+                const pixelHeading =
+                    Math.atan2(topMidY - botMidY, topMidX - botMidX) + (track.heading_offset || 0)
 
                 const centerX = (scaled1.x + scaled2.x) / 2
                 const centerY = (scaled1.y + scaled2.y) / 2

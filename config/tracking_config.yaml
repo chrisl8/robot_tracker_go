@@ -77,6 +77,11 @@ position:
   smoothing: true
   smoothing_alpha: 0.3 # Exponential moving average factor
   outlier_threshold: 0.1 # Maximum velocity for filtering (meters/frame)
+  heading_smoothing_alpha: 1.0 # 1.0 = disabled (raw heading). DO NOT reduce below 1.0.
+                               # EMA at 0.4 was tested and caused 20-40° heading lag during turns,
+                               # leading to overshoot and 48s runs (vs 25s without smoothing).
+                               # The "noise" during turns is partly real rotation, not just noise.
+  heading_max_rate_deg: 0.0    # Max heading change per frame before rejection (0.0=disabled)
 
 # Output Settings
 output:
@@ -183,8 +188,51 @@ local_planning:
     video_output_dir: "tests/videos"
 
 # Path Execution Settings (A* + LocalPlanner hybrid)
+#
+# These values were empirically tuned with AprilTag-based heading detection.
+# AprilTag heading noise characteristics (measured):
+#   - Stationary: 0-3° noise
+#   - Forward driving: 5-15° noise
+#   - During rotation: 20-70° transient spikes (corner detection confusion)
+#
+# WARNING: Do not increase spin_threshold or burst_frames without testing.
+# Previous values (spin=10°, burst=3, wait=3) caused false spin detection
+# and overshoot respectively. Do not add heading EMA smoothing (alpha<1.0) —
+# it was tested at 0.4 and caused 20-40° heading lag during turns, making
+# navigation significantly slower (48s vs 25s for ~1m paths).
 path_execution:
-  waypoint_threshold: 0.1 # meters - distance to waypoint before advancing
-  max_speed: 0.15 # forward/backward speed (m/s)
-  turn_speed: 0.5 # rotation speed (rad/s)
+  waypoint_threshold: 0.1  # meters - distance to waypoint before advancing
+  max_speed: 0.15          # forward/backward speed (m/s)
+  turn_speed: 0.5          # rotation speed (rad/s)
   command_interval_ms: 100 # milliseconds between commands
+  spin_threshold_deg: 20.0 # heading delta (°/frame) above which robot brakes.
+                           # 10° triggered false positives from normal detection noise.
+                           # 20° catches genuine uncontrolled spinning without false triggers.
+  burst_frames: 2          # frames of continuous turning per burst.
+                           # 3 caused overshoot; 2 gives tighter turn control with less lag.
+  max_wait_frames: 2       # frames to drive forward after burst while heading catches up.
+                           # Robot moves forward (not stop) during these frames when angle < 90°,
+                           # like a human alternating turn taps with forward motion.
+  forward_threshold_deg: 25.0 # Hysteresis ENTRY threshold: robot must be within this angle
+                              # of the waypoint bearing to START driving forward.
+                              # EXIT threshold is automatically +15° (= 40°): robot must
+                              # drift this far off before switching back to turning.
+                              # This 15° dead zone prevents oscillation from 5-15° heading noise.
+                              # Without hysteresis, a single 30° threshold caused 40s of
+                              # forward/turn oscillation; 45° let the robot drive forward
+                              # when 38-43° off target. Hysteresis eliminates both problems.
+                              #
+                              # Continuous turning kicks in at 1.5× exit threshold (= 60°).
+                              # Below 60°: burst/wait for precision. Above 60°: continuous
+                              # turn commands every frame (no stopping) for faster rotation.
+  tracking_lost_timeout_s: 3.0 # seconds to keep driving after AprilTag detection is lost.
+                               # During normal driving, the AprilTag is frequently not detected
+                               # for 1-1.5 seconds due to motion blur, camera angle, and the
+                               # ~5fps effective frame rate from IP camera + detection latency.
+                               # Without this timeout, the robot stops every time detection is
+                               # lost (up to 15 stops per maneuver). The robot coasts on its
+                               # last steering command during these gaps, and course corrections
+                               # resume immediately when detection returns. If tracking is truly
+                               # lost (tag covered/removed), the robot stops after this timeout.
+                               # Increase if the robot still pauses during normal driving.
+                               # Decrease if the robot drives too far when tracking fails.

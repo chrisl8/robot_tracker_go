@@ -86,10 +86,16 @@ func TestAStar_Plan_ObstacleAtStart(t *testing.T) {
 			WorldBottomRight: [2]float64{1, 1},
 		},
 	}
-	_, found := astar.Plan([2]float64{0.5, 0.5}, [2]float64{3, 3}, obstacles)
+	// The planner handles "start inside obstacle" by finding the nearest free cell,
+	// so the robot can escape if it starts inside an expanded obstacle. This should
+	// succeed and produce a valid path.
+	path, found := astar.Plan([2]float64{0.5, 0.5}, [2]float64{3, 3}, obstacles)
 
-	if found {
-		t.Error("Plan should not find a path when obstacle blocks start")
+	if !found {
+		t.Error("Plan should find a path even when start is inside an obstacle (escapes to nearest free cell)")
+	}
+	if len(path) < 2 {
+		t.Errorf("Path should have at least 2 waypoints, got %d", len(path))
 	}
 }
 

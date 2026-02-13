@@ -144,6 +144,54 @@ Edit `config/tracking_config.yaml` to configure:
 - Planning settings (step size, safety margins)
 - Camera settings
 
+## Hardware Recommendations
+
+### Camera
+
+A USB webcam is strongly recommended over WiFi/IP cameras. WiFi cameras (DroidCam, etc.) introduce 1-1.5 second frame delivery gaps due to WiFi jitter, causing the robot to lose steering corrections and pause repeatedly. USB cameras deliver frames at a consistent ~33ms interval.
+
+| Option | Price | Resolution | FOV | Notes |
+|--------|-------|-----------|-----|-------|
+| **Logitech C920s Pro** | ~$50 | 1080p/30fps | 78° | **Recommended.** Manual focus via UVC, excellent OpenCV compatibility. |
+| Logitech Brio 100 | ~$25 | 1080p/30fps | 58° | Budget option. Fixed focus works well for overhead mounting. Narrower FOV limits arena size. |
+| ELP USB (wide-angle) | ~$25-40 | 1080p/30fps | 100-120° | Good for larger arenas. Avoid ultra-wide (>150°) — excessive distortion degrades AprilTag detection. |
+
+**Config change for USB cameras:** In `config/tracking_config.yaml`, replace the IP camera block with:
+```yaml
+cameras:
+  - id: 0
+    name: "usb_camera"
+    width: 1280
+    height: 720
+    fps: 30
+```
+
+**Avoid:** 4K cameras (the detection pipeline can't use the extra pixels at ~5fps), ultra-wide fisheye lenses (>150° FOV). The AprilTag should be at least ~40 pixels across in the image for reliable detection.
+
+### Compute Platform
+
+| Platform | AprilTag | YOLOv8 nano | Track + Plan | Effective FPS |
+|----------|----------|-------------|-------------|---------------|
+| **Mac Mini M4** | ~40-70ms | ~20-35ms | ~15ms | **~8-12fps** |
+| **x86 desktop (4+ cores)** | ~100-150ms | ~50-70ms | ~33ms | **~5fps** |
+| Raspberry Pi 5 | ~150-250ms | ~100-200ms | ~50ms | ~2-3fps |
+
+**Developed and tested on** x86_64 desktop/laptop with 4+ CPU cores (Linux). This is the current primary platform.
+
+**Mac Mini M4 (Apple Silicon)** is the fastest option — roughly 2-3x faster than a typical x86 desktop, giving ~8-12fps steering updates for noticeably tighter navigation. Requires macOS-specific setup:
+- Install OpenCV via Homebrew (`brew install opencv`) instead of the Linux install script
+- Build scripts (`build.sh`, `run.sh`, `test.sh`) are Linux-specific and need adaptation for macOS paths
+- Serial port uses `/dev/cu.usbserial-*` or `/dev/tty.usbmodem-*` instead of `/dev/ttyUSB0`
+- USB cameras work via AVFoundation backend in OpenCV — no driver issues expected
+
+**Raspberry Pi 5** works but navigation is noticeably more sluggish at ~2-3fps. Mitigations if using Pi 5:
+- Disable YOLO (set `conf_thres: 1.0`) if dynamic obstacle detection isn't needed — recovers ~100-200ms per frame
+- Increase `quad_decimate` from 2.0 to 3.0 for faster AprilTag detection at slight accuracy cost
+- Use the 8GB RAM model (4GB is tight with YOLO loaded)
+- Building OpenCV/GoCV on ARM64 requires compiling from source (~1-2 hours)
+
+**Portable alternative:** Intel N100-based mini PCs (~$100-150) deliver near-desktop performance in a small form factor and run the standard x86 Linux build without modification.
+
 ## Serial Protocol
 
 Commands are single ASCII characters:

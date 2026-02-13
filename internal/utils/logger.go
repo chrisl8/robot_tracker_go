@@ -10,7 +10,7 @@ var QuietMode bool
 var DebugMode bool
 
 func init() {
-	log.SetFlags(0)
+	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("")
 }
 

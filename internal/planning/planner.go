@@ -51,7 +51,13 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 		margin = robot.Diameter/2 + 0.02
 	}
 	obstacles := p.expandObstacles(margin)
-	return p.globalPlanner.Plan(start, goal, obstacles)
+	path, ok := p.globalPlanner.Plan(start, goal, obstacles)
+	if ok && len(path) > 2 {
+		before := len(path)
+		path = SimplifyPath(path, 0.15) // remove waypoints <15cm off straight line; obstacle detours are >15cm
+		utils.Debugf("Path simplified: %d -> %d waypoints", before, len(path))
+	}
+	return path, ok
 }
 
 func (p *Planner) ComputeVelocity(robotID int, goal [2]float64) ([2]float64, bool) {

@@ -108,7 +108,12 @@ watch(
         <div class="divider"></div>
 
         <!-- WASD Controls -->
-        <div class="controls" :class="{ disabled: robotStore.controlMode !== 'manual' || robotStore.emergencyStopped }">
+        <div
+            class="controls"
+            :class="{
+                disabled: robotStore.controlMode !== 'manual' || robotStore.emergencyStopped,
+            }"
+        >
             <button
                 class="btn forward"
                 @mousedown="handleMouseDown('w', 'F')"
@@ -228,8 +233,12 @@ h3 {
 }
 
 @keyframes pulse-estop {
-    from { opacity: 1; }
-    to { opacity: 0.7; }
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0.7;
+    }
 }
 
 .estop-clear {

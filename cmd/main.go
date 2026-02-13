@@ -81,8 +81,13 @@ type RobotSystem struct {
 	controlMode       ControlMode
 	emergencyStopped  bool
 	controlMu         sync.RWMutex
-	lastHeading       map[int]float64
-	headingDelta      map[int]float64
+	lastHeading        map[int]float64
+	headingDelta       map[int]float64
+	smoothedHeading    map[int]float64
+	headingRejectCount map[int]int
+	headingLostCount    map[int]int
+	lastCommandTime     time.Time
+	trackingLostTimeout time.Duration
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -91,8 +96,11 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		cameraRunning: false,
 		frameNum:      0,
 		CurrentGoal:   [2]float64{0, 0},
-		lastHeading:   make(map[int]float64),
-		headingDelta:  make(map[int]float64),
+		lastHeading:        make(map[int]float64),
+		headingDelta:       make(map[int]float64),
+		smoothedHeading:    make(map[int]float64),
+		headingRejectCount: make(map[int]int),
+		headingLostCount:   make(map[int]int),
 	}
 }
 
@@ -396,12 +404,30 @@ func (rs *RobotSystem) Initialize() error {
 	if rs.cfg != nil && rs.cfg.PathExecution.MaxSpeed > 0 {
 		rs.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
 		rs.waypointThreshold = rs.cfg.PathExecution.WaypointThreshold
+		if rs.cfg.PathExecution.SpinThresholdDeg > 0 {
+			rs.pathExecutor.SpinThresholdDeg = rs.cfg.PathExecution.SpinThresholdDeg
+		}
+		if rs.cfg.PathExecution.BurstFrames > 0 {
+			rs.pathExecutor.BurstFrames = rs.cfg.PathExecution.BurstFrames
+		}
+		if rs.cfg.PathExecution.MaxWaitFrames > 0 {
+			rs.pathExecutor.MaxWaitFrames = rs.cfg.PathExecution.MaxWaitFrames
+		}
+		if rs.cfg.PathExecution.ForwardThresholdDeg > 0 {
+			rs.pathExecutor.ForwardThresholdDeg = rs.cfg.PathExecution.ForwardThresholdDeg
+		}
 	} else {
 		rs.pathExecutor = controller.NewPathExecutor(0.15, 0.5)
 		rs.waypointThreshold = 0.1
 	}
-	utils.Logf("Path executor initialized: max_speed=%.3f, turn_speed=%.3f, waypoint_threshold=%.3f",
-		rs.pathExecutor.MaxSpeed(), rs.pathExecutor.TurnSpeed(), rs.waypointThreshold)
+	rs.trackingLostTimeout = 3 * time.Second
+	if rs.cfg != nil && rs.cfg.PathExecution.TrackingLostTimeoutS > 0 {
+		rs.trackingLostTimeout = time.Duration(rs.cfg.PathExecution.TrackingLostTimeoutS * float64(time.Second))
+	}
+	utils.Logf("Path executor initialized: max_speed=%.3f, turn_speed=%.3f, waypoint_threshold=%.3f, spin_thresh=%.1f°, burst=%d, wait=%d, forward_thresh=%.1f°, tracking_lost_timeout=%.1fs",
+		rs.pathExecutor.MaxSpeed(), rs.pathExecutor.TurnSpeed(), rs.waypointThreshold,
+		rs.pathExecutor.SpinThresholdDeg, rs.pathExecutor.BurstFrames, rs.pathExecutor.MaxWaitFrames,
+		rs.pathExecutor.ForwardThresholdDeg, rs.trackingLostTimeout.Seconds())
 
 	rs.webServer = ui.NewWebServer(":9086")
 
@@ -762,15 +788,18 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				// Compute heading from AprilTag corners using tag's "upward" direction as forward
 				// Corner order: [0]=top-left, [1]=top-right, [2]=bottom-right, [3]=bottom-left
 				// Use bottom-center → top-center to get the tag's canonical forward direction
+				tagFound := false
+				var wBot, wTop *position.Point2D
 				for _, tag := range detectionResult.Tags {
 					if tag.TagID == *track.TagID {
+						tagFound = true
 						track.Corners = tag.Corners
 						botMidX := (tag.Corners[2][0] + tag.Corners[3][0]) / 2
 						botMidY := (tag.Corners[2][1] + tag.Corners[3][1]) / 2
 						topMidX := (tag.Corners[0][0] + tag.Corners[1][0]) / 2
 						topMidY := (tag.Corners[0][1] + tag.Corners[1][1]) / 2
-						wBot := rs.positionEst.PixelToWorld(int(botMidX), int(botMidY))
-						wTop := rs.positionEst.PixelToWorld(int(topMidX), int(topMidY))
+						wBot = rs.positionEst.PixelToWorldFloat(botMidX, botMidY)
+						wTop = rs.positionEst.PixelToWorldFloat(topMidX, topMidY)
 						track.Heading = math.Atan2(wTop.Y-wBot.Y, wTop.X-wBot.X)
 						// Apply configurable mounting offset
 						if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
@@ -778,17 +807,83 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 							track.Heading += offset
 							track.HeadingOffset = offset
 						}
+
+						// Angle-aware EMA smoothing with outlier rejection
+						if prev, ok := rs.smoothedHeading[*track.TagID]; ok {
+							// Compute shortest angular difference
+							diff := track.Heading - prev
+							for diff > math.Pi {
+								diff -= 2 * math.Pi
+							}
+							for diff < -math.Pi {
+								diff += 2 * math.Pi
+							}
+
+							maxRate := rs.cfg.Position.HeadingMaxRateDeg * math.Pi / 180
+							if maxRate > 0 && math.Abs(diff) > maxRate {
+								// Measurement too far from smoothed — likely noise, reject it
+								rs.headingRejectCount[*track.TagID]++
+								utils.Debugf("HEADING REJECT: tag %d raw=%.1f° smoothed=%.1f° diff=%.1f° count=%d",
+									*track.TagID, track.Heading*180/math.Pi, prev*180/math.Pi, diff*180/math.Pi, rs.headingRejectCount[*track.TagID])
+								if rs.headingRejectCount[*track.TagID] >= 10 {
+									// Too many consecutive rejections — accept with EMA to converge
+									alpha := rs.cfg.Position.HeadingSmoothingAlpha
+									if alpha <= 0 {
+										alpha = 1.0
+									}
+									track.Heading = prev + alpha*diff
+									for track.Heading > math.Pi {
+										track.Heading -= 2 * math.Pi
+									}
+									for track.Heading < -math.Pi {
+										track.Heading += 2 * math.Pi
+									}
+									utils.Debugf("HEADING RESET: tag %d after 10 rejections, converging to %.1f°",
+										*track.TagID, track.Heading*180/math.Pi)
+									rs.headingRejectCount[*track.TagID] = 0
+								} else {
+									track.Heading = prev // keep previous smoothed heading
+								}
+							} else {
+								// Reasonable change — apply EMA
+								alpha := rs.cfg.Position.HeadingSmoothingAlpha
+								if alpha <= 0 {
+									alpha = 1.0
+								}
+								track.Heading = prev + alpha*diff
+								for track.Heading > math.Pi {
+									track.Heading -= 2 * math.Pi
+								}
+								for track.Heading < -math.Pi {
+									track.Heading += 2 * math.Pi
+								}
+								rs.headingRejectCount[*track.TagID] = 0
+							}
+						}
+						rs.smoothedHeading[*track.TagID] = track.Heading
+
 						break
 					}
 				}
+				if !tagFound {
+					utils.Debugf("HEADING: tag %d not detected this frame", *track.TagID)
+				}
 
 				// Track heading delta (angular velocity) and cache heading
-				if track.Heading == 0 {
+				if !tagFound {
 					if cached, ok := rs.lastHeading[*track.TagID]; ok {
 						track.Heading = cached
+						utils.Debugf("HEADING: tag %d using cached heading=%.2f°", *track.TagID, cached*180/math.Pi)
 					}
 					rs.headingDelta[*track.TagID] = 0
+					// Reset smoothing state after prolonged tag loss
+					rs.headingLostCount[*track.TagID]++
+					if rs.headingLostCount[*track.TagID] > 5 {
+						delete(rs.smoothedHeading, *track.TagID)
+						delete(rs.headingRejectCount, *track.TagID)
+					}
 				} else {
+					rs.headingLostCount[*track.TagID] = 0
 					if prev, ok := rs.lastHeading[*track.TagID]; ok {
 						delta := track.Heading - prev
 						for delta > math.Pi {
@@ -796,6 +891,15 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 						}
 						for delta < -math.Pi {
 							delta += 2 * math.Pi
+						}
+						if math.Abs(delta) > 15*math.Pi/180 {
+							utils.Debugf("HEADING JUMP: tag %d delta=%.1f° corners: TL=(%.0f,%.0f) TR=(%.0f,%.0f) BR=(%.0f,%.0f) BL=(%.0f,%.0f) wBot=(%.3f,%.3f) wTop=(%.3f,%.3f)",
+								*track.TagID, delta*180/math.Pi,
+								track.Corners[0][0], track.Corners[0][1],
+								track.Corners[1][0], track.Corners[1][1],
+								track.Corners[2][0], track.Corners[2][1],
+								track.Corners[3][0], track.Corners[3][1],
+								wBot.X, wBot.Y, wTop.X, wTop.Y)
 						}
 						rs.headingDelta[*track.TagID] = delta
 					} else {
@@ -880,8 +984,13 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				rs.commandQueue.ClearActiveCommand()
 			}
 		}
-		// Safety: stop re-sending stale commands when no robot is tracked
-		if !commandIssued && rs.commandQueue != nil {
+		// Safety: stop re-sending stale commands when tracking is lost for too long.
+		// AprilTag detection frequently fails for 1-1.5s during normal driving (motion blur,
+		// camera angle). The robot coasts on its last command during these gaps. Only clear
+		// the active command after trackingLostTimeout to stop the robot if truly lost.
+		if commandIssued {
+			rs.lastCommandTime = time.Now()
+		} else if rs.commandQueue != nil && time.Since(rs.lastCommandTime) > rs.trackingLostTimeout {
 			rs.commandQueue.ClearActiveCommand()
 		}
 	}

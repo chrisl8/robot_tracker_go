@@ -214,6 +214,13 @@ func (e *PositionEstimator) PixelToWorld(pixelX, pixelY int) *Point2D {
 	return e.homography.PixelToWorld(Point2D{float64(pixelX), float64(pixelY)})
 }
 
+func (e *PositionEstimator) PixelToWorldFloat(pixelX, pixelY float64) *Point2D {
+	if !e.homography.IsValid() {
+		return &Point2D{pixelX, pixelY}
+	}
+	return e.homography.PixelToWorld(Point2D{pixelX, pixelY})
+}
+
 func (e *PositionEstimator) WorldToPixel(world Point2D) (int, int) {
 	if !e.homography.IsValid() {
 		return int(world.X), int(world.Y)

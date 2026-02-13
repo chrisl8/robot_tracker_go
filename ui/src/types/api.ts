@@ -101,9 +101,13 @@ export interface PathMessage {
     color: string
 }
 
+export interface PathsNestedResponse {
+    paths: PathMessage[]
+}
+
 export interface PathsMessage {
     type: 'paths'
-    paths: PathMessage[]
+    paths: PathsNestedResponse
 }
 
 export interface ObstaclesMessage {

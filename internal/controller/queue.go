@@ -101,15 +101,16 @@ func (q *CommandQueue) runLoop() {
 			q.sendCommand(cmd)
 
 		case <-ticker.C:
-			q.mu.Lock()
-			active := q.hasActiveCommand
-			cmd := q.activeCommand
-			q.mu.Unlock()
-
-			if active {
-				q.sendCommand(cmd)
-			} else if q.controller.IsConnected() && time.Since(q.lastSentTime) > HeartbeatTimeoutMs*time.Millisecond {
-				q.sendCommand(CommandStop)
+			if q.controller.IsConnected() && time.Since(q.lastSentTime) > HeartbeatTimeoutMs*time.Millisecond {
+				q.mu.Lock()
+				active := q.hasActiveCommand
+				cmd := q.activeCommand
+				q.mu.Unlock()
+				if active {
+					q.sendCommand(cmd)
+				} else {
+					q.sendCommand(CommandStop)
+				}
 			}
 
 		case <-q.stopCh:

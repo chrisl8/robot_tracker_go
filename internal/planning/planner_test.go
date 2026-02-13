@@ -213,8 +213,8 @@ func TestPlanner_AdvancePastWaypoints(t *testing.T) {
 		},
 		{
 			name:        "multi-waypoint skip",
-			path:        [][2]float64{{0, 0}, {0.05, 0}, {0.1, 0}, {0.15, 0}, {5, 0}},
-			pos:         [2]float64{0.12, 0}, // within threshold of wp0,wp1,wp2; closer to wp3 than wp2 is moot since wp2 was already skipped
+			path:        [][2]float64{{0, 0}, {0.05, 0}, {0.1, 0}, {0.25, 0}, {5, 0}},
+			pos:         [2]float64{0.12, 0}, // within threshold of wp0,wp1,wp2; wp3 at 0.25 is 0.13m away (>0.1 threshold)
 			threshold:   0.1,
 			wantMore:    true,
 			wantWpIndex: 3,

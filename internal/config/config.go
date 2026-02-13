@@ -75,10 +75,15 @@ type LocalPlanningConfig struct {
 }
 
 type PathExecutionConfig struct {
-	WaypointThreshold float64 `yaml:"waypoint_threshold"`
-	MaxSpeed          float64 `yaml:"max_speed"`
-	TurnSpeed         float64 `yaml:"turn_speed"`
-	CommandIntervalMs int     `yaml:"command_interval_ms"`
+	WaypointThreshold   float64 `yaml:"waypoint_threshold"`
+	MaxSpeed            float64 `yaml:"max_speed"`
+	TurnSpeed           float64 `yaml:"turn_speed"`
+	CommandIntervalMs   int     `yaml:"command_interval_ms"`
+	SpinThresholdDeg    float64 `yaml:"spin_threshold_deg"`
+	BurstFrames         int     `yaml:"burst_frames"`
+	MaxWaitFrames       int     `yaml:"max_wait_frames"`
+	ForwardThresholdDeg  float64 `yaml:"forward_threshold_deg"`
+	TrackingLostTimeoutS float64 `yaml:"tracking_lost_timeout_s"`
 }
 
 type DebugConfig struct {
@@ -156,10 +161,12 @@ type WorldBoxYAML struct {
 }
 
 type PositionConfig struct {
-	GroundPlaneZ     float64 `yaml:"ground_plane_z"`
-	Smoothing        bool    `yaml:"smoothing"`
-	SmoothingAlpha   float64 `yaml:"smoothing_alpha"`
-	OutlierThreshold float64 `yaml:"outlier_threshold"`
+	GroundPlaneZ          float64 `yaml:"ground_plane_z"`
+	Smoothing             bool    `yaml:"smoothing"`
+	SmoothingAlpha        float64 `yaml:"smoothing_alpha"`
+	OutlierThreshold      float64 `yaml:"outlier_threshold"`
+	HeadingSmoothingAlpha float64 `yaml:"heading_smoothing_alpha"`
+	HeadingMaxRateDeg     float64 `yaml:"heading_max_rate_deg"`
 }
 
 type TrackingConfig struct {

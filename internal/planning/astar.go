@@ -257,6 +257,48 @@ func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, offset
 	return path
 }
 
+// SimplifyPath removes waypoints that are nearly collinear using Douglas-Peucker.
+// epsilon is the max perpendicular distance (meters) a point can be from the line
+// before it's considered significant.
+func SimplifyPath(path [][2]float64, epsilon float64) [][2]float64 {
+	if len(path) <= 2 {
+		return path
+	}
+
+	// Find point with max distance from line between first and last
+	maxDist := 0.0
+	maxIdx := 0
+	start := path[0]
+	end := path[len(path)-1]
+
+	for i := 1; i < len(path)-1; i++ {
+		d := perpendicularDistance(path[i], start, end)
+		if d > maxDist {
+			maxDist = d
+			maxIdx = i
+		}
+	}
+
+	if maxDist > epsilon {
+		left := SimplifyPath(path[:maxIdx+1], epsilon)
+		right := SimplifyPath(path[maxIdx:], epsilon)
+		return append(left[:len(left)-1], right...)
+	}
+	return [][2]float64{start, end}
+}
+
+func perpendicularDistance(point, lineStart, lineEnd [2]float64) float64 {
+	dx := lineEnd[0] - lineStart[0]
+	dy := lineEnd[1] - lineStart[1]
+	length := math.Sqrt(dx*dx + dy*dy)
+	if length == 0 {
+		dx2 := point[0] - lineStart[0]
+		dy2 := point[1] - lineStart[1]
+		return math.Sqrt(dx2*dx2 + dy2*dy2)
+	}
+	return math.Abs(dx*(lineStart[1]-point[1])-(lineStart[0]-point[0])*dy) / length
+}
+
 func worldToGrid(obs Obstacle, resolution float64, width, height int) [][2]int {
 	cells := make([][2]int, 0)
 
