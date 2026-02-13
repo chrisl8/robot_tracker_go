@@ -109,6 +109,9 @@ export DYLD_LIBRARY_PATH="${OPENCV_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}"
 if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
     export PATH="$HOME/go/bin:$PATH"
 fi
+if [[ ":$PATH:" != *":$HOME/bin:"* ]]; then
+    export PATH="$HOME/bin:$PATH"
+fi
 
 cd "$SCRIPT_DIR/../.."
 
