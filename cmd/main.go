@@ -398,7 +398,11 @@ func (rs *RobotSystem) Initialize() error {
 
 	rs.commandQueue = controller.NewCommandQueue(rs.arduino, commandIntervalMs)
 	rs.commandQueue.Start()
-	utils.Logf("Command queue started")
+	if rs.arduino.IsConnected() {
+		utils.Logf("Command queue started (Arduino connected)")
+	} else {
+		utils.Logf("WARNING: Command queue started but Arduino is NOT connected — commands will fail")
+	}
 
 	if rs.cfg != nil && rs.cfg.PathExecution.MaxSpeed > 0 {
 		rs.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
@@ -423,10 +427,12 @@ func (rs *RobotSystem) Initialize() error {
 	if rs.cfg != nil && rs.cfg.PathExecution.TrackingLostTimeoutS > 0 {
 		rs.trackingLostTimeout = time.Duration(rs.cfg.PathExecution.TrackingLostTimeoutS * float64(time.Second))
 	}
-	utils.Logf("Path executor initialized: max_speed=%.3f, turn_speed=%.3f, waypoint_threshold=%.3f, spin_thresh=%.1f°, burst=%d, wait=%d, forward_thresh=%.1f°, tracking_lost_timeout=%.1fs",
+	utils.Logf("Path executor: speed=%.3f turn=%.3f waypoint=%.3f tracking_timeout=%.1fs",
 		rs.pathExecutor.MaxSpeed(), rs.pathExecutor.TurnSpeed(), rs.waypointThreshold,
+		rs.trackingLostTimeout.Seconds())
+	utils.Logf("Path executor: spin=%.1f° burst=%d wait=%d forward=%.1f°",
 		rs.pathExecutor.SpinThresholdDeg, rs.pathExecutor.BurstFrames, rs.pathExecutor.MaxWaitFrames,
-		rs.pathExecutor.ForwardThresholdDeg, rs.trackingLostTimeout.Seconds())
+		rs.pathExecutor.ForwardThresholdDeg)
 
 	rs.webServer = ui.NewWebServer(":9086")
 
@@ -892,13 +898,14 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 							delta += 2 * math.Pi
 						}
 						if math.Abs(delta) > 15*math.Pi/180 {
-							utils.Debugf("HEADING JUMP: tag %d delta=%.1f° corners: TL=(%.0f,%.0f) TR=(%.0f,%.0f) BR=(%.0f,%.0f) BL=(%.0f,%.0f) wBot=(%.3f,%.3f) wTop=(%.3f,%.3f)",
+							utils.Debugf("HEADING JUMP: tag %d delta=%.1f° wBot=(%.3f,%.3f) wTop=(%.3f,%.3f)",
 								*track.TagID, delta*180/math.Pi,
+								wBot.X, wBot.Y, wTop.X, wTop.Y)
+							utils.Debugf("  corners: TL=(%.0f,%.0f) TR=(%.0f,%.0f) BR=(%.0f,%.0f) BL=(%.0f,%.0f)",
 								track.Corners[0][0], track.Corners[0][1],
 								track.Corners[1][0], track.Corners[1][1],
 								track.Corners[2][0], track.Corners[2][1],
-								track.Corners[3][0], track.Corners[3][1],
-								wBot.X, wBot.Y, wTop.X, wTop.Y)
+								track.Corners[3][0], track.Corners[3][1])
 						}
 						rs.headingDelta[*track.TagID] = delta
 					} else {
@@ -1401,6 +1408,15 @@ func main() {
 
 	utils.Log("Press Ctrl+C to exit.")
 
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		utils.Log("\nShutting down...")
+		rs.Stop()
+		os.Exit(0)
+	}()
+
 	if *selfTestMode {
 		rs := NewRobotSystem(cfg)
 		if cfg != nil {
@@ -1496,8 +1512,4 @@ func main() {
 		}
 	}
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
-	utils.Log("\nShutting down...")
 }

@@ -319,14 +319,13 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 		}
 
 		if frameNum%30 == 0 {
-			fmt.Printf("Demo YOLO: %d YOLO detections, %d dynamic obstacles",
-				len(fakeYOLO), len(rs.DynamicObstacles))
+			line := fmt.Sprintf("Demo YOLO: %d det, %d obs", len(fakeYOLO), len(rs.DynamicObstacles))
 			for _, obs := range demoObstacles {
 				if obs.Moving {
-					fmt.Printf(" | %s at (%d, %d)", obs.ClassName, obs.X, obs.Y)
+					line += fmt.Sprintf(" | %s@(%d,%d)", obs.ClassName, obs.X, obs.Y)
 				}
 			}
-			fmt.Println()
+			fmt.Println(line)
 		}
 
 		overlay := rs.detectionPipe.DrawResults(rgbaImg.Pix, width, height, demoTagsResult)

@@ -3,6 +3,8 @@ package controller
 import (
 	"sync"
 	"time"
+
+	"robot_tracker_go/internal/utils"
 )
 
 type CommandQueue struct {
@@ -15,6 +17,7 @@ type CommandQueue struct {
 	lastSentTime     time.Time
 	activeCommand    Command // currently desired command (re-sent each tick)
 	hasActiveCommand bool    // whether activeCommand is set
+	errorCount       int
 	mu               sync.Mutex
 }
 
@@ -123,7 +126,16 @@ func (q *CommandQueue) sendCommand(cmd Command) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if err := q.controller.SendCommand(cmd); err == nil {
+	if err := q.controller.SendCommand(cmd); err != nil {
+		q.errorCount++
+		if q.errorCount == 1 || q.errorCount%100 == 0 {
+			utils.Logf("Arduino send error (count=%d): %v", q.errorCount, err)
+		}
+	} else {
+		if q.errorCount > 0 {
+			utils.Logf("Arduino send recovered after %d errors", q.errorCount)
+			q.errorCount = 0
+		}
 		q.lastCommand = cmd
 		q.lastSentTime = time.Now()
 	}
