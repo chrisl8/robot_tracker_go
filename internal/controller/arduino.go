@@ -158,19 +158,25 @@ func (c *ArduinoController) autoDetectPort() (string, error) {
 }
 
 func (c *ArduinoController) detectPorts() ([]string, error) {
-	pattern := "/dev/tty*"
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
+	patterns := []string{"/dev/cu.*", "/dev/tty*"}
+	var allMatches []string
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		allMatches = append(allMatches, matches...)
 	}
+
 	var arduinoPorts []string
-	for _, port := range matches {
-		if strings.Contains(port, "USB") || strings.Contains(port, "ACM") || strings.Contains(port, "AMA") {
+	for _, port := range allMatches {
+		lower := strings.ToLower(port)
+		if strings.Contains(lower, "usb") || strings.Contains(lower, "acm") || strings.Contains(lower, "ama") || strings.Contains(lower, "modem") {
 			arduinoPorts = append(arduinoPorts, port)
 		}
 	}
 	if len(arduinoPorts) == 0 {
-		arduinoPorts = matches
+		arduinoPorts = allMatches
 	}
 	return arduinoPorts, nil
 }
