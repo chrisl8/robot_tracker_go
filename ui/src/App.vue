@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import VideoOverlay from '@/components/VideoOverlay.vue'
-import StatusBar from '@/components/StatusBar.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
 import TrackList from '@/components/TrackList.vue'
 import ObstaclePanel from '@/components/ObstaclePanel.vue'
@@ -16,10 +15,21 @@ const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
 
-const streamUrl = '/stream'
+const streamUrl = ref('/stream')
+const wasEverConnected = ref(false)
 
 const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
-const { isConnected } = useWebSocket(wsUrl)
+const { isConnected } = useWebSocket(wsUrl, {
+    onConnect() {
+        wasEverConnected.value = true
+    },
+    onReconnect() {
+        // Bust the MJPEG stream cache to force a new HTTP connection
+        streamUrl.value = `/stream?t=${Date.now()}`
+        loadInitialData()
+    },
+})
+
 async function loadInitialData(): Promise<void> {
     try {
         // Load obstacles
@@ -78,18 +88,6 @@ onUnmounted(() => {
         <header class="app-header">
             <h1>Robot Tracker</h1>
             <div class="header-right">
-                <div class="status">
-                    <span
-                        >FPS: <span class="value">{{ robotStore.status.fps }}</span></span
-                    >
-                    <span
-                        >Tracks: <span class="value">{{ robotStore.confirmedCount }}</span></span
-                    >
-                    <span :class="isConnected ? 'connected' : 'disconnected'">
-                        Arduino: <span class="value">{{ robotStore.status.arduinoState }}</span>
-                    </span>
-                </div>
-
                 <div v-if="robotStore.destinationMode" class="destination-badge">
                     Destination Mode (ESC to cancel)
                 </div>
@@ -117,12 +115,10 @@ onUnmounted(() => {
                 <div class="video-wrapper">
                     <img id="video" :src="streamUrl" alt="Video Stream" />
                     <VideoOverlay />
-                    <div v-if="!isConnected" class="loading">Connecting...</div>
                 </div>
             </div>
 
             <aside class="sidebar">
-                <StatusBar />
                 <ControlPanel />
                 <TrackList />
                 <ObstaclePanel v-if="uiStore.panels.obstacleOpen" />
@@ -132,6 +128,17 @@ onUnmounted(() => {
         <CalibrationWizard />
         <ToastContainer />
     </div>
+
+    <Teleport to="body">
+        <div v-if="!isConnected" class="standby-overlay">
+            <div class="standby-content">
+                <div class="standby-text">
+                    {{ wasEverConnected ? 'PLEASE STAND BY' : 'Connecting...' }}
+                </div>
+                <div v-if="wasEverConnected" class="standby-subtext">Reconnecting...</div>
+            </div>
+        </div>
+    </Teleport>
 </template>
 
 <style scoped>
@@ -174,12 +181,6 @@ onUnmounted(() => {
     display: block;
 }
 
-.loading {
-    position: absolute;
-    color: #666;
-    font-size: 1rem;
-}
-
 .sidebar {
     width: 300px;
     background: #16213e;
@@ -208,6 +209,47 @@ onUnmounted(() => {
     }
     50% {
         opacity: 0.7;
+    }
+}
+</style>
+
+<style>
+.standby-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.standby-content {
+    text-align: center;
+}
+
+.standby-text {
+    color: #fff;
+    font-size: 3rem;
+    font-weight: bold;
+    letter-spacing: 0.15em;
+    animation: standby-pulse 2s ease-in-out infinite;
+}
+
+.standby-subtext {
+    color: #999;
+    font-size: 1.1rem;
+    margin-top: 1rem;
+    letter-spacing: 0.05em;
+}
+
+@keyframes standby-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
     }
 }
 </style>

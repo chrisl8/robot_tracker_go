@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
 
 const uiStore = useUIStore()
 const robotStore = useRobotStore()
+
+const hasDestinationPending = computed(
+    () => robotStore.destination !== null && robotStore.controlMode !== 'autonomous'
+)
 
 const pressed = ref<string | null>(null)
 
@@ -59,6 +63,15 @@ watch(
     <div class="panel">
         <h3>Controls</h3>
 
+        <!-- Arduino Connection Status -->
+        <div
+            class="arduino-status"
+            :class="robotStore.status.arduinoState === 'Connected' ? 'connected' : 'disconnected'"
+        >
+            <span class="arduino-dot"></span>
+            Arduino {{ robotStore.status.arduinoState }}
+        </div>
+
         <!-- Emergency Stop -->
         <button
             v-if="!robotStore.emergencyStopped"
@@ -96,13 +109,25 @@ watch(
                 </button>
                 <button
                     class="btn mode-btn"
-                    :class="{ active: robotStore.controlMode === 'autonomous' }"
+                    :class="{
+                        active: robotStore.controlMode === 'autonomous',
+                        'needs-attention': hasDestinationPending,
+                    }"
                     :disabled="robotStore.emergencyStopped"
                     @click="robotStore.setControlMode('autonomous')"
                 >
                     Auto
                 </button>
             </div>
+        </div>
+
+        <!-- Hint: destination set but not in auto mode -->
+        <div
+            v-if="hasDestinationPending"
+            class="auto-hint"
+            @click="robotStore.setControlMode('autonomous')"
+        >
+            Destination set — switch to <strong>Auto</strong> to start navigation
         </div>
 
         <div class="divider"></div>
@@ -193,6 +218,41 @@ h3 {
     letter-spacing: 0.5px;
 }
 
+.arduino-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.arduino-status.connected {
+    background: rgba(78, 204, 163, 0.15);
+    color: #4ecca3;
+}
+
+.arduino-status.disconnected {
+    background: rgba(233, 69, 96, 0.15);
+    color: #e94560;
+}
+
+.arduino-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.arduino-status.connected .arduino-dot {
+    background: #4ecca3;
+}
+
+.arduino-status.disconnected .arduino-dot {
+    background: #e94560;
+}
+
 .emergency-stop {
     width: 100%;
     padding: 16px;
@@ -279,9 +339,9 @@ h3 {
     padding: 8px 4px;
     font-size: 0.8rem;
     background: #16213e;
-    border: 1px solid #333;
+    border: 2px solid #333;
     border-radius: 6px;
-    color: #aaa;
+    color: #666;
     cursor: pointer;
     transition: all 0.15s ease;
 }
@@ -292,14 +352,47 @@ h3 {
 }
 
 .mode-btn.active {
-    background: #0f3460;
-    color: #fff;
+    background: #4ecca3;
+    color: #1a1a2e;
     border-color: #4ecca3;
+    font-weight: 600;
+}
+
+.mode-btn.needs-attention {
+    animation: pulse-auto 1.5s ease-in-out infinite;
+    border-color: #f0ad4e;
+    color: #f0ad4e;
+}
+
+@keyframes pulse-auto {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(240, 173, 78, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 4px rgba(240, 173, 78, 0);
+    }
 }
 
 .mode-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+.auto-hint {
+    background: rgba(240, 173, 78, 0.15);
+    color: #f0ad4e;
+    font-size: 0.75rem;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-top: 8px;
+    cursor: pointer;
+    text-align: center;
+    border: 1px solid rgba(240, 173, 78, 0.3);
+}
+
+.auto-hint:hover {
+    background: rgba(240, 173, 78, 0.25);
 }
 
 .controls {

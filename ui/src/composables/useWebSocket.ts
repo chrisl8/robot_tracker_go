@@ -1,27 +1,34 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
-import { useUIStore } from '@/stores/uiStore'
 import type { WebSocketMessage } from '@/types/api'
 
 interface WebSocketOptions {
-    maxAttempts?: number
     baseDelay?: number
+    maxDelay?: number
     onConnect?: () => void
     onDisconnect?: () => void
+    onReconnect?: () => void
     onError?: (error: Event) => void
 }
 
 export function useWebSocket(url: string, options: WebSocketOptions = {}) {
-    const { maxAttempts = 5, baseDelay = 1000, onConnect, onDisconnect, onError } = options
+    const {
+        baseDelay = 1000,
+        maxDelay = 5000,
+        onConnect,
+        onDisconnect,
+        onReconnect,
+        onError,
+    } = options
 
     const robotStore = useRobotStore()
-    const uiStore = useUIStore()
 
     const ws = ref<WebSocket | null>(null)
     const isConnected = ref(false)
     const attempts = ref(0)
 
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+    let hasConnectedOnce = false
 
     function connect(): void {
         if (ws.value?.readyState === WebSocket.OPEN) {
@@ -32,9 +39,14 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
             ws.value = new WebSocket(url)
 
             ws.value.onopen = () => {
+                const wasReconnect = hasConnectedOnce
                 isConnected.value = true
                 attempts.value = 0
+                hasConnectedOnce = true
                 onConnect?.()
+                if (wasReconnect) {
+                    onReconnect?.()
+                }
             }
 
             ws.value.onclose = () => {
@@ -62,13 +74,8 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
     }
 
     function scheduleReconnect(): void {
-        if (attempts.value >= maxAttempts) {
-            uiStore.showToast('Connection failed. Please refresh the page.', 'error')
-            return
-        }
-
         attempts.value++
-        const delay = baseDelay * Math.pow(2, attempts.value - 1)
+        const delay = Math.min(baseDelay * Math.pow(2, attempts.value - 1), maxDelay)
         reconnectTimeout = setTimeout(() => {
             connect()
         }, delay)

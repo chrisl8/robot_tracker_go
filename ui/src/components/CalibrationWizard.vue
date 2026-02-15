@@ -46,6 +46,7 @@ function close(): void {
     uiStore.closeCalibration()
     step.value = 1
     selectedTagId.value = null
+    uiStore.setDetectedTags([])
 }
 
 function openStep2(): void {
@@ -71,6 +72,7 @@ async function fetchDetectedTags(): Promise<void> {
         const response = await fetch('/api/calibration/detected-tags')
         const data = await response.json()
         detectedTags.value = data.tags || []
+        uiStore.setDetectedTags(detectedTags.value)
     } catch (e) {
         console.error('Failed to fetch detected tags:', e)
     }
@@ -152,7 +154,11 @@ watch(isOpen, open => {
 <template>
     <Teleport to="body">
         <div v-if="isOpen" class="calibration-wizard">
-            <div class="calibration-overlay" @click="close"></div>
+            <div
+                class="calibration-overlay"
+                :class="{ transparent: step === 2 }"
+                @click="close"
+            ></div>
             <div
                 ref="dialogRef"
                 class="calibration-content"
@@ -283,6 +289,10 @@ watch(isOpen, open => {
     height: 100%;
     background: rgba(0, 0, 0, 0.7);
     z-index: 1;
+}
+
+.calibration-overlay.transparent {
+    background: rgba(0, 0, 0, 0.15);
 }
 
 .calibration-content {

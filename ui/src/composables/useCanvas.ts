@@ -114,6 +114,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             robotStore.paths,
             obstacleStore.obstacles,
             obstacleStore.drawRect,
+            uiStore.panels,
             uiStore.selectedCalibrationTagId,
             uiStore.detectedTags,
             mousePosition.value,
@@ -389,22 +390,69 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     }
 
     function renderCalibrationTag(): void {
-        const selectedTagId = uiStore.selectedCalibrationTagId
-        const detectedTags = uiStore.detectedTags
+        if (!ctx.value) return
 
-        if (!ctx.value || selectedTagId === null || detectedTags.length === 0) return
+        const detectedTags = uiStore.detectedTags
+        const selectedTagId = uiStore.selectedCalibrationTagId
+        const calibrationOpen = uiStore.panels.calibrationOpen
+
+        if (!calibrationOpen || detectedTags.length === 0) return
+
+        // Draw all detected tags with dim markers for spatial context
+        for (const tag of detectedTags) {
+            if (!tag.corners || tag.corners.length !== 4) continue
+            if (tag.id === selectedTagId) continue // drawn separately below
+
+            const scaledCorners = tag.corners.map((corner: [number, number]) =>
+                naturalToCanvas(corner[0], corner[1])
+            )
+
+            ctx.value.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+            ctx.value.lineWidth = 1
+            ctx.value.setLineDash([])
+            ctx.value.beginPath()
+            ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
+            ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
+            ctx.value.lineTo(scaledCorners[2].x, scaledCorners[2].y)
+            ctx.value.lineTo(scaledCorners[3].x, scaledCorners[3].y)
+            ctx.value.closePath()
+            ctx.value.stroke()
+
+            const cx = (scaledCorners[0].x + scaledCorners[2].x) / 2
+            const cy = (scaledCorners[0].y + scaledCorners[2].y) / 2
+            ctx.value.fillStyle = 'rgba(255, 255, 255, 0.7)'
+            ctx.value.font = '11px sans-serif'
+            ctx.value.textAlign = 'center'
+            ctx.value.textBaseline = 'middle'
+            ctx.value.fillText(`Tag ${tag.id}`, cx, cy)
+        }
+
+        // Draw selected tag with prominent highlight
+        if (selectedTagId === null) {
+            ctx.value.textAlign = 'left'
+            ctx.value.textBaseline = 'alphabetic'
+            return
+        }
 
         const selectedTag = detectedTags.find(tag => tag.id === selectedTagId)
-        if (!selectedTag || !selectedTag.corners || selectedTag.corners.length !== 4) return
+        if (!selectedTag || !selectedTag.corners || selectedTag.corners.length !== 4) {
+            ctx.value.textAlign = 'left'
+            ctx.value.textBaseline = 'alphabetic'
+            return
+        }
 
-        const corners = selectedTag.corners
-
-        const scaledCorners = corners.map((corner: [number, number]) =>
+        const scaledCorners = selectedTag.corners.map((corner: [number, number]) =>
             naturalToCanvas(corner[0], corner[1])
         )
 
+        // Glow effect
+        ctx.value.save()
+        ctx.value.shadowBlur = 15
+        ctx.value.shadowColor = '#00bcd4'
+
+        // Thick cyan outline
         ctx.value.strokeStyle = '#00bcd4'
-        ctx.value.lineWidth = 3
+        ctx.value.lineWidth = 4
         ctx.value.setLineDash([])
         ctx.value.beginPath()
         ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
@@ -414,16 +462,34 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         ctx.value.closePath()
         ctx.value.stroke()
 
-        ctx.value.fillStyle = 'rgba(0, 188, 212, 0.2)'
+        ctx.value.restore()
+
+        // Stronger fill
+        ctx.value.fillStyle = 'rgba(0, 188, 212, 0.35)'
+        ctx.value.beginPath()
+        ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
+        ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
+        ctx.value.lineTo(scaledCorners[2].x, scaledCorners[2].y)
+        ctx.value.lineTo(scaledCorners[3].x, scaledCorners[3].y)
+        ctx.value.closePath()
         ctx.value.fill()
 
+        // Corner markers
+        ctx.value.fillStyle = '#00bcd4'
+        for (const corner of scaledCorners) {
+            ctx.value.beginPath()
+            ctx.value.arc(corner.x, corner.y, 5, 0, Math.PI * 2)
+            ctx.value.fill()
+        }
+
+        // Larger label
         const centerX = (scaledCorners[0].x + scaledCorners[2].x) / 2
         const centerY = (scaledCorners[0].y + scaledCorners[2].y) / 2
         ctx.value.fillStyle = '#00bcd4'
-        ctx.value.fillRect(centerX - 30, centerY - 25, 60, 20)
+        ctx.value.fillRect(centerX - 35, centerY - 27, 70, 24)
 
         ctx.value.fillStyle = '#1a1a2e'
-        ctx.value.font = 'bold 12px sans-serif'
+        ctx.value.font = 'bold 14px sans-serif'
         ctx.value.textAlign = 'center'
         ctx.value.textBaseline = 'middle'
         ctx.value.fillText(`Tag ${selectedTagId}`, centerX, centerY - 15)
@@ -451,14 +517,14 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             ctx.value.lineWidth = 2
             ctx.value.strokeRect(scaled1.x, scaled1.y, width, height)
 
-            // Draw label background
-            ctx.value.fillStyle = color
-            ctx.value.fillRect(scaled1.x, scaled1.y - 18, 50, 18)
-
-            // Draw label text
-            ctx.value.fillStyle = '#1a1a2e'
+            // Draw label
+            const label = track.tag_id !== undefined ? `Robot ${track.tag_id}` : `#${track.id}`
             ctx.value.font = 'bold 11px sans-serif'
-            ctx.value.fillText(`#${track.id}`, scaled1.x + 4, scaled1.y - 5)
+            const labelWidth = ctx.value.measureText(label).width + 8
+            ctx.value.fillStyle = color
+            ctx.value.fillRect(scaled1.x, scaled1.y - 18, labelWidth, 18)
+            ctx.value.fillStyle = '#1a1a2e'
+            ctx.value.fillText(label, scaled1.x + 4, scaled1.y - 5)
 
             // Draw confidence if available
             if (track.confidence > 0) {
@@ -469,15 +535,6 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                     scaled1.x,
                     scaled2.y + 14
                 )
-            }
-
-            // Draw tag ID if available
-            if (track.tag_id !== undefined) {
-                ctx.value.fillStyle = '#4ecca3'
-                ctx.value.fillRect(scaled2.x - 25, scaled2.y - 5, 25, 18)
-                ctx.value.fillStyle = '#1a1a2e'
-                ctx.value.font = 'bold 10px sans-serif'
-                ctx.value.fillText(`T${track.tag_id}`, scaled2.x - 22, scaled2.y + 8)
             }
 
             // Draw heading arrow from AprilTag corners in pixel space

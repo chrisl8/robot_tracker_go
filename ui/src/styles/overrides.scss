@@ -58,29 +58,6 @@ body {
     gap: $spacing-lg;
 }
 
-.status {
-    display: flex;
-    gap: 20px;
-    font-size: 0.9rem;
-
-    span {
-        color: $text-dim;
-    }
-
-    .value {
-        color: $primary;
-        font-weight: 500;
-    }
-
-    .connected .value {
-        color: $primary;
-    }
-
-    .disconnected .value {
-        color: $danger;
-    }
-}
-
 @keyframes pulse {
     0%,
     100% {
@@ -395,32 +372,6 @@ body {
 
 .hidden {
     display: none !important;
-}
-
-// Stats Grid
-.stats-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: $spacing-md;
-}
-
-.stat-item {
-    background: $surface;
-    padding: $spacing-md;
-    border-radius: $radius-md;
-    text-align: center;
-}
-
-.stat-value {
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: $primary;
-}
-
-.stat-label {
-    font-size: 0.75rem;
-    color: $text-muted;
-    margin-top: 2px;
 }
 
 // Obstacle Toggle

@@ -5,13 +5,13 @@ import { getTrackColor } from '@/types/robot'
 
 const robotStore = useRobotStore()
 
-const tracks = computed(() => robotStore.confirmedTracks)
+const tracks = computed(() => [...robotStore.confirmedTracks].sort((a, b) => a.id - b.id))
 
 function getTrackLabel(track: { id: number; tag_id?: number }): string {
     if (track.tag_id !== undefined) {
         return `Robot ${track.tag_id}`
     }
-    return `Track #${track.id}`
+    return `Object #${track.id}`
 }
 
 function selectTrack(track: { id: number }): void {
