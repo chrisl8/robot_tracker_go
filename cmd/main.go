@@ -258,12 +258,12 @@ func (rs *RobotSystem) initDemoMode() {
 	utils.Log(getWebUIURLs("9086"))
 
 	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
-		utils.Logf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
+		utils.Debugf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planner.SetObstacles(obstacles)
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
-			utils.Logf("DEBUG: Converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
+			utils.Debugf("DEBUG: Converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
 				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
 			detectionObstacles[i] = detection.Obstacle{
 				ID:               obs.Name,
@@ -275,7 +275,7 @@ func (rs *RobotSystem) initDemoMode() {
 			}
 		}
 		rs.detectionPipe.SetObstacles(detectionObstacles)
-		utils.Logf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
+		utils.Debugf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
 	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
@@ -437,12 +437,12 @@ func (rs *RobotSystem) Initialize() error {
 	rs.webServer = ui.NewWebServer(":9086")
 
 	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
-		utils.Logf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
+		utils.Debugf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planner.SetObstacles(obstacles)
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
-			utils.Logf("DEBUG: Initialize() converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
+			utils.Debugf("DEBUG: Initialize() converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
 				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
 			detectionObstacles[i] = detection.Obstacle{
 				ID:               obs.Name,
@@ -454,7 +454,7 @@ func (rs *RobotSystem) Initialize() error {
 			}
 		}
 		rs.detectionPipe.SetObstacles(detectionObstacles)
-		utils.Logf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
+		utils.Debugf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
 	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
@@ -463,7 +463,7 @@ func (rs *RobotSystem) Initialize() error {
 			return
 		}
 		worldPos := rs.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
-		utils.Logf("DEST: pixel(%d,%d) -> world(%.2f,%.2f) BEFORE SetGoal",
+		utils.Debugf("DEST: pixel(%d,%d) -> world(%.2f,%.2f) BEFORE SetGoal",
 			int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 		rs.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
@@ -485,9 +485,9 @@ func (rs *RobotSystem) Initialize() error {
 	rs.webServer.OnPathsChanged = func() map[int][][2]float64 {
 		paths := rs.planner.GetPathsWithGoals()
 		for rid, path := range paths {
-			utils.Logf("  Robot %d: %d waypoints", rid, len(path))
+			utils.Debugf("  Robot %d: %d waypoints", rid, len(path))
 			if len(path) > 0 {
-				utils.Logf("    First: (%.2f, %.2f), Last: (%.2f, %.2f)",
+				utils.Debugf("    First: (%.2f, %.2f), Last: (%.2f, %.2f)",
 					path[0][0], path[0][1], path[len(path)-1][0], path[len(path)-1][1])
 			}
 		}
@@ -548,12 +548,12 @@ func (rs *RobotSystem) Initialize() error {
 	}
 	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
 		rs.webServer.SetPositionEstimator(rs.positionEst)
-		utils.Logf("PATH VIS: PositionEstimator set on WebServer (calibrated=%v)",
+		utils.Debugf("PATH VIS: PositionEstimator set on WebServer (calibrated=%v)",
 			rs.positionEst.IsCalibrated())
 		rs.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
 		utils.Logf("Calibration loaded from %s", calibrationPath)
 	} else {
-		utils.Logf("PATH VIS: WARNING - PositionEstimator NOT set! IsCalibrated()=%v",
+		utils.Debugf("PATH VIS: WARNING - PositionEstimator NOT set! IsCalibrated()=%v",
 			rs.positionEst != nil && rs.positionEst.IsCalibrated())
 	}
 	rs.webServer.Start()
@@ -773,6 +773,27 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		minConfidence,
 	)
 
+	// Feed YOLO-detected obstacles into the A* global planner
+	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
+		var plannerObstacles []planning.Obstacle
+		for _, det := range detectionResult.YOLODetections {
+			if det.Bbox == nil {
+				continue
+			}
+			tl := rs.positionEst.PixelToWorld(det.Bbox.X1, det.Bbox.Y1)
+			br := rs.positionEst.PixelToWorld(det.Bbox.X2, det.Bbox.Y2)
+			// Normalize so TopLeft has smaller coords and BottomRight has larger
+			minX, maxX := math.Min(tl.X, br.X), math.Max(tl.X, br.X)
+			minY, maxY := math.Min(tl.Y, br.Y), math.Max(tl.Y, br.Y)
+			plannerObstacles = append(plannerObstacles, planning.Obstacle{
+				Name:             det.ClassName,
+				WorldTopLeft:     [2]float64{minX, minY},
+				WorldBottomRight: [2]float64{maxX, maxY},
+			})
+		}
+		rs.planner.SetDynamicObstacles(plannerObstacles)
+	}
+
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
 	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
 
@@ -790,216 +811,14 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				}
 				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
 
-				// Compute heading from AprilTag corners using tag's "upward" direction as forward
-				// Corner order: [0]=top-left, [1]=top-right, [2]=bottom-right, [3]=bottom-left
-				// Use bottom-center → top-center to get the tag's canonical forward direction
-				tagFound := false
-				var wBot, wTop *position.Point2D
-				for _, tag := range detectionResult.Tags {
-					if tag.TagID == *track.TagID {
-						tagFound = true
-						track.Corners = tag.Corners
-						botMidX := (tag.Corners[2][0] + tag.Corners[3][0]) / 2
-						botMidY := (tag.Corners[2][1] + tag.Corners[3][1]) / 2
-						topMidX := (tag.Corners[0][0] + tag.Corners[1][0]) / 2
-						topMidY := (tag.Corners[0][1] + tag.Corners[1][1]) / 2
-						wBot = rs.positionEst.PixelToWorldFloat(botMidX, botMidY)
-						wTop = rs.positionEst.PixelToWorldFloat(topMidX, topMidY)
-						track.Heading = math.Atan2(wTop.Y-wBot.Y, wTop.X-wBot.X)
-						// Apply configurable mounting offset
-						if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
-							offset := robotConfig.HeadingOffsetDegrees * math.Pi / 180
-							track.Heading += offset
-							track.HeadingOffset = offset
-						}
-
-						// Angle-aware EMA smoothing with outlier rejection
-						if prev, ok := rs.smoothedHeading[*track.TagID]; ok {
-							// Compute shortest angular difference
-							diff := track.Heading - prev
-							for diff > math.Pi {
-								diff -= 2 * math.Pi
-							}
-							for diff < -math.Pi {
-								diff += 2 * math.Pi
-							}
-
-							maxRate := rs.cfg.Position.HeadingMaxRateDeg * math.Pi / 180
-							if maxRate > 0 && math.Abs(diff) > maxRate {
-								// Measurement too far from smoothed — likely noise, reject it
-								rs.headingRejectCount[*track.TagID]++
-								utils.Debugf("HEADING REJECT: tag %d raw=%.1f° smoothed=%.1f° diff=%.1f° count=%d",
-									*track.TagID, track.Heading*180/math.Pi, prev*180/math.Pi, diff*180/math.Pi, rs.headingRejectCount[*track.TagID])
-								if rs.headingRejectCount[*track.TagID] >= 10 {
-									// Too many consecutive rejections — accept with EMA to converge
-									alpha := rs.cfg.Position.HeadingSmoothingAlpha
-									if alpha <= 0 {
-										alpha = 1.0
-									}
-									track.Heading = prev + alpha*diff
-									for track.Heading > math.Pi {
-										track.Heading -= 2 * math.Pi
-									}
-									for track.Heading < -math.Pi {
-										track.Heading += 2 * math.Pi
-									}
-									utils.Debugf("HEADING RESET: tag %d after 10 rejections, converging to %.1f°",
-										*track.TagID, track.Heading*180/math.Pi)
-									rs.headingRejectCount[*track.TagID] = 0
-								} else {
-									track.Heading = prev // keep previous smoothed heading
-								}
-							} else {
-								// Reasonable change — apply EMA
-								alpha := rs.cfg.Position.HeadingSmoothingAlpha
-								if alpha <= 0 {
-									alpha = 1.0
-								}
-								track.Heading = prev + alpha*diff
-								for track.Heading > math.Pi {
-									track.Heading -= 2 * math.Pi
-								}
-								for track.Heading < -math.Pi {
-									track.Heading += 2 * math.Pi
-								}
-								rs.headingRejectCount[*track.TagID] = 0
-							}
-						}
-						rs.smoothedHeading[*track.TagID] = track.Heading
-
-						break
-					}
-				}
-				if !tagFound {
-					utils.Debugf("HEADING: tag %d not detected this frame", *track.TagID)
-				}
-
-				// Track heading delta (angular velocity) and cache heading
-				if !tagFound {
-					if cached, ok := rs.lastHeading[*track.TagID]; ok {
-						track.Heading = cached
-						utils.Debugf("HEADING: tag %d using cached heading=%.2f°", *track.TagID, cached*180/math.Pi)
-					}
-					rs.headingDelta[*track.TagID] = 0
-					// Reset smoothing state after prolonged tag loss
-					rs.headingLostCount[*track.TagID]++
-					if rs.headingLostCount[*track.TagID] > 5 {
-						delete(rs.smoothedHeading, *track.TagID)
-						delete(rs.headingRejectCount, *track.TagID)
-					}
-				} else {
-					rs.headingLostCount[*track.TagID] = 0
-					if prev, ok := rs.lastHeading[*track.TagID]; ok {
-						delta := track.Heading - prev
-						for delta > math.Pi {
-							delta -= 2 * math.Pi
-						}
-						for delta < -math.Pi {
-							delta += 2 * math.Pi
-						}
-						if math.Abs(delta) > 15*math.Pi/180 {
-							utils.Debugf("HEADING JUMP: tag %d delta=%.1f° wBot=(%.3f,%.3f) wTop=(%.3f,%.3f)",
-								*track.TagID, delta*180/math.Pi,
-								wBot.X, wBot.Y, wTop.X, wTop.Y)
-							utils.Debugf("  corners: TL=(%.0f,%.0f) TR=(%.0f,%.0f) BR=(%.0f,%.0f) BL=(%.0f,%.0f)",
-								track.Corners[0][0], track.Corners[0][1],
-								track.Corners[1][0], track.Corners[1][1],
-								track.Corners[2][0], track.Corners[2][1],
-								track.Corners[3][0], track.Corners[3][1])
-						}
-						rs.headingDelta[*track.TagID] = delta
-					} else {
-						rs.headingDelta[*track.TagID] = 0
-					}
-					rs.lastHeading[*track.TagID] = track.Heading
-				}
+				rs.computeTrackHeading(track, detectionResult.Tags)
 			}
 		}
 	}
 
 	rs.webServer.BroadcastTracks(trackingResult.Tracks)
 
-	// Only execute autonomous path-following when in autonomous mode and not e-stopped
-	if rs.GetControlMode() == ControlModeAutonomous && !rs.IsEmergencyStopped() {
-		commandIssued := false
-		for i := range trackingResult.Tracks {
-			track := &trackingResult.Tracks[i]
-			if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
-				continue
-			}
-
-			robotID := *track.TagID
-
-			if _, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
-				if rs.positionEst == nil {
-					continue
-				}
-
-				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-				worldPos := rs.positionEst.PixelToWorld(px, py)
-
-				// Check if robot is close to final destination
-				if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
-					dx := worldPos.X - goal[0]
-					dy := worldPos.Y - goal[1]
-					distToGoal := math.Sqrt(dx*dx + dy*dy)
-					if distToGoal < rs.waypointThreshold {
-						rs.planner.CompletePath(robotID)
-						utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
-						if rs.commandQueue != nil {
-							rs.commandQueue.Enqueue(controller.CommandStop)
-							commandIssued = true
-						}
-						continue
-					}
-				}
-
-				// Advance past any reached or overshot waypoints
-				if !rs.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.waypointThreshold) {
-					// Path complete — stop the robot
-					utils.Logf("Robot %d reached final waypoint, stopping", robotID)
-					if rs.commandQueue != nil {
-						rs.commandQueue.Enqueue(controller.CommandStop)
-						commandIssued = true
-					}
-					continue
-				}
-
-				// Get updated waypoint after advancing
-				waypoint, stillHasPath := rs.planner.GetNextWaypoint(robotID)
-				if !stillHasPath {
-					continue
-				}
-
-				// Heading-based steering: turn to face waypoint, then drive forward
-				dx := waypoint[0] - worldPos.X
-				dy := waypoint[1] - worldPos.Y
-				bearingToWaypoint := math.Atan2(dy, dx)
-
-				if rs.pathExecutor != nil && rs.commandQueue != nil {
-					delta := rs.headingDelta[robotID]
-					cmd := rs.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
-					rs.commandQueue.Enqueue(cmd)
-					commandIssued = true
-				}
-
-				rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
-					[2]float64{0, 0})
-			} else if rs.commandQueue != nil && rs.commandQueue.IsRunning() {
-				// No path for this robot — ensure we're not still sending stale movement commands
-				rs.commandQueue.ClearActiveCommand()
-			}
-		}
-		// Safety: stop re-sending stale commands when tracking is lost for too long.
-		// AprilTag detection frequently fails for 1-1.5s during normal driving (motion blur,
-		// camera angle). The robot coasts on its last command during these gaps. Only clear
-		// the active command after trackingLostTimeout to stop the robot if truly lost.
-		if commandIssued {
-			rs.lastCommandTime = time.Now()
-		} else if rs.commandQueue != nil && time.Since(rs.lastCommandTime) > rs.trackingLostTimeout {
-			rs.commandQueue.ClearActiveCommand()
-		}
-	}
+	rs.executeAutonomousControl(trackingResult.Tracks)
 
 	overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult)
 	if len(overlay) > 0 && len(overlay) < width*height*3 {
@@ -1009,6 +828,12 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	}
 
 	rs.webServer.UpdateStats(len(detectionResult.Tags), len(detectionResult.YOLODetections))
+
+	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
+	if rs.frameNum%30 == 0 {
+		rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
+		rs.webServer.BroadcastStatus(len(trackingResult.Tracks))
+	}
 
 	detectedTags := make([]ui.DetectedTagInfo, 0, len(detectionResult.Tags))
 	for _, tag := range detectionResult.Tags {
@@ -1032,8 +857,212 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	if rs.frameNum%30 == 0 {
 		totalTime := time.Since(frameStart)
 		trackPlanTime := totalTime - detectTime
-		utils.Logf("FRAME TIMING: detect=%dms track+plan=%dms total=%dms",
+		utils.Debugf("FRAME TIMING: detect=%dms track+plan=%dms total=%dms",
 			detectTime.Milliseconds(), trackPlanTime.Milliseconds(), totalTime.Milliseconds())
+	}
+}
+
+// computeTrackHeading computes and smooths the heading for a confirmed track
+// using AprilTag corner geometry, EMA smoothing, and outlier rejection.
+func (rs *RobotSystem) computeTrackHeading(track *tracking.Track, tags []detection.AprilTag) {
+	tagID := *track.TagID
+
+	// Find matching tag and compute raw heading from corners
+	tagFound := false
+	var wBot, wTop *position.Point2D
+	for _, tag := range tags {
+		if tag.TagID != tagID {
+			continue
+		}
+		tagFound = true
+		track.Corners = tag.Corners
+
+		// Use bottom-center → top-center to get the tag's canonical forward direction
+		botMidX := (tag.Corners[2][0] + tag.Corners[3][0]) / 2
+		botMidY := (tag.Corners[2][1] + tag.Corners[3][1]) / 2
+		topMidX := (tag.Corners[0][0] + tag.Corners[1][0]) / 2
+		topMidY := (tag.Corners[0][1] + tag.Corners[1][1]) / 2
+		wBot = rs.positionEst.PixelToWorldFloat(botMidX, botMidY)
+		wTop = rs.positionEst.PixelToWorldFloat(topMidX, topMidY)
+		track.Heading = math.Atan2(wTop.Y-wBot.Y, wTop.X-wBot.X)
+
+		// Apply configurable mounting offset
+		if robotConfig := rs.cfg.GetRobotByTagID(tagID); robotConfig != nil {
+			offset := robotConfig.HeadingOffsetDegrees * math.Pi / 180
+			track.Heading += offset
+			track.HeadingOffset = offset
+		}
+
+		rs.applyHeadingSmoothing(track, tagID)
+		break
+	}
+
+	if !tagFound {
+		utils.Debugf("HEADING: tag %d not detected this frame", tagID)
+	}
+
+	// Track heading delta (angular velocity) and cache heading
+	if !tagFound {
+		if cached, ok := rs.lastHeading[tagID]; ok {
+			track.Heading = cached
+			utils.Debugf("HEADING: tag %d using cached heading=%.2f°", tagID, cached*180/math.Pi)
+		}
+		rs.headingDelta[tagID] = 0
+		rs.headingLostCount[tagID]++
+		if rs.headingLostCount[tagID] > 5 {
+			delete(rs.smoothedHeading, tagID)
+			delete(rs.headingRejectCount, tagID)
+		}
+	} else {
+		rs.headingLostCount[tagID] = 0
+		if prev, ok := rs.lastHeading[tagID]; ok {
+			delta := track.Heading - prev
+			delta = normalizeAngle(delta)
+			if math.Abs(delta) > 15*math.Pi/180 {
+				utils.Debugf("HEADING JUMP: tag %d delta=%.1f° wBot=(%.3f,%.3f) wTop=(%.3f,%.3f)",
+					tagID, delta*180/math.Pi, wBot.X, wBot.Y, wTop.X, wTop.Y)
+				utils.Debugf("  corners: TL=(%.0f,%.0f) TR=(%.0f,%.0f) BR=(%.0f,%.0f) BL=(%.0f,%.0f)",
+					track.Corners[0][0], track.Corners[0][1],
+					track.Corners[1][0], track.Corners[1][1],
+					track.Corners[2][0], track.Corners[2][1],
+					track.Corners[3][0], track.Corners[3][1])
+			}
+			rs.headingDelta[tagID] = delta
+		} else {
+			rs.headingDelta[tagID] = 0
+		}
+		rs.lastHeading[tagID] = track.Heading
+	}
+}
+
+// normalizeAngle wraps an angle to the range [-pi, pi].
+func normalizeAngle(a float64) float64 {
+	for a > math.Pi {
+		a -= 2 * math.Pi
+	}
+	for a < -math.Pi {
+		a += 2 * math.Pi
+	}
+	return a
+}
+
+// applyHeadingSmoothing applies angle-aware EMA smoothing with outlier rejection.
+func (rs *RobotSystem) applyHeadingSmoothing(track *tracking.Track, tagID int) {
+	prev, ok := rs.smoothedHeading[tagID]
+	if !ok {
+		rs.smoothedHeading[tagID] = track.Heading
+		return
+	}
+
+	diff := normalizeAngle(track.Heading - prev)
+
+	alpha := rs.cfg.Position.HeadingSmoothingAlpha
+	if alpha <= 0 {
+		alpha = 1.0
+	}
+
+	maxRate := rs.cfg.Position.HeadingMaxRateDeg * math.Pi / 180
+	if maxRate > 0 && math.Abs(diff) > maxRate {
+		// Measurement too far from smoothed — likely noise, reject it
+		rs.headingRejectCount[tagID]++
+		utils.Debugf("HEADING REJECT: tag %d raw=%.1f° smoothed=%.1f° diff=%.1f° count=%d",
+			tagID, track.Heading*180/math.Pi, prev*180/math.Pi, diff*180/math.Pi, rs.headingRejectCount[tagID])
+		if rs.headingRejectCount[tagID] >= 10 {
+			// Too many consecutive rejections — accept with EMA to converge
+			track.Heading = normalizeAngle(prev + alpha*diff)
+			utils.Debugf("HEADING RESET: tag %d after 10 rejections, converging to %.1f°",
+				tagID, track.Heading*180/math.Pi)
+			rs.headingRejectCount[tagID] = 0
+		} else {
+			track.Heading = prev // keep previous smoothed heading
+		}
+	} else {
+		// Reasonable change — apply EMA
+		track.Heading = normalizeAngle(prev + alpha*diff)
+		rs.headingRejectCount[tagID] = 0
+	}
+	rs.smoothedHeading[tagID] = track.Heading
+}
+
+// executeAutonomousControl handles path-following for all tracked robots.
+func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
+	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
+		return
+	}
+
+	commandIssued := false
+	for i := range tracks {
+		track := &tracks[i]
+		if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
+			continue
+		}
+
+		robotID := *track.TagID
+
+		if _, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
+			if rs.positionEst == nil {
+				continue
+			}
+
+			px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
+			worldPos := rs.positionEst.PixelToWorld(px, py)
+
+			// Check if robot is close to final destination
+			if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
+				dx := worldPos.X - goal[0]
+				dy := worldPos.Y - goal[1]
+				distToGoal := math.Sqrt(dx*dx + dy*dy)
+				if distToGoal < rs.waypointThreshold {
+					rs.planner.CompletePath(robotID)
+					utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
+					if rs.commandQueue != nil {
+						rs.commandQueue.Enqueue(controller.CommandStop)
+						commandIssued = true
+					}
+					continue
+				}
+			}
+
+			// Advance past any reached or overshot waypoints
+			if !rs.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.waypointThreshold) {
+				utils.Logf("Robot %d reached final waypoint, stopping", robotID)
+				if rs.commandQueue != nil {
+					rs.commandQueue.Enqueue(controller.CommandStop)
+					commandIssued = true
+				}
+				continue
+			}
+
+			// Get updated waypoint after advancing
+			waypoint, stillHasPath := rs.planner.GetNextWaypoint(robotID)
+			if !stillHasPath {
+				continue
+			}
+
+			// Heading-based steering: turn to face waypoint, then drive forward
+			dx := waypoint[0] - worldPos.X
+			dy := waypoint[1] - worldPos.Y
+			bearingToWaypoint := math.Atan2(dy, dx)
+
+			if rs.pathExecutor != nil && rs.commandQueue != nil {
+				delta := rs.headingDelta[robotID]
+				cmd := rs.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
+				rs.commandQueue.Enqueue(cmd)
+				commandIssued = true
+			}
+
+			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
+				[2]float64{0, 0})
+		} else if rs.commandQueue != nil && rs.commandQueue.IsRunning() {
+			rs.commandQueue.ClearActiveCommand()
+		}
+	}
+
+	// Safety: stop re-sending stale commands when tracking is lost for too long.
+	if commandIssued {
+		rs.lastCommandTime = time.Now()
+	} else if rs.commandQueue != nil && time.Since(rs.lastCommandTime) > rs.trackingLostTimeout {
+		rs.commandQueue.ClearActiveCommand()
 	}
 }
 
@@ -1348,6 +1377,12 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 	if rs.webServer != nil {
 		rs.webServer.UpdateStats(len(demoTags), 0)
 
+		// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
+		if rs.frameNum%30 == 0 {
+			rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
+			rs.webServer.BroadcastStatus(len(demoTags))
+		}
+
 		detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
 		for _, tag := range demoTags {
 			detectedTags = append(detectedTags, ui.DetectedTagInfo{
@@ -1364,6 +1399,8 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 func main() {
 	configPath := flag.String("config", "config/tracking_config.yaml", "Path to configuration file")
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")
+	listCamerasFlag := flag.Bool("list-cameras", false, "List available cameras")
+	testCameraID := flag.Int("test-camera", -1, "Test specific camera by ID")
 	flag.String("web-port", ":9086", "Web server port")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
@@ -1386,6 +1423,16 @@ func main() {
 		for _, p := range ports {
 			utils.Logf("  - %s", p)
 		}
+		return
+	}
+
+	if *listCamerasFlag {
+		listCameras()
+		return
+	}
+
+	if *testCameraID >= 0 {
+		testCamera(*testCameraID)
 		return
 	}
 
