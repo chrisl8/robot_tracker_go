@@ -88,6 +88,9 @@ type RobotSystem struct {
 	headingLostCount    map[int]int
 	lastCommandTime     time.Time
 	trackingLostTimeout time.Duration
+	lastFrameTime       time.Time
+	smoothedFPS         float64
+	startTime           time.Time
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -101,6 +104,7 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		smoothedHeading:    make(map[int]float64),
 		headingRejectCount: make(map[int]int),
 		headingLostCount:   make(map[int]int),
+		startTime:          time.Now(),
 	}
 }
 
@@ -750,6 +754,21 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	frameStart := time.Now()
 	timestamp := float64(frameStart.UnixNano()) / 1e9
 
+	// Compute smoothed FPS via exponential moving average
+	if !rs.lastFrameTime.IsZero() {
+		dt := frameStart.Sub(rs.lastFrameTime).Seconds()
+		if dt > 0 {
+			instantFPS := 1.0 / dt
+			alpha := 0.1 // EMA smoothing factor
+			if rs.smoothedFPS == 0 {
+				rs.smoothedFPS = instantFPS
+			} else {
+				rs.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.smoothedFPS
+			}
+		}
+	}
+	rs.lastFrameTime = frameStart
+
 	bounds := img.Bounds()
 	width := bounds.Max.X - bounds.Min.X
 	height := bounds.Max.Y - bounds.Min.Y
@@ -832,7 +851,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 	if rs.frameNum%30 == 0 {
 		rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
-		rs.webServer.BroadcastStatus(len(trackingResult.Tracks))
+		rs.webServer.BroadcastStatus(len(trackingResult.Tracks), rs.smoothedFPS, time.Since(rs.startTime).Seconds())
 	}
 
 	detectedTags := make([]ui.DetectedTagInfo, 0, len(detectionResult.Tags))
@@ -1306,7 +1325,23 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 	}
 
 	rs.frameNum++
-	timestamp := float64(time.Now().UnixNano()) / 1e9
+	frameStart := time.Now()
+	timestamp := float64(frameStart.UnixNano()) / 1e9
+
+	// Compute smoothed FPS via exponential moving average
+	if !rs.lastFrameTime.IsZero() {
+		dt := frameStart.Sub(rs.lastFrameTime).Seconds()
+		if dt > 0 {
+			instantFPS := 1.0 / dt
+			alpha := 0.1
+			if rs.smoothedFPS == 0 {
+				rs.smoothedFPS = instantFPS
+			} else {
+				rs.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.smoothedFPS
+			}
+		}
+	}
+	rs.lastFrameTime = frameStart
 
 	width := img.Rect.Max.X
 	height := img.Rect.Max.Y
@@ -1380,7 +1415,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 		if rs.frameNum%30 == 0 {
 			rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
-			rs.webServer.BroadcastStatus(len(demoTags))
+			rs.webServer.BroadcastStatus(len(demoTags), rs.smoothedFPS, time.Since(rs.startTime).Seconds())
 		}
 
 		detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))

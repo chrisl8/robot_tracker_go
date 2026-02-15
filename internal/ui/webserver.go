@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"runtime"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -37,6 +38,9 @@ type WebServer struct {
 	stopChan      chan struct{}
 	lastTagCount  int
 	lastYoloCount int
+	lastFPS       float64
+	lastUptimeSec float64
+	lastHostMemMB float64
 	statsMutex    sync.RWMutex
 
 	calibrationMutex    sync.RWMutex
@@ -137,6 +141,8 @@ type StatusMessage struct {
 	FPS          float64 `json:"fps"`
 	RobotCount   int     `json:"robotCount"`
 	ArduinoState string  `json:"arduinoState"`
+	HostMemoryMB float64 `json:"hostMemoryMB,omitempty"`
+	UptimeSec    float64 `json:"uptimeSec,omitempty"`
 }
 
 type CommandMessage struct {
@@ -446,6 +452,9 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 	s.statsMutex.RLock()
 	tagCount := s.lastTagCount
 	yoloCount := s.lastYoloCount
+	fps := s.lastFPS
+	uptimeSec := s.lastUptimeSec
+	hostMemMB := s.lastHostMemMB
 	s.statsMutex.RUnlock()
 
 	s.arduinoMutex.RLock()
@@ -459,11 +468,13 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"connected":    s.isRunning,
-		"fps":          0,
+		"fps":          fps,
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
 		"yoloCount":    yoloCount,
 		"arduinoState": state,
+		"hostMemoryMB": hostMemMB,
+		"uptimeSec":    uptimeSec,
 	})
 }
 
@@ -843,7 +854,7 @@ func (s *WebServer) SetArduinoConnected(connected bool) {
 	s.arduinoMutex.Unlock()
 }
 
-func (s *WebServer) BroadcastStatus(trackCount int) {
+func (s *WebServer) BroadcastStatus(trackCount int, fps float64, uptimeSec float64) {
 	s.arduinoMutex.RLock()
 	connected := s.arduinoConnected
 	s.arduinoMutex.RUnlock()
@@ -853,13 +864,25 @@ func (s *WebServer) BroadcastStatus(trackCount int) {
 		state = "Connected"
 	}
 
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	hostMemMB := float64(memStats.Alloc) / 1024 / 1024
+
+	s.statsMutex.Lock()
+	s.lastFPS = fps
+	s.lastUptimeSec = uptimeSec
+	s.lastHostMemMB = hostMemMB
+	s.statsMutex.Unlock()
+
 	s.BroadcastOverlay(OverlayMessage{
 		Type: "status",
 		Status: &StatusMessage{
 			Connected:    s.isRunning,
-			FPS:          0,
+			FPS:          fps,
 			RobotCount:   trackCount,
 			ArduinoState: state,
+			HostMemoryMB: hostMemMB,
+			UptimeSec:    uptimeSec,
 		},
 	})
 }
