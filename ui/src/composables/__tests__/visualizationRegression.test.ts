@@ -30,6 +30,7 @@ describe('VISUALIZATION-001: Robot Footprint Display', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(() => true),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         mockCanvas = {
@@ -231,6 +232,7 @@ describe('VISUALIZATION-003: Obstacle Backend Rendering', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(() => true),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         mockCanvas = {
@@ -366,6 +368,7 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(() => true),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         mockCanvas = {

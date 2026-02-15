@@ -33,6 +33,7 @@ describe('VIDEO-MAX-SIZE-001: Footprint Radius Scaling Bug', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         parentElementMock = {

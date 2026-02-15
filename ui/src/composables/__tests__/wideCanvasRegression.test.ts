@@ -31,6 +31,7 @@ describe('WIDE-CANVAS-001: Wide Canvas Coordinate Conversion Bug', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(() => true),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         mockCanvas = {
@@ -191,6 +192,7 @@ describe('WIDE-CANVAS-002: Tall Canvas Coordinate Conversion Bug', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(() => true),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         mockCanvas = {
@@ -289,6 +291,7 @@ describe('WIDE-CANVAS-003: Video Max-Width Scaling Bug', () => {
             textAlign: '',
             textBaseline: '',
             fillText: vi.fn(() => true),
+            measureText: vi.fn(() => ({ width: 50 })),
         }
 
         parentElementMock = {
