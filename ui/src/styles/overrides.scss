@@ -1,7 +1,33 @@
 @use 'sass:color';
 @use 'variables.scss' as *;
 
-// Reset and Base Styles
+// ─── CSS Custom Properties ───
+:root {
+    --bg-deep-space: #{$bg-deep-space};
+    --bg-slate: #{$bg-slate};
+    --panel-dark: #{$panel-dark};
+    --accent-cyan: #{$accent-cyan};
+    --accent-blue: #{$accent-blue};
+    --accent-teal: #{$accent-teal};
+    --text-primary: #{$text-primary};
+    --text-secondary: #{$text-secondary};
+    --text-dim: #{$text-dim};
+    --warning-amber: #{$warning-amber};
+    --alert-red: #{$alert-red};
+    --success-green: #{$success-green};
+    --border-subtle: #{$border};
+    --border-panel: #{$border-panel};
+    --glow-cyan: #{$shadow-glow};
+    --font-heading: 'Rajdhani', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-data: 'JetBrains Mono', monospace;
+    --panel-width: 280px;
+    --bottom-bar-height: 48px;
+    --panel-gap: 12px;
+    --panel-padding: 16px;
+}
+
+// ─── Reset and Base Styles ───
 * {
     margin: 0;
     padding: 0;
@@ -9,9 +35,9 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: $background;
-    color: $text;
+    font-family: var(--font-body);
+    background: var(--bg-deep-space);
+    color: var(--text-primary);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -24,40 +50,7 @@ body {
     flex-direction: column;
 }
 
-// Header
-.app-header {
-    background: $surface;
-    padding: $spacing-md $spacing-xl;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid $border;
-
-    h1 {
-        font-size: 1.4rem;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-
-        &::before {
-            content: '';
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background: $primary;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-    }
-}
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: $spacing-lg;
-}
-
+// ─── Animations ───
 @keyframes pulse {
     0%,
     100% {
@@ -71,10 +64,10 @@ body {
 @keyframes pulse-warning {
     0%,
     100% {
-        box-shadow: 0 0 0 0 rgba($danger, 0.4);
+        box-shadow: 0 0 0 0 rgba($alert-red, 0.4);
     }
     50% {
-        box-shadow: 0 0 0 6px rgba($danger, 0);
+        box-shadow: 0 0 0 6px rgba($alert-red, 0);
     }
 }
 
@@ -89,63 +82,89 @@ body {
     }
 }
 
-// Calibration Badge
+@keyframes glow-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 4px rgba(0, 217, 255, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 12px rgba(0, 217, 255, 0.8);
+    }
+}
+
+// ─── Reduced Motion ───
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+// ─── Header (removed — content moved to bottom-bar) ───
+
+// ─── Calibration Badge ───
 .calibration-badge {
     padding: 6px 12px;
     border-radius: $radius-md;
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-family: var(--font-data);
+    font-size: 0.8rem;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
-    border: 2px solid transparent;
+    border: 1px solid transparent;
+    letter-spacing: 0.5px;
 
     &.calibrated {
-        background: $primary-dim;
-        color: $primary;
-        border-color: $primary;
+        background: rgba(0, 230, 118, 0.1);
+        color: var(--success-green);
+        border-color: rgba(0, 230, 118, 0.3);
 
         &:hover {
-            background: $primary-hover;
+            background: rgba(0, 230, 118, 0.2);
         }
     }
 
     &.not-calibrated {
-        background: $danger-dim;
-        color: $danger;
-        border-color: $danger;
+        background: rgba(255, 61, 0, 0.1);
+        color: var(--alert-red);
+        border-color: rgba(255, 61, 0, 0.3);
         animation: pulse-warning 2s infinite;
 
         &:hover {
-            background: $danger-hover;
+            background: rgba(255, 61, 0, 0.2);
         }
     }
 }
 
-// Main Layout
+// ─── Main Layout ───
 .main-layout {
     display: flex;
     flex: 1;
     overflow: hidden;
 }
 
-// Video Container
+// ─── Video Container ───
 .video-container {
     flex: 1;
     display: flex;
     flex-direction: column;
     padding: $spacing-lg;
-    background: #0a0a0f;
+    background: var(--bg-deep-space);
 }
 
 .video-wrapper {
     flex: 1;
     position: relative;
     background: #000;
-    border-radius: $radius-lg;
+    border-radius: $radius-md;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid var(--border-panel);
 }
 
 #video {
@@ -163,35 +182,22 @@ body {
     pointer-events: auto;
 }
 
-.loading {
-    position: absolute;
-    color: $text-muted;
-    font-size: 1rem;
-}
+// ─── Sidebar (removed — replaced by panel-left / panel-right in App.vue) ───
 
-// Sidebar
-.sidebar {
-    width: 300px;
-    background: $surface;
-    padding: $spacing-lg;
-    border-left: 1px solid $border;
-    display: flex;
-    flex-direction: column;
-    gap: $spacing-lg;
-    overflow-y: auto;
-}
-
+// ─── Panel ───
 .panel {
-    background: $surface-light;
+    background: var(--panel-dark);
     border-radius: $radius-lg;
     padding: $spacing-lg;
+    border: 1px solid var(--border-panel);
 
     h3 {
+        font-family: var(--font-heading);
         font-size: 0.85rem;
         text-transform: uppercase;
-        color: $text-dim;
+        color: var(--accent-cyan);
         margin-bottom: $spacing-md;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
         display: flex;
         align-items: center;
         gap: $spacing-sm;
@@ -200,38 +206,32 @@ body {
             content: '';
             display: block;
             width: 3px;
-            height: 12px;
-            background: $primary;
+            height: 14px;
+            background: var(--accent-cyan);
             border-radius: 2px;
         }
     }
 }
 
-// Controls
-.controls {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: $spacing-sm;
-    max-width: 180px;
-    margin: 0 auto;
-}
-
+// ─── Buttons ───
 .btn {
     padding: 14px;
-    border: none;
-    border-radius: $radius-lg;
+    border: 1px solid var(--border-subtle);
+    border-radius: $radius-md;
     cursor: pointer;
+    font-family: var(--font-body);
     font-size: 1.3rem;
     transition: all 0.15s ease;
-    background: $border;
-    color: $text;
+    background: var(--panel-dark);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
 
     &:hover {
-        background: color.adjust($border, $lightness: 10%);
-        transform: translateY(-1px);
+        background: rgba(0, 217, 255, 0.1);
+        border-color: rgba(0, 217, 255, 0.3);
+        color: var(--text-primary);
     }
 
     &:active {
@@ -243,40 +243,53 @@ body {
     }
 
     &.stop {
-        background: $danger;
+        background: rgba(255, 61, 0, 0.15);
+        border-color: rgba(255, 61, 0, 0.3);
+        color: var(--alert-red);
 
         &:hover {
-            background: color.adjust($danger, $lightness: 10%);
+            background: rgba(255, 61, 0, 0.25);
         }
     }
 
     &.forward {
-        background: $primary;
-        color: $background;
+        background: rgba(0, 217, 255, 0.15);
+        border-color: rgba(0, 217, 255, 0.3);
+        color: var(--accent-cyan);
 
         &:hover {
-            background-color: color.adjust($primary, $lightness: 10%);
+            background: rgba(0, 217, 255, 0.25);
         }
     }
 }
 
+.controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $spacing-sm;
+    max-width: 180px;
+    margin: 0 auto;
+}
+
 .keyboard-hint {
     font-size: 0.75rem;
-    color: $text-muted;
+    color: var(--text-dim);
     text-align: center;
     margin-top: 10px;
 
     kbd {
-        background: $border;
+        background: var(--panel-dark);
+        border: 1px solid var(--border-subtle);
         padding: 3px 8px;
         border-radius: $radius-sm;
         margin: 0 3px;
-        font-family: monospace;
+        font-family: var(--font-data);
         font-size: 0.8rem;
+        color: var(--text-secondary);
     }
 }
 
-// Track List
+// ─── Track List ───
 .track-list {
     max-height: 250px;
     overflow-y: auto;
@@ -287,13 +300,16 @@ body {
     align-items: center;
     gap: 12px;
     padding: 10px;
-    background: $surface;
+    background: var(--bg-slate);
     border-radius: $radius-md;
     margin-bottom: $spacing-sm;
-    transition: background 0.2s;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
 
     &:hover {
-        background: color.adjust($surface, $lightness: 5%);
+        border-color: var(--border-subtle);
+        background: rgba(0, 217, 255, 0.05);
     }
 }
 
@@ -306,7 +322,7 @@ body {
     justify-content: center;
     font-weight: 600;
     font-size: 0.9rem;
-    color: $background;
+    color: var(--bg-deep-space);
 }
 
 .track-info {
@@ -322,30 +338,33 @@ body {
 }
 
 .track-tag {
-    font-size: 0.7rem;
-    background: $border;
+    font-family: var(--font-data);
+    font-size: 0.65rem;
+    background: rgba(0, 217, 255, 0.1);
     padding: 2px 6px;
     border-radius: $radius-sm;
-    color: $text-dim;
+    color: var(--accent-cyan);
+    letter-spacing: 0.5px;
 }
 
 .track-conf {
+    font-family: var(--font-data);
     font-size: 0.75rem;
-    color: $primary;
+    color: var(--text-dim);
     margin-top: 2px;
 }
 
 .no-tracks {
-    color: $text-muted;
+    color: var(--text-dim);
     text-align: center;
     padding: 20px;
     font-size: 0.9rem;
 }
 
-// Instructions
+// ─── Instructions ───
 .instructions {
     font-size: 0.85rem;
-    color: $text-light;
+    color: var(--text-secondary);
     line-height: 1.6;
 
     li {
@@ -353,17 +372,17 @@ body {
     }
 
     &.calibration-needed {
-        border: 1px solid $danger;
+        border: 1px solid var(--alert-red);
         border-radius: $radius-lg;
         padding: $spacing-md;
-        background: $danger-dim;
+        background: rgba(255, 61, 0, 0.1);
 
         li {
-            color: color.adjust($danger, $lightness: 20%);
+            color: rgba(255, 61, 0, 0.8);
         }
 
         .warning {
-            color: $danger;
+            color: var(--alert-red);
             font-weight: bold;
             margin-bottom: $spacing-sm;
         }
@@ -374,17 +393,19 @@ body {
     display: none !important;
 }
 
-// Obstacle Toggle
+// ─── Obstacle Panel ───
 .obstacle-toggle {
     padding: 6px 12px;
     border-radius: $radius-md;
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-family: var(--font-data);
+    font-size: 0.8rem;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
-    border: 2px solid $obstacle;
+    border: 1px solid $obstacle;
     background: $obstacle-dim;
     color: $obstacle;
+    letter-spacing: 0.5px;
 
     &:hover {
         background: $obstacle-hover;
@@ -435,7 +456,7 @@ body {
     }
 }
 
-// Toast
+// ─── Toast ───
 .toast-container {
     position: fixed;
     bottom: 20px;
@@ -445,13 +466,14 @@ body {
 }
 
 .toast {
-    background: $surface;
-    color: $text;
+    background: var(--panel-dark);
+    color: var(--text-primary);
     padding: $spacing-md $spacing-xl;
-    border-radius: $radius-lg;
+    border-radius: $radius-md;
     box-shadow: $shadow-md;
-    border: 1px solid $border;
+    border: 1px solid var(--border-subtle);
     margin-top: $spacing-sm;
+    font-family: var(--font-body);
 
     &.show {
         display: block;
@@ -459,30 +481,31 @@ body {
     }
 
     &.success {
-        border-color: $primary;
-        background: $primary-dim;
-        color: $primary;
+        border-color: var(--success-green);
+        background: rgba(0, 230, 118, 0.1);
+        color: var(--success-green);
     }
 
     &.error {
-        border-color: $danger;
-        background: $danger-dim;
-        color: $danger;
+        border-color: var(--alert-red);
+        background: rgba(255, 61, 0, 0.1);
+        color: var(--alert-red);
     }
 
     &.warning {
-        border-color: $warning;
-        background: rgba($warning, 0.2);
-        color: $warning;
+        border-color: var(--warning-amber);
+        background: rgba(255, 171, 0, 0.1);
+        color: var(--warning-amber);
     }
 
     &.info {
-        border-color: $info;
-        background: $info-dim;
-        color: $info;
+        border-color: var(--accent-cyan);
+        background: rgba(0, 217, 255, 0.1);
+        color: var(--accent-cyan);
     }
 }
 
+// ─── Calibration Wizard ───
 .dimension-results {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -491,36 +514,40 @@ body {
 }
 
 .dimension-box {
-    background: $surface-light;
+    background: var(--bg-slate);
     padding: $spacing-lg;
     border-radius: $radius-lg;
     text-align: center;
+    border: 1px solid var(--border-panel);
 }
 
 .dimension-value {
+    font-family: var(--font-data);
     font-size: 1.8rem;
-    font-weight: bold;
-    color: $primary;
+    font-weight: 500;
+    color: var(--accent-cyan);
 }
 
 .dimension-label {
     font-size: 0.8rem;
-    color: $text-dim;
+    color: var(--text-dim);
     margin-top: $spacing-xs;
 }
 
 .measurement-guide {
-    background: $surface-light;
+    background: var(--bg-slate);
     border-radius: $radius-lg;
     padding: $spacing-lg;
     margin: $spacing-lg 0;
+    border: 1px solid var(--border-panel);
 
     h4 {
-        color: $text-dim;
+        font-family: var(--font-heading);
+        color: var(--text-dim);
         font-size: 0.85rem;
         margin-bottom: $spacing-md;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
     }
 }
 
@@ -546,6 +573,7 @@ body {
         left: 50%;
         transform: translate(-50%, -50%);
         color: white;
+        font-family: var(--font-data);
         font-size: 10px;
         font-weight: bold;
     }
@@ -563,30 +591,31 @@ body {
         right: 0;
         top: 50%;
         height: 2px;
-        background: $primary;
+        background: var(--accent-cyan);
     }
 
     &::after {
-        content: '▼';
+        content: '\25bc';
         position: absolute;
         left: 50%;
         bottom: 0;
         transform: translateX(-50%);
-        color: $primary;
+        color: var(--accent-cyan);
         font-size: 12px;
     }
 }
 
 .measurement-label {
     text-align: center;
-    color: $primary;
-    font-weight: bold;
+    color: var(--accent-cyan);
+    font-family: var(--font-data);
+    font-weight: 500;
     font-size: 0.9rem;
 }
 
 .measurement-note {
     font-size: 0.8rem;
-    color: $text-dim;
+    color: var(--text-dim);
     line-height: 1.5;
     margin-top: $spacing-sm;
 }

@@ -287,24 +287,25 @@ watch(isOpen, open => {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(10, 14, 20, 0.8);
     z-index: 1;
 }
 
 .calibration-overlay.transparent {
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(10, 14, 20, 0.2);
 }
 
 .calibration-content {
     position: fixed;
-    background: #16213e;
+    background: var(--bg-slate);
     border-radius: 12px;
     padding: 0;
     max-width: 520px;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--border-subtle);
     z-index: 2;
 }
 
@@ -313,16 +314,17 @@ watch(isOpen, open => {
     justify-content: space-between;
     align-items: center;
     padding: 16px 24px;
-    border-bottom: 1px solid #0f3460;
+    border-bottom: 1px solid var(--border-subtle);
     cursor: move;
-    background: #1a1a2e;
+    background: var(--panel-dark);
     border-radius: 12px 12px 0 0;
     user-select: none;
 }
 
 .calibration-header h2 {
     margin: 0;
-    color: #4ecca3;
+    font-family: var(--font-heading);
+    color: var(--accent-cyan);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -330,7 +332,12 @@ watch(isOpen, open => {
 }
 
 .calibration-header h2::before {
-    content: '📐';
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 18px;
+    background: var(--accent-cyan);
+    border-radius: 2px;
 }
 
 .calibration-actions {
@@ -341,10 +348,10 @@ watch(isOpen, open => {
 .calibration-btn-icon {
     width: 32px;
     height: 32px;
-    border: none;
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
-    background: #0f3460;
-    color: #aaa;
+    background: var(--panel-dark);
+    color: var(--text-secondary);
     cursor: pointer;
     font-size: 1rem;
     display: flex;
@@ -354,13 +361,14 @@ watch(isOpen, open => {
 }
 
 .calibration-btn-icon:hover {
-    background: #1a4a7a;
-    color: #eee;
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--text-primary);
 }
 
 .calibration-btn-icon.pinned {
-    background: #4ecca3;
-    color: #1a1a2e;
+    background: var(--accent-cyan);
+    color: var(--bg-deep-space);
+    border-color: var(--accent-cyan);
 }
 
 .calibration-body {
@@ -377,7 +385,8 @@ watch(isOpen, open => {
 
 .calibration-step h2 {
     margin-bottom: 16px;
-    color: #4ecca3;
+    font-family: var(--font-heading);
+    color: var(--accent-cyan);
 }
 
 .tag-size-presets {
@@ -389,33 +398,35 @@ watch(isOpen, open => {
 
 .preset-btn {
     padding: 6px 12px;
-    border: 1px solid #0f3460;
-    background: #1a1a2e;
-    color: #888;
+    border: 1px solid var(--border-subtle);
+    background: var(--panel-dark);
+    color: var(--text-dim);
     border-radius: 4px;
+    font-family: var(--font-data);
     font-size: 0.8rem;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .preset-btn:hover {
-    border-color: #4ecca3;
-    color: #4ecca3;
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
 }
 
 .preset-btn.selected {
-    background: rgba(78, 204, 163, 0.2);
-    border-color: #4ecca3;
-    color: #4ecca3;
+    background: rgba(0, 217, 255, 0.1);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
 }
 
 .tag-size-input {
     width: 100%;
     padding: 12px;
-    border: 2px solid #0f3460;
+    border: 2px solid var(--border-subtle);
     border-radius: 8px;
-    background: #1a1a2e;
-    color: #eee;
+    background: var(--panel-dark);
+    color: var(--text-primary);
+    font-family: var(--font-data);
     font-size: 1.1rem;
     text-align: center;
     margin-bottom: 16px;
@@ -423,29 +434,32 @@ watch(isOpen, open => {
 
 .tag-size-input:focus {
     outline: none;
-    border-color: #4ecca3;
+    border-color: var(--accent-cyan);
 }
 
 .tag-size-hint {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-dim);
     text-align: center;
     margin-top: -8px;
     margin-bottom: 16px;
 }
 
 .measurement-guide {
-    background: #1a1a2e;
+    background: var(--panel-dark);
     border-radius: 8px;
     padding: 16px;
     margin: 16px 0;
+    border: 1px solid var(--border-panel);
 }
 
 .measurement-guide h4 {
-    color: #888;
+    font-family: var(--font-heading);
+    color: var(--text-dim);
     font-size: 0.85rem;
     margin-bottom: 12px;
     text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .tag-diagram {
@@ -458,7 +472,7 @@ watch(isOpen, open => {
 
 .measurement-note {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--text-dim);
     line-height: 1.5;
     margin-top: 8px;
 }
@@ -481,33 +495,34 @@ watch(isOpen, open => {
 }
 
 .calibration-btn.primary {
-    background: #4ecca3;
-    color: #1a1a2e;
+    background: var(--accent-cyan);
+    color: var(--bg-deep-space);
 }
 
 .calibration-btn.primary:hover {
-    background: #5fd9b0;
+    background: rgba(0, 217, 255, 0.85);
     transform: translateY(-1px);
 }
 
 .calibration-btn.primary:disabled {
-    background: #2a4a3a;
-    color: #666;
+    background: rgba(0, 217, 255, 0.15);
+    color: var(--text-dim);
     cursor: not-allowed;
     transform: none;
 }
 
 .calibration-btn.secondary {
-    background: #0f3460;
-    color: #eee;
+    background: var(--panel-dark);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
 }
 
 .calibration-btn.secondary:hover {
-    background: #1a4a7a;
+    background: rgba(0, 217, 255, 0.08);
 }
 
 .detected-tags-list {
-    background: #1a1a2e;
+    background: var(--panel-dark);
     border-radius: 8px;
     padding: 12px;
     margin-bottom: 16px;
@@ -520,7 +535,7 @@ watch(isOpen, open => {
     align-items: center;
     justify-content: space-between;
     padding: 8px 12px;
-    background: #16213e;
+    background: var(--bg-slate);
     border-radius: 6px;
     margin-bottom: 6px;
     cursor: pointer;
@@ -529,22 +544,24 @@ watch(isOpen, open => {
 }
 
 .detected-tag-item:hover {
-    background: #1a2a4e;
+    background: rgba(0, 217, 255, 0.05);
 }
 
 .detected-tag-item.selected {
-    border-color: #00bcd4;
-    background: rgba(0, 188, 212, 0.1);
+    border-color: var(--accent-cyan);
+    background: rgba(0, 217, 255, 0.1);
 }
 
 .tag-id {
+    font-family: var(--font-data);
     font-weight: bold;
-    color: #4ecca3;
+    color: var(--accent-cyan);
 }
 
 .tag-status {
+    font-family: var(--font-data);
     font-size: 0.8rem;
-    color: #888;
+    color: var(--text-dim);
 }
 
 .calibration-status {
@@ -556,7 +573,7 @@ watch(isOpen, open => {
 }
 
 .calibration-status.info {
-    background: rgba(0, 188, 212, 0.2);
-    color: #00bcd4;
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--accent-cyan);
 }
 </style>

@@ -34,37 +34,38 @@ const uiStore = useUIStore()
 }
 
 .toast {
-    background: #16213e;
-    color: #eee;
+    background: var(--panel-dark);
+    color: var(--text-primary);
     padding: 12px 24px;
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-    border: 1px solid #0f3460;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-subtle);
     margin-top: 8px;
+    font-family: var(--font-body);
 }
 
 .toast.success {
-    border-color: #4ecca3;
-    background: rgba(78, 204, 163, 0.2);
-    color: #4ecca3;
+    border-color: var(--success-green);
+    background: rgba(0, 230, 118, 0.1);
+    color: var(--success-green);
 }
 
 .toast.error {
-    border-color: #e94560;
-    background: rgba(233, 69, 96, 0.2);
-    color: #e94560;
+    border-color: var(--alert-red);
+    background: rgba(255, 61, 0, 0.1);
+    color: var(--alert-red);
 }
 
 .toast.warning {
-    border-color: #ffc107;
-    background: rgba(255, 193, 7, 0.2);
-    color: #ffc107;
+    border-color: var(--warning-amber);
+    background: rgba(255, 171, 0, 0.1);
+    color: var(--warning-amber);
 }
 
 .toast.info {
-    border-color: #00bcd4;
-    background: rgba(0, 188, 212, 0.2);
-    color: #00bcd4;
+    border-color: var(--accent-cyan);
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--accent-cyan);
 }
 
 .toast-enter-active {

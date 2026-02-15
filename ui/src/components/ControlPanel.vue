@@ -63,15 +63,6 @@ watch(
     <div class="panel">
         <h3>Controls</h3>
 
-        <!-- Arduino Connection Status -->
-        <div
-            class="arduino-status"
-            :class="robotStore.status.arduinoState === 'Connected' ? 'connected' : 'disconnected'"
-        >
-            <span class="arduino-dot"></span>
-            Arduino {{ robotStore.status.arduinoState }}
-        </div>
-
         <!-- Emergency Stop -->
         <button
             v-if="!robotStore.emergencyStopped"
@@ -205,52 +196,19 @@ watch(
 
 <style scoped>
 .panel {
-    background: #1a1a2e;
+    background: var(--panel-dark);
     border-radius: 8px;
     padding: 16px;
+    border: 1px solid var(--border-panel);
 }
 
 h3 {
+    font-family: var(--font-heading);
     font-size: 0.85rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--accent-cyan);
     margin-bottom: 12px;
-    letter-spacing: 0.5px;
-}
-
-.arduino-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.8rem;
-    padding: 6px 10px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-}
-
-.arduino-status.connected {
-    background: rgba(78, 204, 163, 0.15);
-    color: #4ecca3;
-}
-
-.arduino-status.disconnected {
-    background: rgba(233, 69, 96, 0.15);
-    color: #e94560;
-}
-
-.arduino-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.arduino-status.connected .arduino-dot {
-    background: #4ecca3;
-}
-
-.arduino-status.disconnected .arduino-dot {
-    background: #e94560;
+    letter-spacing: 1px;
 }
 
 .emergency-stop {
@@ -258,9 +216,9 @@ h3 {
     padding: 16px;
     font-size: 1.1rem;
     font-weight: bold;
-    background: #c0392b;
-    color: #fff;
-    border: 2px solid #e74c3c;
+    background: rgba(255, 61, 0, 0.2);
+    color: var(--alert-red);
+    border: 2px solid var(--alert-red);
     border-radius: 8px;
     cursor: pointer;
     text-transform: uppercase;
@@ -269,7 +227,7 @@ h3 {
 }
 
 .emergency-stop:hover {
-    background: #e74c3c;
+    background: rgba(255, 61, 0, 0.35);
 }
 
 .emergency-stop:active {
@@ -281,7 +239,7 @@ h3 {
 }
 
 .estop-banner {
-    background: #e74c3c;
+    background: var(--alert-red);
     color: #fff;
     text-align: center;
     padding: 10px;
@@ -304,16 +262,16 @@ h3 {
 .estop-clear {
     width: 100%;
     padding: 10px;
-    background: #2c3e50;
-    color: #ecf0f1;
-    border: 1px solid #7f8c8d;
+    background: var(--bg-slate);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
     border-radius: 0 0 8px 8px;
     cursor: pointer;
     font-size: 0.9rem;
 }
 
 .estop-clear:hover {
-    background: #34495e;
+    background: var(--panel-dark);
 }
 
 .mode-selector {
@@ -322,7 +280,7 @@ h3 {
 
 .mode-label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     display: block;
@@ -338,39 +296,40 @@ h3 {
     flex: 1;
     padding: 8px 4px;
     font-size: 0.8rem;
-    background: #16213e;
-    border: 2px solid #333;
+    background: var(--bg-slate);
+    border: 2px solid var(--border-subtle);
     border-radius: 6px;
-    color: #666;
+    color: var(--text-dim);
     cursor: pointer;
     transition: all 0.15s ease;
 }
 
 .mode-btn:hover:not(:disabled) {
-    background: #1a3a5c;
-    color: #ddd;
+    background: rgba(0, 217, 255, 0.08);
+    color: var(--text-primary);
 }
 
 .mode-btn.active {
-    background: #4ecca3;
-    color: #1a1a2e;
-    border-color: #4ecca3;
+    background: var(--accent-cyan);
+    color: var(--bg-deep-space);
+    border-color: var(--accent-cyan);
     font-weight: 600;
+    box-shadow: 0 0 8px rgba(0, 217, 255, 0.4);
 }
 
 .mode-btn.needs-attention {
     animation: pulse-auto 1.5s ease-in-out infinite;
-    border-color: #f0ad4e;
-    color: #f0ad4e;
+    border-color: var(--warning-amber);
+    color: var(--warning-amber);
 }
 
 @keyframes pulse-auto {
     0%,
     100% {
-        box-shadow: 0 0 0 0 rgba(240, 173, 78, 0.4);
+        box-shadow: 0 0 0 0 rgba(255, 171, 0, 0.4);
     }
     50% {
-        box-shadow: 0 0 0 4px rgba(240, 173, 78, 0);
+        box-shadow: 0 0 0 4px rgba(255, 171, 0, 0);
     }
 }
 
@@ -380,19 +339,19 @@ h3 {
 }
 
 .auto-hint {
-    background: rgba(240, 173, 78, 0.15);
-    color: #f0ad4e;
+    background: rgba(255, 171, 0, 0.1);
+    color: var(--warning-amber);
     font-size: 0.75rem;
     padding: 8px 10px;
     border-radius: 6px;
     margin-top: 8px;
     cursor: pointer;
     text-align: center;
-    border: 1px solid rgba(240, 173, 78, 0.3);
+    border: 1px solid rgba(255, 171, 0, 0.3);
 }
 
 .auto-hint:hover {
-    background: rgba(240, 173, 78, 0.25);
+    background: rgba(255, 171, 0, 0.2);
 }
 
 .controls {
@@ -410,26 +369,29 @@ h3 {
 
 .btn {
     padding: 14px;
-    border: none;
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
     cursor: pointer;
     font-size: 1.3rem;
     transition: all 0.15s ease;
-    background: #0f3460;
-    color: #eee;
+    background: var(--panel-dark);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .btn:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: rgba(0, 217, 255, 0.1);
+    border-color: rgba(0, 217, 255, 0.3);
+    color: var(--text-primary);
     transform: translateY(-1px);
 }
 
 .btn:active:not(:disabled),
 .btn.pressed {
     transform: scale(0.95);
+    box-shadow: 0 0 10px rgba(0, 217, 255, 0.4);
 }
 
 .btn:disabled {
@@ -437,20 +399,23 @@ h3 {
 }
 
 .btn.stop {
-    background: #e94560;
+    background: rgba(255, 61, 0, 0.15);
+    border-color: rgba(255, 61, 0, 0.3);
+    color: var(--alert-red);
 }
 
 .btn.stop:hover:not(:disabled) {
-    background: #ff5a75;
+    background: rgba(255, 61, 0, 0.25);
 }
 
 .btn.forward {
-    background: #4ecca3;
-    color: #1a1a2e;
+    background: rgba(0, 217, 255, 0.15);
+    border-color: rgba(0, 217, 255, 0.3);
+    color: var(--accent-cyan);
 }
 
 .btn.forward:hover:not(:disabled) {
-    background: #5fd9b0;
+    background: rgba(0, 217, 255, 0.25);
 }
 
 .btn.toggle {
@@ -458,37 +423,40 @@ h3 {
     margin-top: 12px;
     font-size: 0.9rem;
     padding: 10px;
-    background: #0f3460;
+    background: var(--panel-dark);
 }
 
 .btn.toggle:hover {
-    background: #1a4a7a;
+    background: rgba(0, 217, 255, 0.1);
 }
 
 .btn.toggle.active {
-    background: #00bcd4;
-    color: #1a1a2e;
+    background: var(--accent-cyan);
+    color: var(--bg-deep-space);
+    border-color: var(--accent-cyan);
 }
 
 .keyboard-hint {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--text-dim);
     text-align: center;
     margin-top: 10px;
 }
 
 .keyboard-hint kbd {
-    background: #0f3460;
+    background: var(--panel-dark);
+    border: 1px solid var(--border-subtle);
     padding: 3px 8px;
     border-radius: 4px;
     margin: 0 3px;
-    font-family: monospace;
+    font-family: var(--font-data);
     font-size: 0.8rem;
+    color: var(--text-secondary);
 }
 
 .divider {
     height: 1px;
-    background: #333;
+    background: var(--border-subtle);
     margin: 16px 0;
 }
 </style>

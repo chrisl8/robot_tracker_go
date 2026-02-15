@@ -37,6 +37,8 @@ export interface RobotStatus {
     fps: number
     robotCount: number
     arduinoState: 'Connected' | 'Disconnected' | 'Searching' | 'Error'
+    hostMemoryMB?: number
+    uptimeSec?: number
 }
 
 // Calibration types

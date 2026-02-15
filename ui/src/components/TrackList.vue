@@ -63,17 +63,19 @@ function hasDestination(track: { id: number; tag_id?: number }): boolean {
 
 <style scoped>
 .panel {
-    background: #1a1a2e;
+    background: var(--panel-dark);
     border-radius: 8px;
     padding: 16px;
+    border: 1px solid var(--border-panel);
 }
 
 h3 {
+    font-family: var(--font-heading);
     font-size: 0.85rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--accent-cyan);
     margin-bottom: 12px;
-    letter-spacing: 0.5px;
+    letter-spacing: 1px;
 }
 
 .track-list {
@@ -86,23 +88,27 @@ h3 {
     align-items: center;
     gap: 12px;
     padding: 10px;
-    background: #16213e;
+    background: var(--bg-slate);
     border-radius: 6px;
     margin-bottom: 8px;
-    transition: background 0.2s;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 
 .track-item:hover {
-    background: #1a2a4e;
+    border-color: var(--border-subtle);
+    background: rgba(0, 217, 255, 0.05);
 }
 
 .track-item.selected {
-    background: #2a3a5e;
-    border: 1px solid #ffffff;
+    background: rgba(0, 217, 255, 0.1);
+    border: 1px solid var(--accent-cyan);
+    box-shadow: 0 0 8px rgba(0, 217, 255, 0.25);
 }
 
 .track-item.has-destination {
-    border-left: 3px solid #9333ea;
+    border-left: 3px solid var(--accent-blue);
 }
 
 .track-color {
@@ -114,7 +120,7 @@ h3 {
     justify-content: center;
     font-weight: 600;
     font-size: 0.9rem;
-    color: #1a1a2e;
+    color: var(--bg-deep-space);
 }
 
 .track-info {
@@ -130,25 +136,29 @@ h3 {
 }
 
 .track-tag {
-    font-size: 0.7rem;
-    background: #0f3460;
+    font-family: var(--font-data);
+    font-size: 0.65rem;
+    background: rgba(0, 217, 255, 0.1);
     padding: 2px 6px;
     border-radius: 4px;
-    color: #888;
+    color: var(--accent-cyan);
+    letter-spacing: 0.5px;
 }
 
 .track-selected {
-    font-size: 0.7rem;
-    background: #ffffff;
+    font-family: var(--font-data);
+    font-size: 0.65rem;
+    background: var(--accent-cyan);
     padding: 2px 6px;
     border-radius: 4px;
-    color: #1a1a2e;
+    color: var(--bg-deep-space);
     font-weight: bold;
 }
 
 .track-destination {
-    font-size: 0.7rem;
-    background: #9333ea;
+    font-family: var(--font-data);
+    font-size: 0.65rem;
+    background: var(--accent-blue);
     padding: 2px 6px;
     border-radius: 4px;
     color: white;
@@ -156,13 +166,14 @@ h3 {
 }
 
 .track-conf {
+    font-family: var(--font-data);
     font-size: 0.75rem;
-    color: #4ecca3;
+    color: var(--text-dim);
     margin-top: 2px;
 }
 
 .no-tracks {
-    color: #555;
+    color: var(--text-dim);
     text-align: center;
     padding: 20px;
     font-size: 0.9rem;

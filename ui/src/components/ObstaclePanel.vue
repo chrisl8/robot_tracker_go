@@ -118,21 +118,23 @@ async function saveObstacles(): Promise<void> {
 
 <style scoped>
 .panel {
-    background: #1a1a2e;
+    background: var(--panel-dark);
     border-radius: 8px;
     padding: 16px;
+    border: 1px solid var(--border-panel);
 }
 
 .obstacle-panel {
-    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-color: rgba(255, 107, 107, 0.3);
 }
 
 h3 {
+    font-family: var(--font-heading);
     font-size: 0.85rem;
     text-transform: uppercase;
     color: #ff6b6b;
     margin-bottom: 12px;
-    letter-spacing: 0.5px;
+    letter-spacing: 1px;
 }
 
 .obstacle-list {
@@ -177,41 +179,43 @@ h3 {
     flex: 1;
     padding: 8px;
     font-size: 0.8rem;
-    background: #0f3460;
-    color: #eee;
-    border: none;
+    background: var(--panel-dark);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .obstacle-controls .btn:hover {
-    background: #1a4a7a;
+    background: rgba(0, 217, 255, 0.08);
 }
 
 .no-obstacles {
-    color: #555;
+    color: var(--text-dim);
     text-align: center;
     padding: 20px;
     font-size: 0.9rem;
 }
 
 .draw-btn {
-    background: #4ecca3;
-    color: #1a1a2e;
+    background: var(--accent-cyan) !important;
+    color: var(--bg-deep-space) !important;
+    border-color: var(--accent-cyan) !important;
 }
 
 .draw-btn:hover {
-    background: #5fd9b0;
+    background: rgba(0, 217, 255, 0.85) !important;
 }
 
 .draw-btn.active {
-    background: #e94560;
-    color: #fff;
+    background: var(--alert-red) !important;
+    color: #fff !important;
+    border-color: var(--alert-red) !important;
 }
 
 .draw-btn.active:hover {
-    background: #ff5a75;
+    background: rgba(255, 61, 0, 0.85) !important;
 }
 
 .obstacle-controls.disabled {
@@ -220,13 +224,13 @@ h3 {
 }
 
 .drawing-instructions {
-    background: rgba(78, 204, 163, 0.15);
-    border: 1px solid rgba(78, 204, 163, 0.3);
+    background: rgba(0, 217, 255, 0.1);
+    border: 1px solid rgba(0, 217, 255, 0.2);
     border-radius: 6px;
     padding: 10px 12px;
     margin-bottom: 12px;
     font-size: 0.85rem;
-    color: #4ecca3;
+    color: var(--accent-cyan);
     display: flex;
     align-items: center;
     gap: 8px;

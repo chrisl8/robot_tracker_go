@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import VideoOverlay from '@/components/VideoOverlay.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
 import TrackList from '@/components/TrackList.vue'
+import SystemStatus from '@/components/SystemStatus.vue'
 import ObstaclePanel from '@/components/ObstaclePanel.vue'
+import TelemetryPanel from '@/components/TelemetryPanel.vue'
+import CommStatus from '@/components/CommStatus.vue'
 import CalibrationWizard from '@/components/CalibrationWizard.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
+import BottomBar from '@/components/BottomBar.vue'
 
-const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
 
@@ -85,32 +87,12 @@ onUnmounted(() => {
 
 <template>
     <div class="app-container">
-        <header class="app-header">
-            <h1>Robot Tracker</h1>
-            <div class="header-right">
-                <div v-if="robotStore.destinationMode" class="destination-badge">
-                    Destination Mode (ESC to cancel)
-                </div>
-
-                <div
-                    class="calibration-badge"
-                    :class="
-                        uiStore.calibration.state === 'calibrated' ? 'calibrated' : 'not-calibrated'
-                    "
-                    @click="uiStore.openCalibration()"
-                >
-                    {{
-                        uiStore.calibration.state === 'calibrated' ? 'Calibrated' : 'Not Calibrated'
-                    }}
-                </div>
-
-                <button class="obstacle-toggle" @click="uiStore.toggleObstaclePanel">
-                    Obstacles ({{ obstacleStore.obstacleCount }})
-                </button>
-            </div>
-        </header>
-
         <div class="main-layout">
+            <aside class="panel-left">
+                <TrackList />
+                <SystemStatus />
+            </aside>
+
             <div class="video-container">
                 <div class="video-wrapper">
                     <img id="video" :src="streamUrl" alt="Video Stream" />
@@ -118,12 +100,15 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <aside class="sidebar">
+            <aside class="panel-right">
+                <TelemetryPanel />
                 <ControlPanel />
-                <TrackList />
+                <CommStatus />
                 <ObstaclePanel v-if="uiStore.panels.obstacleOpen" />
             </aside>
         </div>
+
+        <BottomBar :is-connected="isConnected" />
 
         <CalibrationWizard />
         <ToastContainer />
@@ -147,7 +132,7 @@ onUnmounted(() => {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background: #1a1a2e;
+    background: var(--bg-deep-space);
 }
 
 .main-layout {
@@ -156,12 +141,31 @@ onUnmounted(() => {
     overflow: hidden;
 }
 
+.panel-left,
+.panel-right {
+    width: var(--panel-width);
+    background: var(--bg-slate);
+    padding: var(--panel-gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap);
+    overflow-y: auto;
+}
+
+.panel-left {
+    border-right: 1px solid var(--border-subtle);
+}
+
+.panel-right {
+    border-left: 1px solid var(--border-subtle);
+}
+
 .video-container {
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding: 16px;
-    background: #0a0a0f;
+    padding: var(--panel-gap);
+    background: var(--bg-deep-space);
 }
 
 .video-wrapper {
@@ -173,43 +177,13 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid var(--border-panel);
 }
 
 #video {
     max-width: 100%;
     max-height: 100%;
     display: block;
-}
-
-.sidebar {
-    width: 300px;
-    background: #16213e;
-    padding: 16px;
-    border-left: 1px solid #0f3460;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    overflow-y: auto;
-}
-
-.destination-badge {
-    background: #10b981;
-    color: white;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%,
-    100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.7;
-    }
 }
 </style>
 
@@ -218,7 +192,7 @@ onUnmounted(() => {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(10, 14, 20, 0.92);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -229,7 +203,8 @@ onUnmounted(() => {
 }
 
 .standby-text {
-    color: #fff;
+    color: var(--accent-cyan);
+    font-family: var(--font-heading);
     font-size: 3rem;
     font-weight: bold;
     letter-spacing: 0.15em;
@@ -237,7 +212,8 @@ onUnmounted(() => {
 }
 
 .standby-subtext {
-    color: #999;
+    color: var(--text-dim);
+    font-family: var(--font-data);
     font-size: 1.1rem;
     margin-top: 1rem;
     letter-spacing: 0.05em;

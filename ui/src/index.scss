@@ -2,24 +2,27 @@
 @use './styles/variables.scss' as *;
 @use './styles/overrides.scss';
 
+// ─── Fonts ───
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
 // Element Plus Global Styles
 @import 'element-plus/dist/index.css';
 
 // Custom scrollbar
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: $surface;
+    background: $bg-slate;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: $border;
-    border-radius: 4px;
+    background: rgba(0, 217, 255, 0.2);
+    border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: color.adjust($border, $lightness: 10%);
+    background: rgba(0, 217, 255, 0.35);
 }

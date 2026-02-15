@@ -8,6 +8,8 @@ export const useUIStore = defineStore('ui', () => {
     const panels = ref<PanelState>({
         obstacleOpen: false,
         calibrationOpen: false,
+        leftPanelOpen: true,
+        rightPanelOpen: true,
     })
 
     const toasts = ref<Toast[]>([])

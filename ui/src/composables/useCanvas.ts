@@ -10,6 +10,55 @@ export interface CanvasPoint {
     y: number
 }
 
+// Canvas color/font theme constants — matches CSS custom properties
+const THEME = {
+    // Footprint colors
+    footprintFill: 'rgba(0, 217, 255, 0.15)',
+    footprintStroke: '#00d9ff',
+    footprintSelectedFill: 'rgba(224, 230, 237, 0.25)',
+    footprintSelectedStroke: '#e0e6ed',
+
+    // Destination cursor
+    destValidFill: 'rgba(0, 230, 118, 0.3)',
+    destValidStroke: '#00e676',
+    destInvalidFill: 'rgba(255, 61, 0, 0.3)',
+    destInvalidStroke: '#ff3d00',
+
+    // Destination marker (goal)
+    goalFill: 'rgba(0, 145, 234, 0.3)',
+    goalStroke: '#0091ea',
+
+    // Drawing box (obstacle drawing)
+    drawingStroke: '#ffab00',
+    drawingFill: 'rgba(255, 171, 0, 0.2)',
+
+    // Heading arrow
+    headingColor: '#00e676',
+
+    // Calibration tag
+    calibTagStroke: 'rgba(224, 230, 237, 0.5)',
+    calibTagLabel: 'rgba(224, 230, 237, 0.7)',
+    calibSelectedGlow: '#00d9ff',
+    calibSelectedStroke: '#00d9ff',
+    calibSelectedFill: 'rgba(0, 217, 255, 0.3)',
+    calibCornerFill: '#00d9ff',
+
+    // Invalid flash
+    flashOuter: 'rgba(255, 61, 0, 0.8)',
+    flashInner: 'rgba(255, 61, 0, 0.4)',
+
+    // Label backgrounds / text
+    labelBg: '#0a0e14',
+    textPrimary: '#e0e6ed',
+
+    // Fonts
+    fontLabel: "bold 11px 'Inter', sans-serif",
+    fontSmall: "10px 'JetBrains Mono', monospace",
+    fontDest: "bold 12px 'Inter', sans-serif",
+    fontCalibSmall: "11px 'Inter', sans-serif",
+    fontCalibLarge: "bold 14px 'Inter', sans-serif",
+} as const
+
 // Module-level videoScale that is shared across all usages
 const videoScale = ref({ x: 1, y: 1, offsetX: 0, offsetY: 0 })
 
@@ -223,15 +272,17 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             ctx.value.beginPath()
             ctx.value.arc(centerNatural.x, centerNatural.y, radius, 0, Math.PI * 2)
             if (isSelected) {
-                ctx.value.fillStyle = 'rgba(255, 255, 255, 0.3)'
+                ctx.value.fillStyle = THEME.footprintSelectedFill
             } else {
-                ctx.value.fillStyle = 'rgba(0, 255, 255, 0.2)'
+                ctx.value.fillStyle = THEME.footprintFill
             }
             ctx.value.fill()
 
             // Draw solid edge
             ctx.value.lineWidth = isSelected ? 3 : 2
-            ctx.value.strokeStyle = isSelected ? '#ffffff' : '#00ffff'
+            ctx.value.strokeStyle = isSelected
+                ? THEME.footprintSelectedStroke
+                : THEME.footprintStroke
             ctx.value.stroke()
         }
     }
@@ -297,19 +348,19 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         // Draw filled circle at canvas coordinates
         ctx.value.beginPath()
         ctx.value.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-        ctx.value.fillStyle = isInvalid ? 'rgba(255, 0, 0, 0.3)' : 'rgba(0, 255, 0, 0.3)'
+        ctx.value.fillStyle = isInvalid ? THEME.destInvalidFill : THEME.destValidFill
         ctx.value.fill()
 
         // Draw solid edge
-        ctx.value.strokeStyle = isInvalid ? '#ff0000' : '#00ff00'
+        ctx.value.strokeStyle = isInvalid ? THEME.destInvalidStroke : THEME.destValidStroke
         ctx.value.lineWidth = 2
         ctx.value.setLineDash([5, 5])
         ctx.value.stroke()
         ctx.value.setLineDash([])
 
         // Draw "DEST" label
-        ctx.value.fillStyle = isInvalid ? '#ff0000' : '#00ff00'
-        ctx.value.font = 'bold 12px sans-serif'
+        ctx.value.fillStyle = isInvalid ? THEME.destInvalidStroke : THEME.destValidStroke
+        ctx.value.font = THEME.fontDest
         ctx.value.fillText('DEST', pos.x + radius + 5, pos.y)
     }
 
@@ -330,13 +381,13 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
         ctx.value.beginPath()
         ctx.value.arc(pos.x, pos.y, radius * 1.2, 0, Math.PI * 2)
-        ctx.value.strokeStyle = 'rgba(255, 0, 0, 0.8)'
+        ctx.value.strokeStyle = THEME.flashOuter
         ctx.value.lineWidth = 4
         ctx.value.stroke()
 
         ctx.value.beginPath()
         ctx.value.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-        ctx.value.strokeStyle = 'rgba(255, 0, 0, 0.4)'
+        ctx.value.strokeStyle = THEME.flashInner
         ctx.value.lineWidth = 2
         ctx.value.stroke()
     }
@@ -356,17 +407,17 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         // Draw filled circle
         ctx.value.beginPath()
         ctx.value.arc(scaled.x, scaled.y, radius, 0, Math.PI * 2)
-        ctx.value.fillStyle = 'rgba(147, 51, 234, 0.3)'
+        ctx.value.fillStyle = THEME.goalFill
         ctx.value.fill()
 
         // Draw solid edge
-        ctx.value.strokeStyle = '#9333ea'
+        ctx.value.strokeStyle = THEME.goalStroke
         ctx.value.lineWidth = 3
         ctx.value.stroke()
 
         // Draw "GOAL" label
-        ctx.value.fillStyle = '#9333ea'
-        ctx.value.font = 'bold 12px sans-serif'
+        ctx.value.fillStyle = THEME.goalStroke
+        ctx.value.font = THEME.fontDest
         ctx.value.fillText('GOAL', scaled.x + radius + 5, scaled.y)
     }
 
@@ -378,14 +429,14 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const height = drawRect.y2 - drawRect.y1
 
         // Draw dashed rectangle
-        ctx.value.strokeStyle = '#ffa500'
+        ctx.value.strokeStyle = THEME.drawingStroke
         ctx.value.lineWidth = 2
         ctx.value.setLineDash([5, 5])
         ctx.value.strokeRect(drawRect.x1, drawRect.y1, width, height)
         ctx.value.setLineDash([])
 
         // Draw fill
-        ctx.value.fillStyle = 'rgba(255, 165, 0, 0.2)'
+        ctx.value.fillStyle = THEME.drawingFill
         ctx.value.fillRect(drawRect.x1, drawRect.y1, width, height)
     }
 
@@ -407,7 +458,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 naturalToCanvas(corner[0], corner[1])
             )
 
-            ctx.value.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+            ctx.value.strokeStyle = THEME.calibTagStroke
             ctx.value.lineWidth = 1
             ctx.value.setLineDash([])
             ctx.value.beginPath()
@@ -420,8 +471,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
             const cx = (scaledCorners[0].x + scaledCorners[2].x) / 2
             const cy = (scaledCorners[0].y + scaledCorners[2].y) / 2
-            ctx.value.fillStyle = 'rgba(255, 255, 255, 0.7)'
-            ctx.value.font = '11px sans-serif'
+            ctx.value.fillStyle = THEME.calibTagLabel
+            ctx.value.font = THEME.fontCalibSmall
             ctx.value.textAlign = 'center'
             ctx.value.textBaseline = 'middle'
             ctx.value.fillText(`Tag ${tag.id}`, cx, cy)
@@ -448,10 +499,10 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         // Glow effect
         ctx.value.save()
         ctx.value.shadowBlur = 15
-        ctx.value.shadowColor = '#00bcd4'
+        ctx.value.shadowColor = THEME.calibSelectedGlow
 
         // Thick cyan outline
-        ctx.value.strokeStyle = '#00bcd4'
+        ctx.value.strokeStyle = THEME.calibSelectedStroke
         ctx.value.lineWidth = 4
         ctx.value.setLineDash([])
         ctx.value.beginPath()
@@ -465,7 +516,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         ctx.value.restore()
 
         // Stronger fill
-        ctx.value.fillStyle = 'rgba(0, 188, 212, 0.35)'
+        ctx.value.fillStyle = THEME.calibSelectedFill
         ctx.value.beginPath()
         ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
         ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
@@ -475,7 +526,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         ctx.value.fill()
 
         // Corner markers
-        ctx.value.fillStyle = '#00bcd4'
+        ctx.value.fillStyle = THEME.calibCornerFill
         for (const corner of scaledCorners) {
             ctx.value.beginPath()
             ctx.value.arc(corner.x, corner.y, 5, 0, Math.PI * 2)
@@ -485,11 +536,11 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         // Larger label
         const centerX = (scaledCorners[0].x + scaledCorners[2].x) / 2
         const centerY = (scaledCorners[0].y + scaledCorners[2].y) / 2
-        ctx.value.fillStyle = '#00bcd4'
+        ctx.value.fillStyle = THEME.calibSelectedStroke
         ctx.value.fillRect(centerX - 35, centerY - 27, 70, 24)
 
-        ctx.value.fillStyle = '#1a1a2e'
-        ctx.value.font = 'bold 14px sans-serif'
+        ctx.value.fillStyle = THEME.labelBg
+        ctx.value.font = THEME.fontCalibLarge
         ctx.value.textAlign = 'center'
         ctx.value.textBaseline = 'middle'
         ctx.value.fillText(`Tag ${selectedTagId}`, centerX, centerY - 15)
@@ -519,17 +570,17 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
             // Draw label
             const label = track.tag_id !== undefined ? `Robot ${track.tag_id}` : `#${track.id}`
-            ctx.value.font = 'bold 11px sans-serif'
+            ctx.value.font = THEME.fontLabel
             const labelWidth = ctx.value.measureText(label).width + 8
             ctx.value.fillStyle = color
             ctx.value.fillRect(scaled1.x, scaled1.y - 18, labelWidth, 18)
-            ctx.value.fillStyle = '#1a1a2e'
+            ctx.value.fillStyle = THEME.labelBg
             ctx.value.fillText(label, scaled1.x + 4, scaled1.y - 5)
 
             // Draw confidence if available
             if (track.confidence > 0) {
                 ctx.value.fillStyle = color
-                ctx.value.font = '10px sans-serif'
+                ctx.value.font = THEME.fontSmall
                 ctx.value.fillText(
                     `${(track.confidence * 100).toFixed(0)}%`,
                     scaled1.x,
@@ -554,7 +605,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
                 // Draw arrow line
                 ctx.value.beginPath()
-                ctx.value.strokeStyle = '#00ff00'
+                ctx.value.strokeStyle = THEME.headingColor
                 ctx.value.lineWidth = 2
                 ctx.value.moveTo(centerX, centerY)
                 ctx.value.lineTo(tipX, tipY)
@@ -564,7 +615,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 const headLen = 8
                 const angle = Math.atan2(tipY - centerY, tipX - centerX)
                 ctx.value.beginPath()
-                ctx.value.fillStyle = '#00ff00'
+                ctx.value.fillStyle = THEME.headingColor
                 ctx.value.moveTo(tipX, tipY)
                 ctx.value.lineTo(
                     tipX - headLen * Math.cos(angle - Math.PI / 6),

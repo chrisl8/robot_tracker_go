@@ -1,27 +1,44 @@
-// Color Palette
-$background: #1a1a2e;
-$surface: #16213e;
-$surface-light: #1a1a2e;
-$primary: #4ecca3;
-$primary-dim: rgba(78, 204, 163, 0.2);
-$primary-hover: rgba(78, 204, 163, 0.3);
-$danger: #e94560;
-$danger-dim: rgba(233, 69, 96, 0.2);
-$danger-hover: rgba(233, 69, 96, 0.3);
-$warning: #ffc107;
-$info: #00bcd4;
-$info-dim: rgba(0, 188, 212, 0.1);
+// ─── New Expanse-Inspired Color Palette ───
+$bg-deep-space: #0a0e14;
+$bg-slate: #141920;
+$panel-dark: #1a2332;
+
+$accent-cyan: #00d9ff;
+$accent-blue: #0091ea;
+$accent-teal: #00bfa5;
+
+$text-primary: #e0e6ed;
+$text-secondary: #a8b5c4;
+$text-dim: #6b7785;
+
+$warning-amber: #ffab00;
+$alert-red: #ff3d00;
+$success-green: #00e676;
+
+// Semantic aliases (backward compat)
+$background: $bg-deep-space;
+$surface: $bg-slate;
+$surface-light: $panel-dark;
+$primary: $accent-cyan;
+$primary-dim: rgba(0, 217, 255, 0.1);
+$primary-hover: rgba(0, 217, 255, 0.2);
+$danger: $alert-red;
+$danger-dim: rgba(255, 61, 0, 0.1);
+$danger-hover: rgba(255, 61, 0, 0.2);
+$warning: $warning-amber;
+$info: $accent-blue;
+$info-dim: rgba(0, 145, 234, 0.1);
 $obstacle: #ff6b6b;
 $obstacle-dim: rgba(255, 107, 107, 0.1);
 $obstacle-hover: rgba(255, 107, 107, 0.2);
 $obstacle-border: rgba(255, 107, 107, 0.3);
-$drawing: #ffa500;
-$drawing-dim: rgba(255, 165, 0, 0.2);
-$border: #0f3460;
-$text: #eee;
-$text-dim: #888;
-$text-muted: #666;
-$text-light: #aaa;
+$drawing: $warning-amber;
+$drawing-dim: rgba(255, 171, 0, 0.2);
+$border: rgba(0, 217, 255, 0.12);
+$border-panel: rgba(0, 217, 255, 0.08);
+$text: $text-primary;
+$text-light: $text-secondary;
+$text-muted: $text-dim;
 
 // Spacing
 $spacing-xs: 4px;
@@ -37,13 +54,14 @@ $radius-lg: 8px;
 $radius-xl: 12px;
 
 // Shadows
-$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
-$shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
-$shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+$shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
+$shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.6);
+$shadow-glow: 0 0 20px rgba(0, 217, 255, 0.15);
 
 // Element Plus Theme Overrides
 $el-color-primary: $primary;
-$el-color-success: $primary;
+$el-color-success: $success-green;
 $el-color-danger: $danger;
 $el-color-warning: $warning;
 $el-color-info: $info;

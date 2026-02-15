@@ -12,6 +12,8 @@ export interface Toast {
 export interface PanelState {
     obstacleOpen: boolean
     calibrationOpen: boolean
+    leftPanelOpen: boolean
+    rightPanelOpen: boolean
 }
 
 export interface KeyboardShortcut {

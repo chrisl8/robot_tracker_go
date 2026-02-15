@@ -9,11 +9,11 @@ test.describe('Robot Tracker UI Integration', () => {
 
     test('should load the main page with Vue app', async ({ page }) => {
         await expect(page.locator('.app-container')).toBeVisible({ timeout: 10000 })
-        await expect(page.locator('h1')).toContainText('Robot Tracker')
     })
 
-    test('should display header elements', async ({ page }) => {
-        await expect(page.locator('.calibration-badge')).toBeVisible({ timeout: 10000 })
+    test('should display bottom bar elements', async ({ page }) => {
+        await expect(page.locator('.bottom-bar')).toBeVisible({ timeout: 10000 })
+        await expect(page.locator('.calibration-badge')).toBeVisible()
         await expect(page.locator('.obstacle-toggle')).toBeVisible()
     })
 
@@ -95,8 +95,10 @@ test.describe('Control Panel', () => {
     })
 
     test('should have manual control buttons', async ({ page }) => {
-        await expect(page.locator('.panel:has-text("Controls")')).toBeVisible({ timeout: 10000 })
-        await expect(page.locator('.panel:has-text("Controls") .btn')).toHaveCount(10)
+        await expect(page.locator('.panel-right .panel:has-text("Controls")')).toBeVisible({
+            timeout: 10000,
+        })
+        await expect(page.locator('.panel-right .panel:has-text("Controls") .btn')).toHaveCount(10)
     })
 })
 
@@ -108,7 +110,7 @@ test.describe('Destination Planning', () => {
     })
 
     test('should display track list with detected targets', async ({ page }) => {
-        await expect(page.locator('.panel:has-text("Detected Targets")')).toBeVisible({
+        await expect(page.locator('.panel-left .panel:has-text("Detected Targets")')).toBeVisible({
             timeout: 10000,
         })
         await expect(page.locator('.track-item')).toHaveCount(3, { timeout: 5000 })
@@ -120,10 +122,10 @@ test.describe('Destination Planning', () => {
         await expect(trackItem).toHaveClass(/track-item/)
     })
 
-    test('should have destination badge when destination mode is active', async ({ page }) => {
-        // The destination badge should appear in header when destination mode is active
+    test('should have bottom bar when destination mode is active', async ({ page }) => {
+        // The destination badge appears in bottom bar when destination mode is active
         // Note: This test verifies the UI structure; actual destination mode requires robot selection
-        await expect(page.locator('.app-header')).toBeVisible({ timeout: 5000 })
+        await expect(page.locator('.bottom-bar')).toBeVisible({ timeout: 5000 })
     })
 
     test('should have overlay canvas for destination cursor', async ({ page }) => {
@@ -137,7 +139,9 @@ test.describe('Destination Planning', () => {
         expect(count).toBeGreaterThan(0)
 
         // Verify styling classes are available in the CSS
-        await expect(page.locator('.panel:has-text("Detected Targets")')).toHaveClass(/panel/)
+        await expect(page.locator('.panel-left .panel:has-text("Detected Targets")')).toHaveClass(
+            /panel/
+        )
     })
 })
 
