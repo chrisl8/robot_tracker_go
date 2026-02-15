@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
+	"math"
 
 	"gocv.io/x/gocv"
 
@@ -44,6 +45,30 @@ func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 		decimate = 2.0
 	}
 	params.SetAprilTagQuadDecimate(decimate)
+	params.SetAprilTagQuadSigma(float32(config.QuadSigma))
+
+	// Relax quad-detection defaults for distant/angled tags
+	params.SetMinMarkerPerimeterRate(0.01)                // default 0.03; detect smaller tags
+	params.SetPolygonalApproxAccuracyRate(0.08)            // default 0.03; tolerate perspective distortion
+	params.SetMinCornerDistanceRate(0.02)                  // default 0.05; tolerate compressed corners
+	params.SetAprilTagCriticalRad(30.0 * math.Pi / 180.0) // default 10°; accept steeper angles
+	params.SetAprilTagMaxLineFitMse(20.0)                  // default 10.0; tolerate worse line fit from angle
+	params.SetAprilTagMinWhiteBlackDiff(3)                 // default 5; accept lower contrast between cells
+
+	// Expand adaptive thresholding to try more window sizes
+	params.SetAdaptiveThreshWinSizeMax(53) // default 23; try larger windows for distant tags
+	params.SetAdaptiveThreshWinSizeStep(4) // default 10; finer search across window sizes
+
+	// Tolerate lower contrast and more decoding errors
+	params.SetMinOtsuStdDev(3.0)                       // default 5.0; accept low-contrast regions
+	params.SetMaxErroneousBitsInBorderRate(0.5)         // default 0.35; tolerate perspective-distorted borders
+	params.SetErrorCorrectionRate(1.0)                  // default 0.6; maximum error correction
+	params.SetPerspectiveRemovePixelPerCell(8)           // default 4; higher resolution bit sampling
+	params.SetPerspectiveRemoveIgnoredMarginPerCell(0.2) // default 0.13; ignore more cell margin for blurry tags
+
+	if config.RefineEdges != 0 {
+		params.SetCornerRefinementMethod(1) // 1 = CORNER_REFINE_SUBPIX
+	}
 
 	if config.Family != "" {
 		config.Family = "tag36h11"

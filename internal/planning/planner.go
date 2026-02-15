@@ -18,6 +18,7 @@ type Planner struct {
 	coordinator       *Coordinator
 	collisionDetector *CollisionDetector
 	obstacles         []Obstacle
+	dynamicObstacles  []Obstacle
 	paths             map[int][][2]float64 // robotID -> list of waypoints
 	currentWaypoint   map[int]int          // robotID -> index into paths
 }
@@ -45,12 +46,15 @@ func NewPlanner(config *PlannerConfig) *Planner {
 
 func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, bool) {
 	// Expand obstacles by the robot's radius so the path keeps the full body clear.
-	// Use a small additional safety margin (0.02m) beyond the radius.
-	margin := 0.05
+	// Add safety margin beyond the radius to account for YOLO bbox inaccuracy and chair legs.
+	margin := 0.15
 	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
-		margin = robot.Diameter/2 + 0.02
+		margin = robot.Diameter/2 + 0.10
 	}
-	obstacles := p.expandObstacles(margin)
+	allObstacles := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
+	allObstacles = append(allObstacles, p.obstacles...)
+	allObstacles = append(allObstacles, p.dynamicObstacles...)
+	obstacles := p.expandObstacles(allObstacles, margin)
 	path, ok := p.globalPlanner.Plan(start, goal, obstacles)
 	if ok && len(path) > 2 {
 		before := len(path)
@@ -93,6 +97,11 @@ func (p *Planner) AddObstacle(obstacle Obstacle) {
 func (p *Planner) SetObstacles(obstacles []Obstacle) {
 	p.obstacles = obstacles
 	p.coordinator.SetObstacles(obstacles)
+	p.replanAllPaths()
+}
+
+func (p *Planner) SetDynamicObstacles(obstacles []Obstacle) {
+	p.dynamicObstacles = obstacles
 	p.replanAllPaths()
 }
 
@@ -165,9 +174,9 @@ func (p *Planner) CheckCollision(robot RobotState) bool {
 	return len(collisions) > 0
 }
 
-func (p *Planner) expandObstacles(margin float64) []Obstacle {
-	expanded := make([]Obstacle, len(p.obstacles))
-	for i, obs := range p.obstacles {
+func (p *Planner) expandObstacles(obstacles []Obstacle, margin float64) []Obstacle {
+	expanded := make([]Obstacle, len(obstacles))
+	for i, obs := range obstacles {
 		expanded[i] = p.collisionDetector.ExpandObstacle(obs, margin)
 	}
 	return expanded

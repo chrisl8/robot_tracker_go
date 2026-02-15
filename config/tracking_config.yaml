@@ -22,10 +22,16 @@ cameras:
   #   username: null  # optional, for HTTP auth
   #   password: null  # optional, for HTTP auth
 
-  - type: "ip"
-    name: "ip_camera"
-    url: "http://192.168.8.183:4747/video"
+  - camera_id: 0
+    name: "usb_camera"
+    width: 1920
+    height: 1080
     fps: 30
+
+  # - type: "ip"
+  #   name: "ip_camera"
+  #   url: "http://192.168.8.183:4747/video"
+  #   fps: 30
 
   # Camera 1 - Secondary (optional, for multi-camera setup)
   # - id: 1
@@ -38,7 +44,7 @@ cameras:
 april_tags:
   family: "tag36h11" # 587 unique IDs
   nthreads: 4
-  quad_decimate: 2.0 # Detection speed vs accuracy
+  quad_decimate: 1.0 # No downsampling; preserves full resolution for distant/angled tags
   quad_sigma: 0.0 # Blur before decoding
   refine_edges: 1
   decode_sharpening: 0.25
@@ -65,7 +71,7 @@ yolo:
 tracking:
   track_thresh: 0.5
   track_buffer: 30
-  match_thresh: 0.8
+  match_thresh: 0.3
   frame_rate: 30
   mot20: False
   min_box_area: 100
