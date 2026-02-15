@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { CalibrationState, DetectedTagInfo } from '@/types/api'
-import type { Toast, ToastType, PanelState, KeyboardState } from '@/types/ui'
+import type {
+    Toast,
+    ToastType,
+    PanelState,
+    KeyboardState,
+    LogEntry,
+    LogEntryType,
+} from '@/types/ui'
 
 export const useUIStore = defineStore('ui', () => {
     // State
@@ -23,6 +30,7 @@ export const useUIStore = defineStore('ui', () => {
     const selectedCalibrationTagId = ref<number | null>(null)
 
     const showFootprints = ref(true)
+    const activityLog = ref<LogEntry[]>([])
 
     const keyboard = ref<KeyboardState>({
         w: false,
@@ -111,6 +119,24 @@ export const useUIStore = defineStore('ui', () => {
         showFootprints.value = !showFootprints.value
     }
 
+    // Actions - Activity Log
+    function addLogEntry(type: LogEntryType, message: string): void {
+        const entry: LogEntry = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            type,
+            message,
+        }
+        activityLog.value.push(entry)
+        if (activityLog.value.length > 50) {
+            activityLog.value.shift()
+        }
+    }
+
+    function clearLog(): void {
+        activityLog.value = []
+    }
+
     return {
         // State
         panels,
@@ -120,6 +146,7 @@ export const useUIStore = defineStore('ui', () => {
         selectedCalibrationTagId,
         keyboard,
         showFootprints,
+        activityLog,
         // Panel actions
         toggleObstaclePanel,
         openObstaclePanel,
@@ -138,5 +165,8 @@ export const useUIStore = defineStore('ui', () => {
         resetKeyboard,
         // Footprint actions
         toggleFootprints,
+        // Activity Log actions
+        addLogEntry,
+        clearLog,
     }
 })

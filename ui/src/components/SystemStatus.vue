@@ -2,6 +2,7 @@
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
+import { Activity } from 'lucide-vue-next'
 
 const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()
@@ -10,7 +11,7 @@ const uiStore = useUIStore()
 
 <template>
     <div class="panel system-panel">
-        <h3>System</h3>
+        <h3><Activity :size="14" /> System</h3>
         <div class="status-grid">
             <div class="status-row">
                 <span class="status-label">Arduino</span>
@@ -57,6 +58,19 @@ h3 {
     color: var(--accent-cyan);
     margin-bottom: 10px;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h3::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: var(--accent-cyan);
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .status-grid {

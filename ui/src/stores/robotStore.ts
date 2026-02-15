@@ -167,6 +167,8 @@ export const useRobotStore = defineStore('robot', () => {
                     y: naturalCoords.y,
                 }
                 destinationMode.value = false
+                const uiStore = useUIStore()
+                uiStore.addLogEntry('success', 'Destination set for robot ' + robotId)
                 return true
             }
             return false
@@ -185,6 +187,7 @@ export const useRobotStore = defineStore('robot', () => {
     }
 
     async function setControlMode(mode: 'idle' | 'manual' | 'autonomous'): Promise<boolean> {
+        const uiStore = useUIStore()
         try {
             const response = await fetch('/api/mode', {
                 method: 'POST',
@@ -193,6 +196,7 @@ export const useRobotStore = defineStore('robot', () => {
             })
             if (response.ok) {
                 controlMode.value = mode
+                uiStore.addLogEntry('info', 'Mode changed to ' + mode)
                 return true
             }
             const data = await response.json()
@@ -205,6 +209,7 @@ export const useRobotStore = defineStore('robot', () => {
     }
 
     async function emergencyStop(): Promise<boolean> {
+        const uiStore = useUIStore()
         try {
             const response = await fetch('/api/emergency-stop', {
                 method: 'POST',
@@ -212,6 +217,7 @@ export const useRobotStore = defineStore('robot', () => {
             if (response.ok) {
                 emergencyStopped.value = true
                 controlMode.value = 'idle'
+                uiStore.addLogEntry('error', 'Emergency stop activated')
                 return true
             }
             return false
@@ -222,12 +228,14 @@ export const useRobotStore = defineStore('robot', () => {
     }
 
     async function clearEmergencyStop(): Promise<boolean> {
+        const uiStore = useUIStore()
         try {
             const response = await fetch('/api/clear-emergency-stop', {
                 method: 'POST',
             })
             if (response.ok) {
                 emergencyStopped.value = false
+                uiStore.addLogEntry('warning', 'Emergency stop cleared')
                 return true
             }
             return false

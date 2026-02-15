@@ -1,12 +1,26 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
+import { Radio } from 'lucide-vue-next'
 
 const robotStore = useRobotStore()
+
+const fpsPct = computed(() => {
+    const fps = robotStore.status.fps || 0
+    return Math.min((fps / 30) * 100, 100)
+})
+
+const fpsBarColor = computed(() => {
+    const fps = robotStore.status.fps || 0
+    if (fps > 20) return 'var(--success-green)'
+    if (fps > 10) return 'var(--warning-amber)'
+    return 'var(--alert-red)'
+})
 </script>
 
 <template>
     <div class="panel comm-panel">
-        <h3>Communications</h3>
+        <h3><Radio :size="14" /> Communications</h3>
         <div class="comm-grid">
             <div class="comm-row">
                 <span class="comm-label">Arduino</span>
@@ -22,11 +36,19 @@ const robotStore = useRobotStore()
                     {{ robotStore.status.arduinoState }}
                 </span>
             </div>
-            <div class="comm-row">
-                <span class="comm-label">FPS</span>
-                <span class="comm-value">{{
-                    robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--'
-                }}</span>
+            <div class="comm-row-stacked">
+                <div class="comm-row">
+                    <span class="comm-label">FPS</span>
+                    <span class="comm-value">{{
+                        robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--'
+                    }}</span>
+                </div>
+                <div class="fps-bar">
+                    <div
+                        class="fps-fill"
+                        :style="{ width: fpsPct + '%', background: fpsBarColor }"
+                    ></div>
+                </div>
             </div>
             <div class="comm-row">
                 <span class="comm-label">Memory</span>
@@ -55,6 +77,19 @@ h3 {
     color: var(--accent-cyan);
     margin-bottom: 12px;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h3::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: var(--accent-cyan);
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .comm-grid {
@@ -112,5 +147,27 @@ h3 {
     font-family: var(--font-data);
     font-size: 0.85rem;
     color: var(--text-primary);
+}
+
+.comm-row-stacked {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fps-bar {
+    width: 100%;
+    height: 3px;
+    background: var(--bg-slate);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.fps-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition:
+        width 0.3s ease,
+        background 0.3s ease;
 }
 </style>

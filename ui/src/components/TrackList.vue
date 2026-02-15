@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { getTrackColor } from '@/types/robot'
+import { Crosshair } from 'lucide-vue-next'
 
 const robotStore = useRobotStore()
 
@@ -29,7 +30,7 @@ function hasDestination(track: { id: number; tag_id?: number }): boolean {
 
 <template>
     <div class="panel">
-        <h3>Detected Targets</h3>
+        <h3><Crosshair :size="14" /> Detected Targets</h3>
         <div v-if="tracks.length === 0" class="no-tracks">No targets detected</div>
         <div v-else class="track-list">
             <div
@@ -39,6 +40,7 @@ function hasDestination(track: { id: number; tag_id?: number }): boolean {
                 :class="{
                     selected: isSelected(track.id),
                     'has-destination': hasDestination(track),
+                    'has-tag': track.tag_id !== undefined,
                 }"
                 @click="selectTrack(track)"
             >
@@ -76,6 +78,19 @@ h3 {
     color: var(--accent-cyan);
     margin-bottom: 12px;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h3::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: var(--accent-cyan);
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .track-list {
@@ -105,6 +120,10 @@ h3 {
     background: rgba(0, 217, 255, 0.1);
     border: 1px solid var(--accent-cyan);
     box-shadow: 0 0 8px rgba(0, 217, 255, 0.25);
+}
+
+.track-item.has-tag {
+    border-left: 3px solid rgba(0, 217, 255, 0.3);
 }
 
 .track-item.has-destination {

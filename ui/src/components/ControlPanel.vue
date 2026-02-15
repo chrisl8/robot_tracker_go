@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
+import { Gamepad2 } from 'lucide-vue-next'
 
 const uiStore = useUIStore()
 const robotStore = useRobotStore()
@@ -61,7 +62,7 @@ watch(
 
 <template>
     <div class="panel">
-        <h3>Controls</h3>
+        <h3><Gamepad2 :size="14" /> Controls</h3>
 
         <!-- Emergency Stop -->
         <button
@@ -209,6 +210,19 @@ h3 {
     color: var(--accent-cyan);
     margin-bottom: 12px;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h3::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: var(--accent-cyan);
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .emergency-stop {
@@ -294,6 +308,7 @@ h3 {
 
 .mode-btn {
     flex: 1;
+    min-width: 0;
     padding: 8px 4px;
     font-size: 0.8rem;
     background: var(--bg-slate);
@@ -302,6 +317,8 @@ h3 {
     color: var(--text-dim);
     cursor: pointer;
     transition: all 0.15s ease;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .mode-btn:hover:not(:disabled) {

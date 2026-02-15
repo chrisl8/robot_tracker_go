@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
+import { ShieldAlert } from 'lucide-vue-next'
 
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
@@ -79,7 +80,7 @@ async function saveObstacles(): Promise<void> {
 
 <template>
     <div class="panel obstacle-panel">
-        <h3>Static Obstacles</h3>
+        <h3><ShieldAlert :size="14" /> Static Obstacles</h3>
 
         <div v-if="obstacles.length === 0 && !drawingMode" class="no-obstacles">
             No obstacles defined
@@ -135,6 +136,19 @@ h3 {
     color: #ff6b6b;
     margin-bottom: 12px;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h3::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: #ff6b6b;
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .obstacle-list {

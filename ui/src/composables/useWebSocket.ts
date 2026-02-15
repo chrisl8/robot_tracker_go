@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
+import { useUIStore } from '@/stores/uiStore'
 import type { WebSocketMessage } from '@/types/api'
 
 interface WebSocketOptions {
@@ -22,6 +23,7 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
     } = options
 
     const robotStore = useRobotStore()
+    const uiStore = useUIStore()
 
     const ws = ref<WebSocket | null>(null)
     const isConnected = ref(false)
@@ -43,6 +45,11 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
                 isConnected.value = true
                 attempts.value = 0
                 hasConnectedOnce = true
+                if (wasReconnect) {
+                    uiStore.addLogEntry('system', 'Reconnected to server')
+                } else {
+                    uiStore.addLogEntry('success', 'Connected to server')
+                }
                 onConnect?.()
                 if (wasReconnect) {
                     onReconnect?.()
@@ -51,6 +58,7 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
 
             ws.value.onclose = () => {
                 isConnected.value = false
+                uiStore.addLogEntry('error', 'Disconnected from server')
                 onDisconnect?.()
                 scheduleReconnect()
             }

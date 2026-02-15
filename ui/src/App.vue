@@ -10,6 +10,7 @@ import SystemStatus from '@/components/SystemStatus.vue'
 import ObstaclePanel from '@/components/ObstaclePanel.vue'
 import TelemetryPanel from '@/components/TelemetryPanel.vue'
 import CommStatus from '@/components/CommStatus.vue'
+import ActivityLog from '@/components/ActivityLog.vue'
 import CalibrationWizard from '@/components/CalibrationWizard.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import BottomBar from '@/components/BottomBar.vue'
@@ -91,6 +92,7 @@ onUnmounted(() => {
             <aside class="panel-left">
                 <TrackList />
                 <SystemStatus />
+                <ActivityLog />
             </aside>
 
             <div class="video-container">
@@ -144,12 +146,14 @@ onUnmounted(() => {
 .panel-left,
 .panel-right {
     width: var(--panel-width);
+    min-width: var(--panel-width);
     background: var(--bg-slate);
     padding: var(--panel-gap);
     display: flex;
     flex-direction: column;
     gap: var(--panel-gap);
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .panel-left {

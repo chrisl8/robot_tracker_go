@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
+import { Gauge } from 'lucide-vue-next'
+import CompassHeading from '@/components/CompassHeading.vue'
 
 const robotStore = useRobotStore()
 
@@ -16,6 +18,11 @@ const confidence = computed(() => {
     return `${(selectedTrack.value.confidence * 100).toFixed(0)}%`
 })
 
+const confidencePct = computed(() => {
+    if (!selectedTrack.value) return 0
+    return selectedTrack.value.confidence * 100
+})
+
 const position = computed(() => {
     if (!selectedTrack.value) return { x: '--', y: '--' }
     const [x1, y1, x2, y2] = selectedTrack.value.bbox
@@ -28,43 +35,51 @@ const position = computed(() => {
 
 <template>
     <div class="panel telemetry-panel">
-        <h3>Telemetry</h3>
+        <h3><Gauge :size="14" /> Telemetry</h3>
         <div v-if="!selectedTrack" class="no-selection">Select a robot to view telemetry</div>
-        <div v-else class="telemetry-grid">
-            <div class="telemetry-row">
-                <span class="telemetry-label">Heading</span>
-                <span class="telemetry-value">{{ headingDeg }}</span>
+        <template v-else>
+            <CompassHeading :heading="selectedTrack.heading ?? null" />
+            <div class="telemetry-grid">
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Heading</span>
+                    <span class="telemetry-value">{{ headingDeg }}</span>
+                </div>
+                <div class="telemetry-row-stacked">
+                    <div class="telemetry-row">
+                        <span class="telemetry-label">Confidence</span>
+                        <span class="telemetry-value">{{ confidence }}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" :style="{ width: confidencePct + '%' }"></div>
+                    </div>
+                </div>
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Position</span>
+                    <span class="telemetry-value">{{ position.x }}, {{ position.y }}</span>
+                </div>
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Velocity</span>
+                    <span class="telemetry-value unavailable">--</span>
+                </div>
+                <div class="telemetry-divider"></div>
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Battery</span>
+                    <span class="telemetry-value unavailable">--</span>
+                </div>
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Signal</span>
+                    <span class="telemetry-value unavailable">--</span>
+                </div>
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Temp</span>
+                    <span class="telemetry-value unavailable">--</span>
+                </div>
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Motors</span>
+                    <span class="telemetry-value unavailable">--</span>
+                </div>
             </div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Confidence</span>
-                <span class="telemetry-value">{{ confidence }}</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Position</span>
-                <span class="telemetry-value">{{ position.x }}, {{ position.y }}</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Velocity</span>
-                <span class="telemetry-value unavailable">--</span>
-            </div>
-            <div class="telemetry-divider"></div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Battery</span>
-                <span class="telemetry-value unavailable">--</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Signal</span>
-                <span class="telemetry-value unavailable">--</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Temp</span>
-                <span class="telemetry-value unavailable">--</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="telemetry-label">Motors</span>
-                <span class="telemetry-value unavailable">--</span>
-            </div>
-        </div>
+        </template>
     </div>
 </template>
 
@@ -83,6 +98,19 @@ h3 {
     color: var(--accent-cyan);
     margin-bottom: 12px;
     letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h3::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: var(--accent-cyan);
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .no-selection {
@@ -126,5 +154,26 @@ h3 {
     height: 1px;
     background: var(--border-subtle);
     margin: 4px 0;
+}
+
+.telemetry-row-stacked {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--bg-slate);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent-cyan);
+    border-radius: 2px;
+    transition: width 0.3s ease;
 }
 </style>

@@ -35,3 +35,12 @@ export interface KeyboardState {
     z: boolean
     c: boolean
 }
+
+export type LogEntryType = 'info' | 'success' | 'warning' | 'error' | 'system'
+
+export interface LogEntry {
+    id: string
+    timestamp: Date
+    type: LogEntryType
+    message: string
+}
