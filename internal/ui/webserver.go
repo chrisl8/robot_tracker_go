@@ -3,9 +3,11 @@
 package ui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"io/fs"
 	"net/http"
 	"os"
@@ -44,6 +46,9 @@ type WebServer struct {
 	calibrationTagSize  float64
 	calibrationData     *CalibrationSaveRequest
 	cameraName          string
+
+	arduinoConnected bool
+	arduinoMutex     sync.RWMutex
 
 	detectedTags    []DetectedTagInfo
 	detectedTagsMut sync.RWMutex
@@ -443,13 +448,22 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 	yoloCount := s.lastYoloCount
 	s.statsMutex.RUnlock()
 
+	s.arduinoMutex.RLock()
+	connected := s.arduinoConnected
+	s.arduinoMutex.RUnlock()
+
+	state := "Disconnected"
+	if connected {
+		state = "Connected"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"connected":    s.isRunning,
-		"fps":          30.0,
+		"fps":          0,
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
 		"yoloCount":    yoloCount,
-		"arduinoState": "disconnected",
+		"arduinoState": state,
 	})
 }
 
@@ -529,7 +543,8 @@ func (s *WebServer) BroadcastPaths() {
 			pixels[i] = [2]int{px, py}
 		}
 
-		color := fmt.Sprintf("#%06x", (robotID*12345)%0xFFFFFF)
+		brightColors := []string{"#FFFF00", "#00FF00", "#FF00FF", "#00FFFF", "#FF6600", "#FF0066", "#66FF00", "#0099FF"}
+		color := brightColors[robotID%len(brightColors)]
 		pathMessages = append(pathMessages, PathMessage{
 			RobotID: robotID,
 			Points:  pixels,
@@ -801,21 +816,11 @@ func (s *WebServer) PushFrame(img image.Image) {
 	if img == nil {
 		return
 	}
-	bounds := img.Bounds()
-	width := bounds.Max.X - bounds.Min.X
-	height := bounds.Max.Y - bounds.Min.Y
-
-	buf := make([]byte, width*height*3)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, _ := img.At(x, y).RGBA()
-			idx := ((y-bounds.Min.Y)*width + (x - bounds.Min.X)) * 3
-			buf[idx+0] = byte(r >> 8) // #nosec G115 -- intentional truncation for RGB pixel
-			buf[idx+1] = byte(g >> 8) // #nosec G115
-			buf[idx+2] = byte(b >> 8) // #nosec G115
-		}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
+		return
 	}
-	s.stream.updateJPEG(buf)
+	s.stream.updateJPEG(buf.Bytes())
 }
 
 func (s *WebServer) PushRawJPEG(jpegData []byte) {
@@ -830,6 +835,33 @@ func (s *WebServer) UpdateStats(tagCount, yoloCount int) {
 	s.lastTagCount = tagCount
 	s.lastYoloCount = yoloCount
 	s.statsMutex.Unlock()
+}
+
+func (s *WebServer) SetArduinoConnected(connected bool) {
+	s.arduinoMutex.Lock()
+	s.arduinoConnected = connected
+	s.arduinoMutex.Unlock()
+}
+
+func (s *WebServer) BroadcastStatus(trackCount int) {
+	s.arduinoMutex.RLock()
+	connected := s.arduinoConnected
+	s.arduinoMutex.RUnlock()
+
+	state := "Disconnected"
+	if connected {
+		state = "Connected"
+	}
+
+	s.BroadcastOverlay(OverlayMessage{
+		Type: "status",
+		Status: &StatusMessage{
+			Connected:    s.isRunning,
+			FPS:          0,
+			RobotCount:   trackCount,
+			ArduinoState: state,
+		},
+	})
 }
 
 func (s *WebServer) handleCalibrationCancel(c *gin.Context) {

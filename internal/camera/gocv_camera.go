@@ -4,10 +4,22 @@ package camera
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 
 	"gocv.io/x/gocv"
 )
+
+// cameraPermissionHint returns macOS-specific guidance when a camera fails to open.
+// On macOS, cameras require explicit privacy approval for each application.
+func cameraPermissionHint() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	return "\n  On macOS, your terminal app must have camera permission." +
+		"\n  Fix: System Settings > Privacy & Security > Camera > enable your terminal (Terminal, iTerm2, etc.)" +
+		"\n  You may need to restart your terminal after granting permission."
+}
 
 type GoCVCamera struct {
 	cap      *gocv.VideoCapture
@@ -44,7 +56,8 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 
 	cap, err := gocv.VideoCaptureDevice(config.CameraID)
 	if err != nil || cap == nil || !cap.IsOpened() {
-		return nil, fmt.Errorf("failed to open camera %d: %w", config.CameraID, &CameraError{Message: "camera not available"})
+		hint := cameraPermissionHint()
+		return nil, fmt.Errorf("failed to open camera %d: %w%s", config.CameraID, &CameraError{Message: "camera not available"}, hint)
 	}
 
 	cap.Set(gocv.VideoCaptureFrameWidth, float64(width))
