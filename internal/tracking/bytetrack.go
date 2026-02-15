@@ -27,7 +27,7 @@ func NewByteTrack(config *ByteTrackConfig) *ByteTrack {
 		config = &ByteTrackConfig{
 			TrackThresh: 0.5,
 			TrackBuffer: 30,
-			MatchThresh: 0.8,
+			MatchThresh: 0.3,
 			FrameRate:   30,
 			MinBoxArea:  100,
 			MOT20:       false,
@@ -82,6 +82,8 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 			continue
 		}
 		tt.track.Update(highConfDetections[detIdx].Bbox, timestamp, highConfDetections[detIdx].Confidence)
+		cx, cy := bboxToCenter(highConfDetections[detIdx].Bbox)
+		tt.kf.Update([2]float64{cx, cy})
 		tt.timeSinceUpdate = 0
 		if tt.track.TagID == nil && highConfDetections[detIdx].TagID != nil {
 			tagID := *highConfDetections[detIdx].TagID
@@ -107,6 +109,8 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 				continue
 			}
 			tt.track.Update(lowConfDetections[detIdx].Bbox, timestamp, lowConfDetections[detIdx].Confidence)
+			cx, cy := bboxToCenter(lowConfDetections[detIdx].Bbox)
+			tt.kf.Update([2]float64{cx, cy})
 			tt.timeSinceUpdate = 0
 		}
 	}
@@ -118,7 +122,11 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 
 func (t *ByteTrack) predictAllTracks() {
 	for _, tt := range t.tracks {
-		tt.kf.Predict()
+		state := tt.kf.Predict()
+		// Update track bbox with predicted position for matching
+		w := tt.track.Bbox[2] - tt.track.Bbox[0]
+		h := tt.track.Bbox[3] - tt.track.Bbox[1]
+		tt.track.Bbox = centerToBbox(state[0], state[1], w, h)
 	}
 }
 
@@ -206,21 +214,26 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 }
 
 func (t *ByteTrack) createNewTrack(detection Detection, timestamp float64) {
-	// If this detection has a TagID, remove any existing track with the same TagID
+	// If this detection has a TagID matching an existing track, reuse that track
 	if detection.TagID != nil {
-		for id, tt := range t.tracks {
+		for _, tt := range t.tracks {
 			if tt.track.TagID != nil && *tt.track.TagID == *detection.TagID {
-				delete(t.tracks, id)
+				tt.track.Update(detection.Bbox, timestamp, detection.Confidence)
+				cx, cy := bboxToCenter(detection.Bbox)
+				tt.kf.Update([2]float64{cx, cy})
+				tt.timeSinceUpdate = 0
+				return
 			}
 		}
 	}
 
+	// No existing track with this TagID — create a new one
 	track := NewTrack(t.nextTrackID, detection.Bbox, timestamp, detection.Confidence)
 	t.nextTrackID++
 
 	kf := NewKalmanFilter()
 	cx, cy := bboxToCenter(detection.Bbox)
-	kf.Initialize(float64(detection.Bbox[0]), float64(detection.Bbox[1]), cx, cy)
+	kf.Initialize(cx, cy, 0, 0)
 
 	tt := &TrackedTrack{
 		track:           track,

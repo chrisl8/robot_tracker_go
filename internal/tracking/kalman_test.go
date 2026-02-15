@@ -97,7 +97,6 @@ func TestKalmanFilter_Update_NotInitialized(t *testing.T) {
 }
 
 func TestKalmanFilter_Update_Initialized(t *testing.T) {
-	t.Skip("Skipping due to KalmanFilter.Update panic on second update")
 	kf := NewKalmanFilter()
 	kf.Initialize(100, 200, 0, 0)
 
@@ -138,7 +137,6 @@ func TestKalmanFilter_GetCovariance(t *testing.T) {
 }
 
 func TestKalmanFilter_PredictUpdate(t *testing.T) {
-	t.Skip("Skipping due to KalmanFilter.Update panic on second update")
 	kf := NewKalmanFilter()
 
 	kf.Initialize(0, 0, 1, 1)
@@ -204,7 +202,6 @@ func TestCenterToBbox(t *testing.T) {
 }
 
 func TestKalmanFilter_MultipleUpdates(t *testing.T) {
-	t.Skip("Skipping due to KalmanFilter.Update panic on second update")
 	kf := NewKalmanFilter()
 
 	kf.Update([2]float64{100, 100})

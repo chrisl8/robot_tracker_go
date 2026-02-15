@@ -104,20 +104,18 @@ func (kf *KalmanFilter) Update(measurement [2]float64) [4]float64 {
 		return kf.x
 	}
 
-	z := measurement
+	// Innovation: y = z - H*x
+	y := [2]float64{
+		measurement[0] - kf.x[0],
+		measurement[1] - kf.x[1],
+	}
 
-	y := [2]float64{}
-	y[0] = z[0] - kf.H[0][0]*kf.x[0]
-	y[1] = z[1] - kf.H[1][1]*kf.x[1]
-
+	// Innovation covariance: S = H*P*H^T + R
+	// For H = [[1,0,0,0],[0,1,0,0]]: S[i][j] = P[i][j] + R[i][j]
 	S := [2][2]float64{}
-	// #nosec G602
 	for i := 0; i < 2; i++ {
 		for j := 0; j < 2; j++ {
-			S[i][j] = kf.R[i][j]
-			for k := 0; k < 4; k++ {
-				S[i][j] += kf.H[i][k] * kf.P[k][j]
-			}
+			S[i][j] = kf.P[i][j] + kf.R[i][j]
 		}
 	}
 
@@ -132,35 +130,32 @@ func (kf *KalmanFilter) Update(measurement [2]float64) [4]float64 {
 	SInv[1][0] = -S[1][0] / detS
 	SInv[1][1] = S[0][0] / detS
 
+	// Kalman gain: K = P*H^T*S^(-1)
+	// For this H: (P*H^T)[i][j] = P[i][j] for j<2
 	K := [4][2]float64{}
 	for i := 0; i < 4; i++ {
 		for j := 0; j < 2; j++ {
-			K[i][j] = 0
 			for k := 0; k < 2; k++ {
-				K[i][j] += kf.P[i][k] * kf.H[k][j]
-			}
-			for k := 0; k < 2; k++ {
-				K[i][j] *= SInv[k][j]
+				K[i][j] += kf.P[i][k] * SInv[k][j]
 			}
 		}
 	}
 
+	// State update: x = x + K*y
 	for i := 0; i < 4; i++ {
 		for j := 0; j < 2; j++ {
 			kf.x[i] += K[i][j] * y[j]
 		}
 	}
 
+	// Covariance update: P = (I - K*H)*P
+	// For this H: (K*H)[i][k] = K[i][k] for k<2, 0 for k>=2
 	PNew := [4][4]float64{}
 	for i := 0; i < 4; i++ {
 		for j := 0; j < 4; j++ {
-			delta := [2]float64{}
-			for k := 0; k < 2; k++ {
-				delta[k] = kf.H[k][i]
-			}
 			PNew[i][j] = kf.P[i][j]
 			for k := 0; k < 2; k++ {
-				PNew[i][j] -= K[i][k] * S[k][j]
+				PNew[i][j] -= K[i][k] * kf.P[k][j]
 			}
 		}
 	}
