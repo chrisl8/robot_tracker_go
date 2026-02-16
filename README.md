@@ -111,6 +111,27 @@ go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
 .\robot_tracker.exe --list-ports
 ```
 
+### macOS: Running Remotely over SSH
+
+macOS blocks camera access for processes started via SSH (the SSH daemon lacks camera permission). To start/stop the tracker remotely, use the LaunchAgent service manager:
+
+```bash
+# One-time setup (generates a LaunchAgent plist and loads it)
+./scripts/service.sh install
+
+# Start/stop from any terminal — including SSH sessions
+./scripts/service.sh start
+./scripts/service.sh stop
+./scripts/service.sh restart
+./scripts/service.sh status
+./scripts/service.sh log        # tail -f the log file
+./scripts/service.sh uninstall  # remove the LaunchAgent
+```
+
+The LaunchAgent runs in your GUI login session, so it inherits camera permissions. Logs go to `~/Library/Logs/robot-tracker.log`.
+
+**After a reboot**, someone must log in to the Mac (GUI) before the LaunchAgent is available. To make this fully hands-off, enable automatic login in **System Settings > Users & Groups > Automatic Login**.
+
 ## Project Structure
 
 ```
