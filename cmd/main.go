@@ -45,7 +45,7 @@ func (m ControlMode) String() string {
 	case ControlModeAutonomous:
 		return "autonomous"
 	default:
-		return "idle"
+		return "hold"
 	}
 }
 
@@ -55,6 +55,8 @@ func ParseControlMode(s string) ControlMode {
 		return ControlModeManual
 	case "autonomous":
 		return ControlModeAutonomous
+	case "hold":
+		return ControlModeIdle
 	default:
 		return ControlModeIdle
 	}
@@ -835,7 +837,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		}
 	}
 
-	rs.webServer.BroadcastTracks(trackingResult.Tracks)
+	rs.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots)
 
 	rs.executeAutonomousControl(trackingResult.Tracks)
 
@@ -1392,7 +1394,11 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 			}
 		}
 
-		rs.webServer.BroadcastTracks(trackingResult.Tracks)
+		var robots []config.RobotConfig
+		if rs.cfg != nil {
+			robots = rs.cfg.Robots
+		}
+		rs.webServer.BroadcastTracks(trackingResult.Tracks, robots)
 	}
 
 	if rs.detectionPipe != nil && rs.webServer != nil {

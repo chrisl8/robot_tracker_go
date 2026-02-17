@@ -8,6 +8,8 @@ export interface Track {
     tag_id?: number
     state: 'pending' | 'confirmed' | 'lost'
     history: [number, number][]
+    configured?: boolean
+    name?: string
     pixel_radius?: number
     heading?: number
     heading_offset?: number

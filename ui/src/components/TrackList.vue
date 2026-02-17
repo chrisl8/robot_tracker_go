@@ -2,15 +2,26 @@
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { getTrackColor } from '@/types/robot'
-import { Crosshair } from 'lucide-vue-next'
+import { Crosshair, Tag } from 'lucide-vue-next'
 
 const robotStore = useRobotStore()
 
-const tracks = computed(() => [...robotStore.confirmedTracks].sort((a, b) => a.id - b.id))
+const configuredRobots = computed(() =>
+    [...robotStore.configuredRobots].sort((a, b) => a.id - b.id)
+)
+const detectedTags = computed(() => [...robotStore.detectedTags].sort((a, b) => a.id - b.id))
 
-function getTrackLabel(track: { id: number; tag_id?: number }): string {
+function getTrackLabel(track: {
+    id: number
+    tag_id?: number
+    configured?: boolean
+    name?: string
+}): string {
+    if (track.configured && track.name) {
+        return track.name
+    }
     if (track.tag_id !== undefined) {
-        return `Robot ${track.tag_id}`
+        return `Tag ${track.tag_id}`
     }
     return `Object #${track.id}`
 }
@@ -30,11 +41,13 @@ function hasDestination(track: { id: number; tag_id?: number }): boolean {
 
 <template>
     <div class="panel">
-        <h3><Crosshair :size="14" /> Detected Targets</h3>
-        <div v-if="tracks.length === 0" class="no-tracks">No targets detected</div>
+        <h3><Crosshair :size="14" /> Robots</h3>
+        <div v-if="configuredRobots.length === 0" class="no-tracks">
+            No configured robots detected
+        </div>
         <div v-else class="track-list">
             <div
-                v-for="track in tracks"
+                v-for="track in configuredRobots"
                 :key="track.id"
                 class="track-item"
                 :class="{
@@ -50,12 +63,35 @@ function hasDestination(track: { id: number; tag_id?: number }): boolean {
                 <div class="track-info">
                     <div class="track-label">
                         {{ getTrackLabel(track) }}
-                        <span v-if="track.tag_id" class="track-tag">Tag</span>
+                        <span v-if="track.tag_id" class="track-tag">Tag {{ track.tag_id }}</span>
                         <span v-if="isSelected(track.id)" class="track-selected">Selected</span>
                         <span v-if="hasDestination(track)" class="track-destination">Goal</span>
                     </div>
                     <div class="track-conf">
                         {{ (track.confidence * 100).toFixed(0) }}% confidence
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="detectedTags.length > 0" class="detected-tags-section">
+            <h4><Tag :size="12" /> Detected Tags</h4>
+            <div class="track-list">
+                <div v-for="track in detectedTags" :key="track.id" class="track-item unconfigured">
+                    <div
+                        class="track-color dimmed"
+                        :style="{ background: getTrackColor(track.id) }"
+                    >
+                        {{ track.id }}
+                    </div>
+                    <div class="track-info">
+                        <div class="track-label">
+                            {{ getTrackLabel(track) }}
+                            <span class="track-unconfigured">Unconfigured</span>
+                        </div>
+                        <div class="track-conf">
+                            {{ (track.confidence * 100).toFixed(0) }}% confidence
+                        </div>
                     </div>
                 </div>
             </div>
@@ -91,6 +127,24 @@ h3::before {
     background: var(--accent-cyan);
     border-radius: 2px;
     flex-shrink: 0;
+}
+
+h4 {
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.detected-tags-section {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-panel);
 }
 
 .track-list {
@@ -130,6 +184,16 @@ h3::before {
     border-left: 3px solid var(--accent-blue);
 }
 
+.track-item.unconfigured {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.track-item.unconfigured:hover {
+    border-color: transparent;
+    background: var(--bg-slate);
+}
+
 .track-color {
     width: 36px;
     height: 36px;
@@ -140,6 +204,10 @@ h3::before {
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--bg-deep-space);
+}
+
+.track-color.dimmed {
+    opacity: 0.5;
 }
 
 .track-info {
@@ -182,6 +250,16 @@ h3::before {
     border-radius: 4px;
     color: white;
     font-weight: bold;
+}
+
+.track-unconfigured {
+    font-family: var(--font-data);
+    font-size: 0.65rem;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
 }
 
 .track-conf {

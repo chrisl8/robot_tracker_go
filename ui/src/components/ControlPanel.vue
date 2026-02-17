@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
-import { Gamepad2 } from 'lucide-vue-next'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Gamepad2 } from 'lucide-vue-next'
 
 const uiStore = useUIStore()
 const robotStore = useRobotStore()
@@ -62,7 +62,7 @@ watch(
 
 <template>
     <div class="panel">
-        <h3><Gamepad2 :size="14" /> Controls</h3>
+        <h3><Gamepad2 :size="14" /> Direct Control</h3>
 
         <!-- Emergency Stop -->
         <button
@@ -85,11 +85,11 @@ watch(
             <div class="mode-buttons">
                 <button
                     class="btn mode-btn"
-                    :class="{ active: robotStore.controlMode === 'idle' }"
+                    :class="{ active: robotStore.controlMode === 'hold' }"
                     :disabled="robotStore.emergencyStopped"
-                    @click="robotStore.setControlMode('idle')"
+                    @click="robotStore.setControlMode('hold')"
                 >
-                    Idle
+                    Hold
                 </button>
                 <button
                     class="btn mode-btn"
@@ -97,7 +97,7 @@ watch(
                     :disabled="robotStore.emergencyStopped"
                     @click="robotStore.setControlMode('manual')"
                 >
-                    Manual
+                    Pilot
                 </button>
                 <button
                     class="btn mode-btn"
@@ -124,66 +124,69 @@ watch(
 
         <div class="divider"></div>
 
-        <!-- WASD Controls -->
-        <div
-            class="controls"
-            :class="{
-                disabled: robotStore.controlMode !== 'manual' || robotStore.emergencyStopped,
-            }"
-        >
-            <button
-                class="btn forward"
-                @mousedown="handleMouseDown('w', 'F')"
-                @mouseup="handleMouseUp"
-                @mouseleave="handleMouseUp"
-                :class="{ pressed: pressed === 'w' }"
-                :disabled="robotStore.controlMode !== 'manual' || robotStore.emergencyStopped"
-            >
-                W
-            </button>
-            <button
-                class="btn"
-                @mousedown="handleMouseDown('a', 'L')"
-                @mouseup="handleMouseUp"
-                @mouseleave="handleMouseUp"
-                :class="{ pressed: pressed === 'a' }"
-                :disabled="robotStore.controlMode !== 'manual' || robotStore.emergencyStopped"
-            >
-                A
-            </button>
-            <button
-                class="btn"
-                @mousedown="handleMouseDown('s', 'B')"
-                @mouseup="handleMouseUp"
-                @mouseleave="handleMouseUp"
-                :class="{ pressed: pressed === 's' }"
-                :disabled="robotStore.controlMode !== 'manual' || robotStore.emergencyStopped"
-            >
-                S
-            </button>
-            <button
-                class="btn"
-                @mousedown="handleMouseDown('d', 'R')"
-                @mouseup="handleMouseUp"
-                @mouseleave="handleMouseUp"
-                :class="{ pressed: pressed === 'd' }"
-                :disabled="robotStore.controlMode !== 'manual' || robotStore.emergencyStopped"
-            >
-                D
-            </button>
-            <button
-                class="btn stop"
-                @mousedown="handleMouseDown('x', 'S')"
-                @mouseup="handleMouseUp"
-                @mouseleave="handleMouseUp"
-                :disabled="robotStore.controlMode !== 'manual' || robotStore.emergencyStopped"
-            >
-                X
-            </button>
-        </div>
-        <div class="keyboard-hint">
-            Use <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to move, <kbd>X</kbd> to stop
-        </div>
+        <!-- D-Pad Controls (only visible in Pilot mode) -->
+        <template v-if="robotStore.controlMode === 'manual'">
+            <div class="dpad">
+                <div class="dpad-row">
+                    <button
+                        class="dpad-btn forward"
+                        @mousedown="handleMouseDown('w', 'F')"
+                        @mouseup="handleMouseUp"
+                        @mouseleave="handleMouseUp"
+                        :class="{ pressed: pressed === 'w' }"
+                        :disabled="robotStore.emergencyStopped"
+                    >
+                        <ArrowUp :size="20" :stroke-width="2.5" />
+                    </button>
+                </div>
+                <div class="dpad-row">
+                    <button
+                        class="dpad-btn"
+                        @mousedown="handleMouseDown('a', 'L')"
+                        @mouseup="handleMouseUp"
+                        @mouseleave="handleMouseUp"
+                        :class="{ pressed: pressed === 'a' }"
+                        :disabled="robotStore.emergencyStopped"
+                    >
+                        <ArrowLeft :size="20" :stroke-width="2.5" />
+                    </button>
+                    <button
+                        class="dpad-btn stop-btn"
+                        @mousedown="handleMouseDown('x', 'S')"
+                        @mouseup="handleMouseUp"
+                        @mouseleave="handleMouseUp"
+                        :disabled="robotStore.emergencyStopped"
+                    >
+                        STOP
+                    </button>
+                    <button
+                        class="dpad-btn"
+                        @mousedown="handleMouseDown('d', 'R')"
+                        @mouseup="handleMouseUp"
+                        @mouseleave="handleMouseUp"
+                        :class="{ pressed: pressed === 'd' }"
+                        :disabled="robotStore.emergencyStopped"
+                    >
+                        <ArrowRight :size="20" :stroke-width="2.5" />
+                    </button>
+                </div>
+                <div class="dpad-row">
+                    <button
+                        class="dpad-btn backward"
+                        @mousedown="handleMouseDown('s', 'B')"
+                        @mouseup="handleMouseUp"
+                        @mouseleave="handleMouseUp"
+                        :class="{ pressed: pressed === 's' }"
+                        :disabled="robotStore.emergencyStopped"
+                    >
+                        <ArrowDown :size="20" :stroke-width="2.5" />
+                    </button>
+                </div>
+            </div>
+            <div class="keyboard-hint">
+                <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>X</kbd> stop
+            </div>
+        </template>
         <div class="divider"></div>
         <button
             class="btn toggle"
@@ -228,6 +231,7 @@ h3::before {
 .emergency-stop {
     width: 100%;
     padding: 16px;
+    font-family: var(--font-heading);
     font-size: 1.1rem;
     font-weight: bold;
     background: rgba(255, 61, 0, 0.2);
@@ -310,7 +314,10 @@ h3::before {
     flex: 1;
     min-width: 0;
     padding: 8px 4px;
+    font-family: var(--font-heading);
     font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     background: var(--bg-slate);
     border: 2px solid var(--border-subtle);
     border-radius: 6px;
@@ -371,17 +378,90 @@ h3::before {
     background: rgba(255, 171, 0, 0.2);
 }
 
-.controls {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    max-width: 180px;
+.dpad {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
     margin: 0 auto;
     transition: opacity 0.2s ease;
 }
 
-.controls.disabled {
-    opacity: 0.4;
+.dpad-row {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+.dpad-btn {
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.15s ease;
+    background: var(--panel-dark);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.dpad-btn:hover:not(:disabled) {
+    background: rgba(0, 217, 255, 0.1);
+    border-color: rgba(0, 217, 255, 0.3);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+}
+
+.dpad-btn:active:not(:disabled),
+.dpad-btn.pressed {
+    transform: scale(0.95);
+    box-shadow: 0 0 10px rgba(0, 217, 255, 0.4);
+}
+
+.dpad-btn:disabled {
+    cursor: not-allowed;
+}
+
+.dpad-btn.forward,
+.dpad-btn.backward {
+    background: rgba(0, 217, 255, 0.08);
+    border-color: rgba(0, 217, 255, 0.25);
+    color: var(--accent-cyan);
+}
+
+.dpad-btn.forward:hover:not(:disabled),
+.dpad-btn.backward:hover:not(:disabled) {
+    background: rgba(0, 217, 255, 0.2);
+}
+
+.stop-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 61, 0, 0.7);
+    border: 2px solid var(--alert-red);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.stop-btn:hover:not(:disabled) {
+    background: rgba(255, 61, 0, 0.9);
+    border-color: var(--alert-red);
+    color: #fff;
+    transform: none;
+    box-shadow: 0 0 12px rgba(255, 61, 0, 0.5);
+}
+
+.stop-btn:active:not(:disabled) {
+    transform: scale(0.95);
+    box-shadow: 0 0 16px rgba(255, 61, 0, 0.6);
 }
 
 .btn {
@@ -413,26 +493,6 @@ h3::before {
 
 .btn:disabled {
     cursor: not-allowed;
-}
-
-.btn.stop {
-    background: rgba(255, 61, 0, 0.15);
-    border-color: rgba(255, 61, 0, 0.3);
-    color: var(--alert-red);
-}
-
-.btn.stop:hover:not(:disabled) {
-    background: rgba(255, 61, 0, 0.25);
-}
-
-.btn.forward {
-    background: rgba(0, 217, 255, 0.15);
-    border-color: rgba(0, 217, 255, 0.3);
-    color: var(--accent-cyan);
-}
-
-.btn.forward:hover:not(:disabled) {
-    background: rgba(0, 217, 255, 0.25);
 }
 
 .btn.toggle {

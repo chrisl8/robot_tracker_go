@@ -562,14 +562,21 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             const width = scaled2.x - scaled1.x
             const height = scaled2.y - scaled1.y
             const color = getTrackColor(track.id)
+            const isUnconfigured = !track.configured && track.tag_id !== undefined
 
             // Draw rectangle
+            ctx.value.globalAlpha = isUnconfigured ? 0.4 : 1.0
             ctx.value.strokeStyle = color
             ctx.value.lineWidth = 2
             ctx.value.strokeRect(scaled1.x, scaled1.y, width, height)
 
             // Draw label
-            const label = track.tag_id !== undefined ? `Robot ${track.tag_id}` : `#${track.id}`
+            const label =
+                track.configured && track.name
+                    ? track.name
+                    : track.tag_id !== undefined
+                      ? `Tag ${track.tag_id}`
+                      : `#${track.id}`
             ctx.value.font = THEME.fontLabel
             const labelWidth = ctx.value.measureText(label).width + 8
             ctx.value.fillStyle = color
@@ -628,6 +635,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 ctx.value.closePath()
                 ctx.value.fill()
             }
+
+            ctx.value.globalAlpha = 1.0
         }
     }
 

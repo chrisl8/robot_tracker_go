@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"robot_tracker_go/internal/config"
 	"robot_tracker_go/internal/planning"
 	"robot_tracker_go/internal/position"
 	"robot_tracker_go/internal/tracking"
@@ -120,6 +121,8 @@ type TrackMessage struct {
 	Color       string         `json:"color"`
 	Confidence  float64        `json:"confidence"`
 	State       string         `json:"state"`
+	Configured    bool           `json:"configured"`
+	Name          string         `json:"name,omitempty"`
 	PixelRadius   *float64       `json:"pixel_radius,omitempty"`
 	Heading       *float64       `json:"heading,omitempty"`
 	Corners       *[4][2]float64 `json:"corners,omitempty"`
@@ -347,7 +350,7 @@ func (s *WebServer) BroadcastObstacles() {
 	})
 }
 
-func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
+func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.RobotConfig) {
 	trackMessages := make([]TrackMessage, 0, len(tracks))
 	for _, track := range tracks {
 		bbox := []int{track.Bbox[0], track.Bbox[1], track.Bbox[2], track.Bbox[3]}
@@ -363,6 +366,15 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track) {
 			Confidence:  track.Confidence,
 			State:       track.StateString(),
 			PixelRadius: &track.PixelRadius,
+		}
+		if track.TagID != nil {
+			for _, rc := range robots {
+				if rc.TagID == *track.TagID {
+					msg.Configured = true
+					msg.Name = rc.Name
+					break
+				}
+			}
 		}
 		if track.PixelRadius <= 0 {
 			msg.PixelRadius = nil
@@ -1140,8 +1152,8 @@ func (s *WebServer) handleSetMode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Mode != "idle" && req.Mode != "manual" && req.Mode != "autonomous" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mode, must be idle/manual/autonomous"})
+	if req.Mode != "hold" && req.Mode != "manual" && req.Mode != "autonomous" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mode, must be hold/manual/autonomous"})
 		return
 	}
 	if s.OnModeChange != nil {
@@ -1171,7 +1183,7 @@ func (s *WebServer) handleClearEmergencyStop(c *gin.Context) {
 }
 
 func (s *WebServer) handleControlState(c *gin.Context) {
-	mode := "idle"
+	mode := "hold"
 	eStopped := false
 	if s.OnGetControlState != nil {
 		mode, eStopped = s.OnGetControlState()

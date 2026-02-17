@@ -95,10 +95,13 @@ test.describe('Control Panel', () => {
     })
 
     test('should have manual control buttons', async ({ page }) => {
-        await expect(page.locator('.panel-right .panel:has-text("Controls")')).toBeVisible({
+        await expect(page.locator('.panel-right .panel:has-text("Direct Control")')).toBeVisible({
             timeout: 10000,
         })
-        await expect(page.locator('.panel-right .panel:has-text("Controls") .btn')).toHaveCount(10)
+        // In Hold mode (default), d-pad is hidden: e-stop(1) + 3 mode btns + footprints toggle = 5
+        await expect(
+            page.locator('.panel-right .panel:has-text("Direct Control") .btn')
+        ).toHaveCount(5)
     })
 })
 
@@ -109,11 +112,11 @@ test.describe('Destination Planning', () => {
         await page.waitForTimeout(1000)
     })
 
-    test('should display track list with detected targets', async ({ page }) => {
-        await expect(page.locator('.panel-left .panel:has-text("Detected Targets")')).toBeVisible({
+    test('should display track list with robots and detected tags', async ({ page }) => {
+        await expect(page.locator('.panel-left .panel:has(.track-list)')).toBeVisible({
             timeout: 10000,
         })
-        await expect(page.locator('.track-item')).toHaveCount(3, { timeout: 5000 })
+        await expect(page.locator('.track-item')).toHaveCount(3, { timeout: 10000 })
     })
 
     test('should show track items as clickable', async ({ page }) => {
@@ -139,9 +142,7 @@ test.describe('Destination Planning', () => {
         expect(count).toBeGreaterThan(0)
 
         // Verify styling classes are available in the CSS
-        await expect(page.locator('.panel-left .panel:has-text("Detected Targets")')).toHaveClass(
-            /panel/
-        )
+        await expect(page.locator('.panel-left .panel:has(.track-list)')).toHaveClass(/panel/)
     })
 })
 

@@ -84,4 +84,37 @@ build_info "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
 
 go build -tags=gocv -o robot_tracker ./cmd/
 
+# Sign the binary so macOS TCC recognizes it across rebuilds.
+# Without signing, macOS re-prompts for camera permission after every build.
+if security find-identity -v -p codesigning 2>/dev/null | grep -q '"'; then
+    IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/')
+    if codesign -f -s "$IDENTITY" robot_tracker 2>/dev/null; then
+        build_success "Binary signed with: ${IDENTITY}"
+    else
+        # Signing failed — most likely the keychain is locked (common over SSH)
+        build_warning "Code signing failed (keychain is probably locked)"
+        if [ -t 0 ]; then
+            # Interactive terminal — offer to unlock
+            build_info "Unlocking keychain to sign binary (enter your macOS login password)..."
+            if security unlock-keychain "$HOME/Library/Keychains/login.keychain-db"; then
+                if codesign -f -s "$IDENTITY" robot_tracker 2>/dev/null; then
+                    build_success "Binary signed with: ${IDENTITY}"
+                else
+                    build_warning "Code signing still failed after keychain unlock"
+                    build_warning "Camera permission will need re-approval after this rebuild"
+                fi
+            else
+                build_warning "Keychain unlock failed"
+                build_warning "Camera permission will need re-approval after this rebuild"
+            fi
+        else
+            build_warning "Non-interactive session — cannot unlock keychain"
+            build_warning "Camera permission will need re-approval after this rebuild"
+        fi
+    fi
+else
+    build_warning "No codesigning identity found — camera will re-prompt after each rebuild"
+    build_warning "Install Xcode or create a signing certificate to fix this"
+fi
+
 section_header "Build Complete: robot_tracker" "$GREEN"

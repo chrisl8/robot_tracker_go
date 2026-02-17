@@ -25,7 +25,7 @@ export const useRobotStore = defineStore('robot', () => {
     const destinationMode = ref(false)
     const destination = ref<Destination | null>(null)
     const paths = ref<PathMessage[]>([])
-    const controlMode = ref<'idle' | 'manual' | 'autonomous'>('idle')
+    const controlMode = ref<'hold' | 'manual' | 'autonomous'>('hold')
     const emergencyStopped = ref(false)
 
     // Computed
@@ -36,9 +36,15 @@ export const useRobotStore = defineStore('robot', () => {
         return tracks.value.filter(t => t.state === 'confirmed')
     })
 
+    const configuredRobots = computed(() => confirmedTracks.value.filter(t => t.configured))
+
+    const detectedTags = computed(() =>
+        confirmedTracks.value.filter(t => !t.configured && t.tag_id !== undefined)
+    )
+
     const trackCount = computed(() => tracks.value.length)
 
-    const confirmedCount = computed(() => confirmedTracks.value.length)
+    const confirmedCount = computed(() => configuredRobots.value.length)
 
     const selectedTrack = computed(() => {
         if (selectedTrackId.value === null) return null
@@ -186,7 +192,7 @@ export const useRobotStore = defineStore('robot', () => {
         paths.value = []
     }
 
-    async function setControlMode(mode: 'idle' | 'manual' | 'autonomous'): Promise<boolean> {
+    async function setControlMode(mode: 'hold' | 'manual' | 'autonomous'): Promise<boolean> {
         const uiStore = useUIStore()
         try {
             const response = await fetch('/api/mode', {
@@ -216,7 +222,7 @@ export const useRobotStore = defineStore('robot', () => {
             })
             if (response.ok) {
                 emergencyStopped.value = true
-                controlMode.value = 'idle'
+                controlMode.value = 'hold'
                 uiStore.addLogEntry('error', 'Emergency stop activated')
                 return true
             }
@@ -270,6 +276,8 @@ export const useRobotStore = defineStore('robot', () => {
         emergencyStopped,
         // Computed
         confirmedTracks,
+        configuredRobots,
+        detectedTags,
         confirmedCount,
         trackCount,
         selectedTrack,
