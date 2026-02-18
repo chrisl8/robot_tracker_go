@@ -127,6 +127,7 @@ type TrackMessage struct {
 	Heading       *float64       `json:"heading,omitempty"`
 	Corners       *[4][2]float64 `json:"corners,omitempty"`
 	HeadingOffset *float64       `json:"heading_offset,omitempty"`
+	MotionState   *string        `json:"motion_state,omitempty"`
 }
 
 type PathMessage struct {
@@ -350,7 +351,7 @@ func (s *WebServer) BroadcastObstacles() {
 	})
 }
 
-func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.RobotConfig) {
+func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.RobotConfig, robotCommands map[int]string) {
 	trackMessages := make([]TrackMessage, 0, len(tracks))
 	for _, track := range tracks {
 		bbox := []int{track.Bbox[0], track.Bbox[1], track.Bbox[2], track.Bbox[3]}
@@ -386,6 +387,11 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.Rob
 			msg.Heading = &heading
 			msg.Corners = &corners
 			msg.HeadingOffset = &headingOffset
+		}
+		if track.TagID != nil {
+			if ms, ok := robotCommands[*track.TagID]; ok && ms != "" {
+				msg.MotionState = &ms
+			}
 		}
 		trackMessages = append(trackMessages, msg)
 	}

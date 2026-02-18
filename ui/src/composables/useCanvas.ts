@@ -3,6 +3,7 @@ import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getTrackColor } from '@/types/robot'
+import type { Track } from '@/types/api'
 import { getVideoDimensions } from '@/utils/coordinates'
 
 export interface CanvasPoint {
@@ -32,8 +33,12 @@ const THEME = {
     drawingStroke: '#ffab00',
     drawingFill: 'rgba(255, 171, 0, 0.2)',
 
-    // Heading arrow
-    headingColor: '#00e676',
+    // Movement indicator
+    headingChevron: '#00d9ff',
+    headingChevronGlow: 'rgba(0, 217, 255, 0.4)',
+    thrustForward: '#00d9ff',
+    thrustReverse: '#ffab00',
+    rotationArc: '#00d9ff',
 
     // Calibration tag
     calibTagStroke: 'rgba(224, 230, 237, 0.5)',
@@ -153,7 +158,25 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         }
     }
 
-    // Watch for changes and redraw
+    // Animation state for movement indicators, keyed by track ID
+    interface Particle {
+        x: number
+        y: number
+        vx: number
+        vy: number
+        age: number
+        maxAge: number
+    }
+    interface TrackAnimState {
+        particles: Particle[]
+        phase: number
+    }
+    const animationState = new Map<number, TrackAnimState>()
+    let animationFrameId: number | null = null
+    let lastFrameTime = 0
+    let dirty = true
+
+    // Watch for data changes — sets dirty flag for next rAF frame
     watch(
         () => [
             robotStore.tracks,
@@ -169,10 +192,100 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             mousePosition.value,
         ],
         () => {
-            render()
+            dirty = true
         },
         { deep: true }
     )
+
+    function animationLoop(timestamp: number): void {
+        animationFrameId = requestAnimationFrame(animationLoop)
+
+        const dt = lastFrameTime === 0 ? 16 : Math.min(timestamp - lastFrameTime, 50)
+        lastFrameTime = timestamp
+
+        const hasAnimatedTracks = robotStore.tracks.some(
+            t => t.configured && t.corners && t.corners.length === 4
+        )
+
+        if (!dirty && !hasAnimatedTracks) return
+
+        dirty = false
+        updateAnimationState(dt)
+        render()
+    }
+
+    function computePixelHeading(track: Track): number | null {
+        if (!track.corners || track.corners.length !== 4) return null
+        const botMidX = (track.corners[2][0] + track.corners[3][0]) / 2
+        const botMidY = (track.corners[2][1] + track.corners[3][1]) / 2
+        const topMidX = (track.corners[0][0] + track.corners[1][0]) / 2
+        const topMidY = (track.corners[0][1] + track.corners[1][1]) / 2
+        return Math.atan2(topMidY - botMidY, topMidX - botMidX) + (track.heading_offset || 0)
+    }
+
+    function updateAnimationState(dt: number): void {
+        const tracks = robotStore.tracks
+        const activeTrackIds = new Set<number>()
+
+        for (const track of tracks) {
+            if (!track.configured || !track.corners || track.corners.length !== 4) continue
+            activeTrackIds.add(track.id)
+
+            let state = animationState.get(track.id)
+            if (!state) {
+                state = { particles: [], phase: 0 }
+                animationState.set(track.id, state)
+            }
+
+            state.phase += dt / 1000
+
+            // Update existing particles
+            for (let i = state.particles.length - 1; i >= 0; i--) {
+                const p = state.particles[i]
+                p.age += dt
+                p.x += p.vx * (dt / 1000)
+                p.y += p.vy * (dt / 1000)
+                if (p.age >= p.maxAge) {
+                    state.particles.splice(i, 1)
+                }
+            }
+
+            // Spawn new particles for forward/backward motion
+            const motionState = track.motion_state || 'stopped'
+            if (motionState === 'forward' || motionState === 'backward') {
+                const heading = computePixelHeading(track)
+                if (heading === null) continue
+
+                const centerX = (track.bbox[0] + track.bbox[2]) / 2
+                const centerY = (track.bbox[1] + track.bbox[3]) / 2
+                const dir = motionState === 'backward' ? heading + Math.PI : heading
+                const speed = 80
+
+                state.particles.push({
+                    x: centerX,
+                    y: centerY,
+                    vx: Math.cos(dir) * speed,
+                    vy: Math.sin(dir) * speed,
+                    age: 0,
+                    maxAge: 500,
+                })
+
+                if (state.particles.length > 20) {
+                    state.particles.shift()
+                }
+            } else {
+                // Clear particles when not moving linearly
+                state.particles.length = 0
+            }
+        }
+
+        // Clean up state for removed tracks
+        for (const id of animationState.keys()) {
+            if (!activeTrackIds.has(id)) {
+                animationState.delete(id)
+            }
+        }
+    }
 
     function initialize(): void {
         canvas.value = canvasRef.value
@@ -595,49 +708,161 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 )
             }
 
-            // Draw heading arrow from AprilTag corners in pixel space
+            // Draw animated movement indicator
             if (track.corners && track.corners.length === 4) {
-                const botMidX = (track.corners[2][0] + track.corners[3][0]) / 2
-                const botMidY = (track.corners[2][1] + track.corners[3][1]) / 2
-                const topMidX = (track.corners[0][0] + track.corners[1][0]) / 2
-                const topMidY = (track.corners[0][1] + track.corners[1][1]) / 2
-                const pixelHeading =
-                    Math.atan2(topMidY - botMidY, topMidX - botMidX) + (track.heading_offset || 0)
-
-                const centerX = (scaled1.x + scaled2.x) / 2
-                const centerY = (scaled1.y + scaled2.y) / 2
-                const arrowLen = 30
-                const tipX = centerX + arrowLen * Math.cos(pixelHeading)
-                const tipY = centerY + arrowLen * Math.sin(pixelHeading)
-
-                // Draw arrow line
-                ctx.value.beginPath()
-                ctx.value.strokeStyle = THEME.headingColor
-                ctx.value.lineWidth = 2
-                ctx.value.moveTo(centerX, centerY)
-                ctx.value.lineTo(tipX, tipY)
-                ctx.value.stroke()
-
-                // Draw arrowhead
-                const headLen = 8
-                const angle = Math.atan2(tipY - centerY, tipX - centerX)
-                ctx.value.beginPath()
-                ctx.value.fillStyle = THEME.headingColor
-                ctx.value.moveTo(tipX, tipY)
-                ctx.value.lineTo(
-                    tipX - headLen * Math.cos(angle - Math.PI / 6),
-                    tipY - headLen * Math.sin(angle - Math.PI / 6)
-                )
-                ctx.value.lineTo(
-                    tipX - headLen * Math.cos(angle + Math.PI / 6),
-                    tipY - headLen * Math.sin(angle + Math.PI / 6)
-                )
-                ctx.value.closePath()
-                ctx.value.fill()
+                renderMovementIndicator(track, scaled1, scaled2)
             }
 
             ctx.value.globalAlpha = 1.0
         }
+    }
+
+    function renderMovementIndicator(
+        track: Track,
+        scaled1: { x: number; y: number },
+        scaled2: { x: number; y: number }
+    ): void {
+        if (!ctx.value) return
+
+        const pixelHeading = computePixelHeading(track)
+        if (pixelHeading === null) return
+
+        const centerX = (scaled1.x + scaled2.x) / 2
+        const centerY = (scaled1.y + scaled2.y) / 2
+        const state = animationState.get(track.id)
+        const motionState = track.motion_state || 'stopped'
+
+        // --- Direction chevron (always shown) ---
+        const chevronLen = 40
+        const chevronSpread = Math.PI / 5 // 36 degrees each side
+        const tipX = centerX + chevronLen * Math.cos(pixelHeading)
+        const tipY = centerY + chevronLen * Math.sin(pixelHeading)
+
+        // Pulsing opacity for stopped state
+        let chevronAlpha = 1.0
+        if (motionState === 'stopped' && state) {
+            chevronAlpha = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(state.phase * 2 * Math.PI))
+        }
+
+        ctx.value.save()
+        ctx.value.globalAlpha = chevronAlpha
+        ctx.value.strokeStyle = THEME.headingChevron
+        ctx.value.lineWidth = 3.5
+        ctx.value.lineCap = 'round'
+        ctx.value.lineJoin = 'round'
+        ctx.value.shadowBlur = 8
+        ctx.value.shadowColor = THEME.headingChevronGlow
+
+        const armLen = chevronLen * 0.6
+        const leftX = tipX - armLen * Math.cos(pixelHeading - chevronSpread)
+        const leftY = tipY - armLen * Math.sin(pixelHeading - chevronSpread)
+        const rightX = tipX - armLen * Math.cos(pixelHeading + chevronSpread)
+        const rightY = tipY - armLen * Math.sin(pixelHeading + chevronSpread)
+
+        ctx.value.beginPath()
+        ctx.value.moveTo(leftX, leftY)
+        ctx.value.lineTo(tipX, tipY)
+        ctx.value.lineTo(rightX, rightY)
+        ctx.value.stroke()
+        ctx.value.restore()
+
+        // --- Movement-specific animations ---
+        if (motionState === 'forward' || motionState === 'backward') {
+            renderThrustParticles(track, motionState === 'backward')
+        } else if (motionState === 'rotating_left' || motionState === 'rotating_right') {
+            renderRotationArc(
+                centerX,
+                centerY,
+                pixelHeading,
+                motionState === 'rotating_left',
+                state
+            )
+        }
+    }
+
+    function renderThrustParticles(track: Track, isReverse: boolean): void {
+        if (!ctx.value) return
+
+        const state = animationState.get(track.id)
+        if (!state) return
+
+        const color = isReverse ? THEME.thrustReverse : THEME.thrustForward
+        const scale = videoScale.value
+
+        for (const p of state.particles) {
+            const progress = p.age / p.maxAge
+            const alpha = 1.0 - progress
+            const radius = 2.5 * (1 - progress * 0.5)
+
+            const canvasPos = naturalToCanvas(p.x, p.y)
+
+            ctx.value.save()
+            ctx.value.globalAlpha = alpha * 0.8
+            ctx.value.fillStyle = color
+            ctx.value.shadowBlur = 6
+            ctx.value.shadowColor = color
+
+            ctx.value.beginPath()
+            ctx.value.arc(canvasPos.x, canvasPos.y, radius * scale.x, 0, Math.PI * 2)
+            ctx.value.fill()
+            ctx.value.restore()
+        }
+    }
+
+    function renderRotationArc(
+        centerX: number,
+        centerY: number,
+        heading: number,
+        isLeft: boolean,
+        state: TrackAnimState | undefined
+    ): void {
+        if (!ctx.value || !state) return
+
+        const radius = 25
+        const sweepAngle = Math.PI / 2
+        const rotationSpeed = 4
+        const direction = isLeft ? -1 : 1
+        const startAngle = heading + direction * state.phase * rotationSpeed
+
+        ctx.value.save()
+        ctx.value.strokeStyle = THEME.rotationArc
+        ctx.value.lineWidth = 2.5
+        ctx.value.lineCap = 'round'
+        ctx.value.shadowBlur = 6
+        ctx.value.shadowColor = THEME.rotationArc
+
+        ctx.value.beginPath()
+        ctx.value.arc(
+            centerX,
+            centerY,
+            radius,
+            startAngle,
+            startAngle + direction * sweepAngle,
+            isLeft
+        )
+        ctx.value.stroke()
+
+        // Arrowhead at the leading edge of the arc
+        const arrowAngle = startAngle + direction * sweepAngle
+        const arrowX = centerX + radius * Math.cos(arrowAngle)
+        const arrowY = centerY + radius * Math.sin(arrowAngle)
+        const tangentAngle = arrowAngle + (direction * Math.PI) / 2
+        const headLen = 7
+
+        ctx.value.beginPath()
+        ctx.value.fillStyle = THEME.rotationArc
+        ctx.value.moveTo(arrowX, arrowY)
+        ctx.value.lineTo(
+            arrowX - headLen * Math.cos(tangentAngle - Math.PI / 5),
+            arrowY - headLen * Math.sin(tangentAngle - Math.PI / 5)
+        )
+        ctx.value.lineTo(
+            arrowX - headLen * Math.cos(tangentAngle + Math.PI / 5),
+            arrowY - headLen * Math.sin(tangentAngle + Math.PI / 5)
+        )
+        ctx.value.closePath()
+        ctx.value.fill()
+        ctx.value.restore()
     }
 
     function getCanvasPoint(event: MouseEvent): CanvasPoint | null {
@@ -728,11 +953,12 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
     onMounted(() => {
         initialize()
+        animationFrameId = requestAnimationFrame(animationLoop)
 
         resizeObserver = new ResizeObserver(() => {
             syncDimensions()
             updateVideoScale()
-            render()
+            dirty = true
         })
 
         const wrapper = canvas.value?.parentElement
@@ -748,6 +974,10 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     })
 
     onUnmounted(() => {
+        if (animationFrameId !== null) {
+            cancelAnimationFrame(animationFrameId)
+            animationFrameId = null
+        }
         resizeObserver?.disconnect()
         window.removeEventListener('resize', updateVideoScale)
         window.removeEventListener('load', updateVideoScale)

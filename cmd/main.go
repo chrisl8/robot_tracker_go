@@ -88,6 +88,7 @@ type RobotSystem struct {
 	smoothedHeading    map[int]float64
 	headingRejectCount map[int]int
 	headingLostCount    map[int]int
+	robotCommands       map[int]string // tag_id -> current motion state
 	lastCommandTime     time.Time
 	trackingLostTimeout time.Duration
 	lastFrameTime       time.Time
@@ -106,6 +107,7 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		smoothedHeading:    make(map[int]float64),
 		headingRejectCount: make(map[int]int),
 		headingLostCount:   make(map[int]int),
+		robotCommands:      make(map[int]string),
 		startTime:          time.Now(),
 	}
 }
@@ -837,7 +839,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		}
 	}
 
-	rs.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots)
+	rs.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots, rs.robotCommands)
 
 	rs.executeAutonomousControl(trackingResult.Tracks)
 
@@ -1040,6 +1042,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 						rs.commandQueue.Enqueue(controller.CommandStop)
 						commandIssued = true
 					}
+					rs.robotCommands[robotID] = "stopped"
 					continue
 				}
 			}
@@ -1051,6 +1054,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 					rs.commandQueue.Enqueue(controller.CommandStop)
 					commandIssued = true
 				}
+				rs.robotCommands[robotID] = "stopped"
 				continue
 			}
 
@@ -1070,6 +1074,18 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				cmd := rs.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
 				rs.commandQueue.Enqueue(cmd)
 				commandIssued = true
+				switch cmd {
+				case controller.CommandForward:
+					rs.robotCommands[robotID] = "forward"
+				case controller.CommandBackward:
+					rs.robotCommands[robotID] = "backward"
+				case controller.CommandLeft:
+					rs.robotCommands[robotID] = "rotating_left"
+				case controller.CommandRight:
+					rs.robotCommands[robotID] = "rotating_right"
+				case controller.CommandStop:
+					rs.robotCommands[robotID] = "stopped"
+				}
 			}
 
 			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
@@ -1398,7 +1414,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		if rs.cfg != nil {
 			robots = rs.cfg.Robots
 		}
-		rs.webServer.BroadcastTracks(trackingResult.Tracks, robots)
+		rs.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.robotCommands)
 	}
 
 	if rs.detectionPipe != nil && rs.webServer != nil {

@@ -84,9 +84,27 @@ if [ -d "ui" ] && [ -f "ui/package.json" ]; then
     npm run test:run
 
     subsection_header "Playwright Integration Tests" "$YELLOW"
+    # Stop the LaunchAgent service if running so Playwright starts its own --demo instance
+    # instead of reusing the live service on the same port.
+    SERVICE_LABEL="com.chrisl8.robot-tracker"
+    SERVICE_WAS_RUNNING=false
+    if launchctl list "$SERVICE_LABEL" &>/dev/null; then
+        SERVICE_PID=$(launchctl list "$SERVICE_LABEL" 2>/dev/null | awk -F'= ' '/"PID"/ {gsub(/[^0-9]/,"",$2); print $2}')
+        if [ -n "$SERVICE_PID" ] && [ "$SERVICE_PID" != "0" ]; then
+            test_warning "Stopping robot-tracker service (PID ${SERVICE_PID}) to avoid port conflict..."
+            launchctl stop "$SERVICE_LABEL" 2>/dev/null || true
+            SERVICE_WAS_RUNNING=true
+            sleep 1
+        fi
+    fi
     # Ensure Playwright browsers are installed (idempotent — skips if already present)
     npx playwright install
     npm run test:integration
+    # Restart service if it was running before
+    if [ "$SERVICE_WAS_RUNNING" = true ]; then
+        test_info "Restarting robot-tracker service..."
+        launchctl start "$SERVICE_LABEL" 2>/dev/null || true
+    fi
 
     cd "$SCRIPT_DIR/../.."
     section_header "Vue UI Tests Passed" "$GREEN"

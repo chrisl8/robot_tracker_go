@@ -14,6 +14,7 @@ export interface Track {
     heading?: number
     heading_offset?: number
     corners?: [number, number][]
+    motion_state?: 'forward' | 'backward' | 'rotating_left' | 'rotating_right' | 'stopped'
 }
 
 // Obstacle types (maps to internal/planning/static_obstacle.go)
