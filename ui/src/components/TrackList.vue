@@ -204,6 +204,7 @@ h4 {
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--bg-deep-space);
+    flex-shrink: 0;
 }
 
 .track-color.dimmed {
@@ -212,6 +213,7 @@ h4 {
 
 .track-info {
     flex: 1;
+    min-width: 0;
 }
 
 .track-label {
@@ -220,6 +222,7 @@ h4 {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .track-tag {
