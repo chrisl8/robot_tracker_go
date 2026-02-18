@@ -101,6 +101,9 @@ func (p *Planner) SetObstacles(obstacles []Obstacle) {
 }
 
 func (p *Planner) SetDynamicObstacles(obstacles []Obstacle) {
+	if obstaclesEqual(p.dynamicObstacles, obstacles) {
+		return
+	}
 	p.dynamicObstacles = obstacles
 	p.replanAllPaths()
 }
@@ -304,6 +307,20 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 			}
 		}
 
+		// Check if current waypoint is behind direction of travel toward next waypoint.
+		// A negative dot product means the current wp is opposite the direction to the next wp.
+		if wpIdx+1 < len(path) {
+			dnx := path[wpIdx+1][0] - pos[0]
+			dny := path[wpIdx+1][1] - pos[1]
+			dcx := path[wpIdx][0] - pos[0]
+			dcy := path[wpIdx][1] - pos[1]
+			if dnx*dcx+dny*dcy < 0 {
+				wpIdx++
+				advanced++
+				continue
+			}
+		}
+
 		break
 	}
 
@@ -370,4 +387,26 @@ func (p *Planner) CompletePath(robotID int) {
 
 func (p *Planner) LocalPlanner() *LocalPlanner {
 	return p.localPlanner
+}
+
+// obstaclesEqual returns true if two obstacle slices have the same contents.
+// World coordinates are compared with a small epsilon to avoid replanning on
+// sub-centimeter jitter from detection noise.
+func obstaclesEqual(a, b []Obstacle) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	const eps = 0.01
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			return false
+		}
+		if math.Abs(a[i].WorldTopLeft[0]-b[i].WorldTopLeft[0]) > eps ||
+			math.Abs(a[i].WorldTopLeft[1]-b[i].WorldTopLeft[1]) > eps ||
+			math.Abs(a[i].WorldBottomRight[0]-b[i].WorldBottomRight[0]) > eps ||
+			math.Abs(a[i].WorldBottomRight[1]-b[i].WorldBottomRight[1]) > eps {
+			return false
+		}
+	}
+	return true
 }
