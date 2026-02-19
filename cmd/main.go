@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"log"
 	"math"
 	"net"
 	"os"
@@ -878,10 +879,19 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	}
 
 	if rs.frameNum%30 == 0 {
-		totalTime := time.Since(frameStart)
-		trackPlanTime := totalTime - detectTime
-		utils.Debugf("FRAME TIMING: detect=%dms track+plan=%dms total=%dms",
-			detectTime.Milliseconds(), trackPlanTime.Milliseconds(), totalTime.Milliseconds())
+		hasConfirmedRobot := false
+		for _, track := range trackingResult.Tracks {
+			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
+				hasConfirmedRobot = true
+				break
+			}
+		}
+		if hasConfirmedRobot {
+			totalTime := time.Since(frameStart)
+			trackPlanTime := totalTime - detectTime
+			utils.Debugf("FRAME TIMING: detect=%dms track+plan=%dms total=%dms",
+				detectTime.Milliseconds(), trackPlanTime.Milliseconds(), totalTime.Milliseconds())
+		}
 	}
 }
 
@@ -1463,14 +1473,19 @@ func main() {
 	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
 	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
 	quiet := flag.Bool("quiet", false, "Suppress all logging output")
-	debug := flag.Bool("debug", false, "Enable debug logging for path planning")
+	logFile := flag.String("log-file", "", "Log to file with rotation (default: log to stderr)")
 	flag.Parse()
+
+	if *logFile != "" {
+		f, err := utils.SetupLogFile(*logFile, 3)
+		if err != nil {
+			log.Fatalf("Failed to set up log file: %v", err)
+		}
+		defer func() { _ = f.Close() }()
+	}
 
 	if *quiet {
 		utils.SetQuietMode(true)
-	}
-	if *debug {
-		utils.SetDebugMode(true)
 	}
 
 	if *listPorts {

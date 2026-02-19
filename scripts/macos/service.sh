@@ -59,6 +59,8 @@ generate_plist() {
     <key>ProgramArguments</key>
     <array>
         <string>${PROJECT_DIR}/scripts/run.sh</string>
+        <string>--log-file</string>
+        <string>${LOG_FILE}</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -79,11 +81,6 @@ generate_plist() {
         <key>DYLD_LIBRARY_PATH</key>
         <string>${opencv_prefix}/lib</string>
     </dict>
-
-    <key>StandardOutPath</key>
-    <string>${LOG_FILE}</string>
-    <key>StandardErrorPath</key>
-    <string>${LOG_FILE}</string>
 
     <key>RunAtLoad</key>
     <false/>
