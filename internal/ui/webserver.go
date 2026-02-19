@@ -1067,6 +1067,23 @@ func (s *WebServer) handleObstaclesClear(c *gin.Context) {
 		s.OnObstaclesChanged([]planning.Obstacle{})
 	}
 
+	// Persist cleared state to disk so obstacles don't return on restart
+	path := s.GetObstaclesPath()
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := s.saveObstaclesToFile(path, []planning.Obstacle{}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.obstaclesMutex.Lock()
+	s.obstaclesSaved = true
+	s.obstaclesMutex.Unlock()
+
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "count": 0})
 }
 

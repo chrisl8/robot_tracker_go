@@ -50,8 +50,7 @@ async function clearAllObstacles(): Promise<void> {
             throw new Error('Failed to clear obstacles')
         }
 
-        const data = await response.json()
-        obstacleStore.setObstacles(data.obstacles.obstacles || [])
+        obstacleStore.setObstacles([])
         uiStore.showToast('All obstacles cleared', 'success')
     } catch (e) {
         console.error('Failed to clear obstacles:', e)

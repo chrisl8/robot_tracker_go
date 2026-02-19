@@ -153,14 +153,50 @@ cmd_start() {
     info "Starting robot tracker..."
     launchctl start "$SERVICE_LABEL"
 
-    # Brief wait then check status
-    sleep 1
-    pid=$(launchctl list "$SERVICE_LABEL" 2>/dev/null | awk -F'= ' '/"PID"/ {gsub(/[^0-9]/,"",$2); print $2}')
-    if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-        success "Robot tracker started (PID ${pid})"
+    # Wait for process to appear (up to 15 seconds — launchd throttles restarts)
+    local attempts=0
+    pid=""
+    while [ $attempts -lt 30 ]; do
+        sleep 0.5
+        pid=$(launchctl list "$SERVICE_LABEL" 2>/dev/null | awk -F'= ' '/"PID"/ {gsub(/[^0-9]/,"",$2); print $2}')
+        if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+            break
+        fi
+        attempts=$((attempts + 1))
+    done
+
+    if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+        error "Service failed to start. Check the log:"
+        error "  $0 log"
+        return 1
+    fi
+
+    # Wait for web server to become responsive (up to 15 seconds)
+    info "Waiting for web server (PID ${pid})..."
+    local ready=false
+    for i in $(seq 1 30); do
+        if curl -sf http://localhost:9086/api/status >/dev/null 2>&1; then
+            ready=true
+            break
+        fi
+        # Check if process is still alive
+        local check_pid
+        check_pid=$(launchctl list "$SERVICE_LABEL" 2>/dev/null | awk -F'= ' '/"PID"/ {gsub(/[^0-9]/,"",$2); print $2}')
+        if [ -z "$check_pid" ] || [ "$check_pid" = "0" ]; then
+            error "Service exited during startup. Check the log:"
+            error "  $0 log"
+            return 1
+        fi
+        sleep 0.5
+    done
+
+    if $ready; then
+        success "Robot tracker started and ready (PID ${pid})"
+        success "Web UI: http://localhost:9086"
     else
-        warn "Service may not have started. Check the log:"
-        warn "  ./scripts/service.sh log"
+        warn "Service running (PID ${pid}) but web server not yet responding"
+        warn "Camera permission dialog may be showing — check the Mac's screen"
+        warn "Log: $0 log"
     fi
 }
 
@@ -177,7 +213,20 @@ cmd_stop() {
 
 cmd_restart() {
     cmd_stop
-    sleep 1
+
+    # Wait for process to fully exit (launchd throttles restarts for 10s)
+    info "Waiting for process to exit..."
+    local attempts=0
+    while [ $attempts -lt 24 ]; do
+        local pid
+        pid=$(launchctl list "$SERVICE_LABEL" 2>/dev/null | awk -F'= ' '/"PID"/ {gsub(/[^0-9]/,"",$2); print $2}')
+        if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+            break
+        fi
+        sleep 0.5
+        attempts=$((attempts + 1))
+    done
+
     cmd_start
 }
 
@@ -198,6 +247,12 @@ cmd_status() {
 
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
         echo -e "${GREEN}●${RESET} ${BOLD}robot-tracker${RESET} — running (PID ${pid})"
+        # Check if web server is responsive
+        if curl -sf --max-time 2 http://localhost:9086/api/status >/dev/null 2>&1; then
+            echo "  Web UI:  http://localhost:9086 (responding)"
+        else
+            echo "  Web UI:  not responding (camera permission dialog may be showing)"
+        fi
     else
         echo -e "${RED}●${RESET} ${BOLD}robot-tracker${RESET} — stopped"
         if [ -n "$exit_code" ] && [ "$exit_code" != "0" ]; then

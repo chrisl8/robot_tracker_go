@@ -95,6 +95,7 @@ type RobotSystem struct {
 	lastFrameTime       time.Time
 	smoothedFPS         float64
 	startTime           time.Time
+	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -349,9 +350,10 @@ func (rs *RobotSystem) Initialize() error {
 			Height:   primaryCam.Height,
 			FPS:      primaryCam.FPS,
 		}
+		rs.cameraConfig = &camConfig
 		cam, err := camera.NewCamera(camConfig)
 		if err != nil {
-			utils.Logf("Warning: Could not initialize camera: %v", err)
+			utils.Logf("Warning: Could not initialize camera: %v (will retry)", err)
 			rs.cam = nil
 		} else {
 			rs.cam = cam
@@ -691,6 +693,40 @@ func toFloat64(v interface{}) float64 {
 		return float64(val)
 	default:
 		return 0
+	}
+}
+
+// tryOpenCamera retries camera initialization with exponential backoff.
+// This handles the macOS case where TCC permission is granted after the process starts
+// (e.g., the user clicks "Allow" on the camera permission dialog).
+func (rs *RobotSystem) tryOpenCamera(maxDuration time.Duration) error {
+	if rs.cameraConfig == nil {
+		return fmt.Errorf("no camera configuration available")
+	}
+	backoff := 2 * time.Second
+	maxBackoff := 30 * time.Second
+	deadline := time.Now().Add(maxDuration)
+
+	for {
+		cam, err := camera.NewCamera(*rs.cameraConfig)
+		if err == nil {
+			rs.cam = cam
+			utils.Logf("Camera initialized: %s", rs.cam.GetName())
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("camera not available after %v: %w", maxDuration, err)
+		}
+
+		utils.Logf("Camera not available, retrying in %v (waiting for permission?)...", backoff)
+		time.Sleep(backoff)
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
 	}
 }
 
@@ -1556,6 +1592,21 @@ func main() {
 		}
 		RunDemoYOLOMode(rs)
 		return
+	}
+
+	// If camera isn't available yet (e.g., macOS permission dialog pending),
+	// retry with backoff before falling back to demo mode.
+	if rs.cam == nil && !*demoMode && rs.cameraConfig != nil {
+		utils.Log("Camera not available at startup, retrying (waiting for permission?)...")
+		if err := rs.tryOpenCamera(2 * time.Minute); err != nil {
+			utils.Logf("Camera unavailable after retries: %v, falling back to demo mode", err)
+			*demoMode = true
+		}
+	}
+	// If camera still isn't available and not in demo mode, fall back
+	if rs.cam == nil && !*demoMode {
+		utils.Log("No camera available, falling back to demo mode")
+		*demoMode = true
 	}
 
 	if rs.cam != nil && !*demoMode {
