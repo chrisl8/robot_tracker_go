@@ -226,3 +226,142 @@ func TestAStar_Plan_OutsideGrid(t *testing.T) {
 		t.Error("Plan should not find a path when points are outside grid")
 	}
 }
+
+func TestSegmentIntersectsObstacle(t *testing.T) {
+	obs := Obstacle{
+		Name:             "box",
+		WorldTopLeft:     [2]float64{1.0, 1.0},
+		WorldBottomRight: [2]float64{2.0, 2.0},
+	}
+
+	tests := []struct {
+		name string
+		p1   [2]float64
+		p2   [2]float64
+		want bool
+	}{
+		{
+			name: "segment passes through obstacle",
+			p1:   [2]float64{0, 0},
+			p2:   [2]float64{3, 3},
+			want: true,
+		},
+		{
+			name: "segment misses obstacle entirely",
+			p1:   [2]float64{0, 0},
+			p2:   [2]float64{0, 3},
+			want: false,
+		},
+		{
+			name: "segment ends inside obstacle",
+			p1:   [2]float64{0, 0},
+			p2:   [2]float64{1.5, 1.5},
+			want: true,
+		},
+		{
+			name: "segment starts inside obstacle",
+			p1:   [2]float64{1.5, 1.5},
+			p2:   [2]float64{3, 3},
+			want: true,
+		},
+		{
+			name: "zero length point inside obstacle",
+			p1:   [2]float64{1.5, 1.5},
+			p2:   [2]float64{1.5, 1.5},
+			want: true,
+		},
+		{
+			name: "zero length point outside obstacle",
+			p1:   [2]float64{0, 0},
+			p2:   [2]float64{0, 0},
+			want: false,
+		},
+		{
+			name: "segment grazes obstacle edge",
+			p1:   [2]float64{0, 1.5},
+			p2:   [2]float64{3, 1.5},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := segmentIntersectsObstacle(tt.p1, tt.p2, obs, 0.05)
+			if got != tt.want {
+				t.Errorf("segmentIntersectsObstacle(%v, %v) = %v, want %v", tt.p1, tt.p2, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateSimplifiedPath(t *testing.T) {
+	// Obstacle in the middle that a diagonal shortcut would cross
+	obs := []Obstacle{
+		{
+			Name:             "box",
+			WorldTopLeft:     [2]float64{1.0, 0.5},
+			WorldBottomRight: [2]float64{2.0, 1.5},
+		},
+	}
+
+	t.Run("restores waypoints when simplified segment crosses obstacle", func(t *testing.T) {
+		// Original path goes around the obstacle
+		original := [][2]float64{
+			{0, 0},
+			{0.5, 0},
+			{0.8, 0},
+			{0.8, 0.3},
+			{1.5, 0.3}, // passes below obstacle (y=0.3 < 0.5)
+			{2.5, 0.3},
+			{2.5, 1.0},
+			{3, 2},
+		}
+		// Simplified path takes a diagonal shortcut through the obstacle
+		simplified := [][2]float64{
+			{0, 0},
+			{3, 2},
+		}
+
+		validated := ValidateSimplifiedPath(original, simplified, obs, 0.05)
+		// Should restore the original waypoints since the shortcut crosses the obstacle
+		if len(validated) <= 2 {
+			t.Errorf("validated path should have more than 2 waypoints (got %d), original waypoints should be restored", len(validated))
+		}
+	})
+
+	t.Run("keeps simplified path when no obstacles crossed", func(t *testing.T) {
+		// Path that doesn't cross any obstacle
+		original := [][2]float64{
+			{0, 3},
+			{0.5, 3},
+			{1, 3},
+			{1.5, 3},
+			{2, 3},
+			{3, 3},
+		}
+		simplified := [][2]float64{
+			{0, 3},
+			{3, 3},
+		}
+
+		validated := ValidateSimplifiedPath(original, simplified, obs, 0.05)
+		if len(validated) != 2 {
+			t.Errorf("validated path should have 2 waypoints (no obstacles crossed), got %d", len(validated))
+		}
+	})
+
+	t.Run("handles empty obstacles", func(t *testing.T) {
+		simplified := [][2]float64{{0, 0}, {3, 3}}
+		validated := ValidateSimplifiedPath(nil, simplified, nil, 0.05)
+		if len(validated) != 2 {
+			t.Errorf("with no obstacles, should return simplified path unchanged, got %d waypoints", len(validated))
+		}
+	})
+
+	t.Run("handles single-point path", func(t *testing.T) {
+		validated := ValidateSimplifiedPath([][2]float64{{0, 0}}, [][2]float64{{0, 0}}, obs, 0.05)
+		if len(validated) != 1 {
+			t.Errorf("single-point path should pass through unchanged, got %d waypoints", len(validated))
+		}
+	})
+}

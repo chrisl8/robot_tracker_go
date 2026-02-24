@@ -49,7 +49,7 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 	// Add safety margin beyond the radius to account for YOLO bbox inaccuracy and chair legs.
 	margin := 0.15
 	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
-		margin = robot.Diameter/2 + 0.10
+		margin = robot.Diameter/2 + 0.12
 	}
 	allObstacles := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
 	allObstacles = append(allObstacles, p.obstacles...)
@@ -58,8 +58,12 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 	path, ok := p.globalPlanner.Plan(start, goal, obstacles)
 	if ok && len(path) > 2 {
 		before := len(path)
-		path = SimplifyPath(path, 0.15) // remove waypoints <15cm off straight line; obstacle detours are >15cm
-		utils.Debugf("Path simplified: %d -> %d waypoints", before, len(path))
+		originalPath := make([][2]float64, len(path))
+		copy(originalPath, path)
+		simplified := SimplifyPath(path, 0.15)
+		path = ValidateSimplifiedPath(originalPath, simplified, obstacles, 0.05)
+		path = SimplifyPath(path, 0.15)
+		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(obstacles))
 	}
 	return path, ok
 }
@@ -230,6 +234,18 @@ func (p *Planner) GetObstacles() []Obstacle {
 	return p.obstacles
 }
 
+// GetClearance returns the minimum distance from the robot's edge to any obstacle surface.
+func (p *Planner) GetClearance(robotID int) float64 {
+	robot, exists := p.coordinator.GetRobotState(robotID)
+	if !exists {
+		return 1e10
+	}
+	allObstacles := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
+	allObstacles = append(allObstacles, p.obstacles...)
+	allObstacles = append(allObstacles, p.dynamicObstacles...)
+	return p.collisionDetector.GetClearance(robot, allObstacles)
+}
+
 func (p *Planner) GetPathCost(path [][2]float64) float64 {
 	if len(path) < 2 {
 		return 0
@@ -283,7 +299,7 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 	wpIdx := p.currentWaypoint[robotID]
 	advanced := 0
 
-	for wpIdx < len(path) {
+	for wpIdx < len(path)-1 {
 		dx := path[wpIdx][0] - pos[0]
 		dy := path[wpIdx][1] - pos[1]
 		distToCurrent := math.Sqrt(dx*dx + dy*dy)
@@ -383,6 +399,19 @@ func (p *Planner) CompletePath(robotID int) {
 	delete(p.paths, robotID)
 	delete(p.currentWaypoint, robotID)
 	p.coordinator.ClearGoal(robotID)
+}
+
+// ClearPathOnly removes the current path without clearing the goal,
+// allowing replanning to the same destination.
+func (p *Planner) ClearPathOnly(robotID int) {
+	delete(p.paths, robotID)
+	delete(p.currentWaypoint, robotID)
+}
+
+// SetPath stores a pre-computed path for a robot and resets the waypoint index.
+func (p *Planner) SetPath(robotID int, path [][2]float64) {
+	p.paths[robotID] = path
+	p.currentWaypoint[robotID] = 0
 }
 
 func (p *Planner) LocalPlanner() *LocalPlanner {

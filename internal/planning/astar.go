@@ -299,6 +299,79 @@ func perpendicularDistance(point, lineStart, lineEnd [2]float64) float64 {
 	return math.Abs(dx*(lineStart[1]-point[1])-(lineStart[0]-point[0])*dy) / length
 }
 
+// segmentIntersectsObstacle checks if a line segment from p1 to p2 passes through
+// an obstacle's axis-aligned bounding box by sampling at the given resolution.
+func segmentIntersectsObstacle(p1, p2 [2]float64, obs Obstacle, resolution float64) bool {
+	dx := p2[0] - p1[0]
+	dy := p2[1] - p1[1]
+	length := math.Sqrt(dx*dx + dy*dy)
+	if length == 0 {
+		return p1[0] >= obs.WorldTopLeft[0] && p1[0] <= obs.WorldBottomRight[0] &&
+			p1[1] >= obs.WorldTopLeft[1] && p1[1] <= obs.WorldBottomRight[1]
+	}
+	steps := int(length/resolution) + 1
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		x := p1[0] + t*dx
+		y := p1[1] + t*dy
+		if x >= obs.WorldTopLeft[0] && x <= obs.WorldBottomRight[0] &&
+			y >= obs.WorldTopLeft[1] && y <= obs.WorldBottomRight[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateSimplifiedPath checks each segment of a simplified path against expanded
+// obstacles. If a simplified segment passes through an obstacle, the original
+// unsimplified waypoints for that segment are restored.
+func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, resolution float64) [][2]float64 {
+	if len(simplifiedPath) <= 1 || len(obstacles) == 0 {
+		return simplifiedPath
+	}
+
+	// Build index mapping: for each simplified waypoint, find its index in the original path.
+	// SimplifyPath preserves exact points from the original (Douglas-Peucker property).
+	origIndices := make([]int, len(simplifiedPath))
+	origIdx := 0
+	for si, sp := range simplifiedPath {
+		for origIdx < len(originalPath) {
+			if originalPath[origIdx] == sp {
+				origIndices[si] = origIdx
+				break
+			}
+			origIdx++
+		}
+	}
+
+	validated := [][2]float64{simplifiedPath[0]}
+	for i := 0; i < len(simplifiedPath)-1; i++ {
+		p1 := simplifiedPath[i]
+		p2 := simplifiedPath[i+1]
+
+		blocked := false
+		for _, obs := range obstacles {
+			if segmentIntersectsObstacle(p1, p2, obs, resolution) {
+				blocked = true
+				break
+			}
+		}
+
+		if blocked {
+			// Restore original waypoints between these two simplified points
+			startOrig := origIndices[i] + 1
+			endOrig := origIndices[i+1]
+			for j := startOrig; j <= endOrig; j++ {
+				validated = append(validated, originalPath[j])
+			}
+		} else {
+			validated = append(validated, p2)
+		}
+	}
+
+	return validated
+}
+
 func worldToGrid(obs Obstacle, resolution float64, width, height int) [][2]int {
 	cells := make([][2]int, 0)
 

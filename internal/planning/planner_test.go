@@ -220,12 +220,12 @@ func TestPlanner_AdvancePastWaypoints(t *testing.T) {
 			wantWpIndex: 3,
 		},
 		{
-			name:        "past all waypoints completes path",
+			name:        "past intermediate keeps goal waypoint",
 			path:        [][2]float64{{0, 0}, {1, 0}},
 			pos:         [2]float64{1.0, 0},
 			threshold:   0.1,
-			wantMore:    false,
-			wantWpIndex: -1,
+			wantMore:    true,
+			wantWpIndex: 1,
 		},
 		{
 			name:        "off-path sideways stays on current",
@@ -236,12 +236,12 @@ func TestPlanner_AdvancePastWaypoints(t *testing.T) {
 			wantWpIndex: 0,
 		},
 		{
-			name:        "single waypoint within threshold completes",
+			name:        "single waypoint (goal) stays even within threshold",
 			path:        [][2]float64{{1, 1}},
 			pos:         [2]float64{1.05, 1},
 			threshold:   0.1,
-			wantMore:    false,
-			wantWpIndex: -1,
+			wantMore:    true,
+			wantWpIndex: 0,
 		},
 		{
 			name:        "single waypoint out of range stays",
@@ -297,5 +297,77 @@ func TestPlanner_AddRobot_WithExistingGoal(t *testing.T) {
 	_, hasPathAfter := planner.GetNextWaypoint(1)
 	if !hasPathAfter {
 		t.Error("Should have path after robot is added with existing goal")
+	}
+}
+
+func TestPlanner_ClearPathOnly(t *testing.T) {
+	planner := NewPlanner(nil)
+	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
+	planner.SetGoal(1, [2]float64{3, 3})
+
+	// Verify path and goal exist
+	_, hasPath := planner.GetNextWaypoint(1)
+	if !hasPath {
+		t.Fatal("Should have path after SetGoal")
+	}
+	_, hasGoal := planner.GetGoal(1)
+	if !hasGoal {
+		t.Fatal("Should have goal after SetGoal")
+	}
+
+	// ClearPathOnly should remove path but keep goal
+	planner.ClearPathOnly(1)
+
+	_, hasPath = planner.GetNextWaypoint(1)
+	if hasPath {
+		t.Error("Path should be cleared after ClearPathOnly")
+	}
+	_, hasGoal = planner.GetGoal(1)
+	if !hasGoal {
+		t.Error("Goal should still exist after ClearPathOnly")
+	}
+}
+
+func TestPlanner_SetPath(t *testing.T) {
+	planner := NewPlanner(nil)
+	planner.AddRobot(1, [2]float64{0, 0}, 0.18)
+
+	customPath := [][2]float64{{0, 0}, {1, 1}, {2, 2}, {3, 3}}
+	planner.SetPath(1, customPath)
+
+	wp, hasPath := planner.GetNextWaypoint(1)
+	if !hasPath {
+		t.Fatal("Should have path after SetPath")
+	}
+	if wp != customPath[0] {
+		t.Errorf("First waypoint = %v, want %v", wp, customPath[0])
+	}
+
+	// Advance and verify second waypoint
+	planner.AdvanceWaypoint(1)
+	wp, _ = planner.GetNextWaypoint(1)
+	if wp != customPath[1] {
+		t.Errorf("Second waypoint = %v, want %v", wp, customPath[1])
+	}
+}
+
+func TestPlanner_SetPath_OverwriteExisting(t *testing.T) {
+	planner := NewPlanner(nil)
+	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
+	planner.SetGoal(1, [2]float64{3, 3})
+
+	// Advance past first waypoint
+	planner.AdvanceWaypoint(1)
+
+	// Overwrite with new path — should reset waypoint index to 0
+	newPath := [][2]float64{{0, 0}, {5, 5}}
+	planner.SetPath(1, newPath)
+
+	wp, hasPath := planner.GetNextWaypoint(1)
+	if !hasPath {
+		t.Fatal("Should have path after SetPath")
+	}
+	if wp != newPath[0] {
+		t.Errorf("Waypoint should be reset to start of new path, got %v want %v", wp, newPath[0])
 	}
 }
