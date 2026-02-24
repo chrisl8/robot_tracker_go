@@ -1,183 +1,61 @@
-# Robot Tracking System (Go)
+# Robot Tracker
 
-Go implementation of the multi-robot tracking and control system.
+An overhead camera system that tracks and autonomously steers robots around a tabletop arena. A ceiling-mounted camera watches the playing field, computer vision identifies robots by their AprilTag markers and detects obstacles with YOLOv8, an A\* path planner charts a course around them, and serial commands drive each robot to its destination.
 
-## Prerequisites
+[Video demo](https://youtu.be/VX7ouvZ6DLI)
 
-- Go 1.23.2+
-- CMake 3.16+ (for building OpenCV from source)
-- Git
+Built for [Vorpal the Hexapod](https://log.ekpyroticfrood.net/vorpal-the-hexapod/) but works with any robot that accepts single-character serial commands over an Arduino.
 
-## Dependencies
+## Features
 
-Install Go dependencies:
+- **AprilTag identification** — each robot wears a unique tag; the system tracks multiple robots simultaneously
+- **YOLOv8 obstacle detection** — real-time detection of objects on the playing field
+- **A\* path planning** — global paths with velocity-obstacle local avoidance and multi-robot coordination
+- **Vue 3 web UI** — live MJPEG video with canvas overlay showing tracks, paths, and obstacle boundaries; click anywhere to send a robot there
+- **Web-based calibration** — four-point homography mapping from pixel coordinates to real-world positions
+- **Arduino serial control** — single ASCII commands (F/B/L/R/S) at 9600 baud
+- **Demo mode** — run the full UI with simulated robots, no camera or hardware required
 
-```bash
-go mod tidy
-```
+## Quick Start
 
-Install OpenCV (required for camera support):
-
-### Linux (Ubuntu/Debian)
-
-**Option 1: Use provided install script (recommended)**
+**Prerequisites:** Go 1.24+, Node.js 18+, OpenCV 4.x
 
 ```bash
-./scripts/install-opencv.sh
+# Install OpenCV (Linux or macOS)
+./scripts/install-dependencies.sh
 
-# Add to ~/.bashrc for future sessions:
-echo 'export OPENCV_DIR="/usr/local"' >> ~/.bashrc
-echo 'export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**Option 2: Manual installation**
-
-See [scripts/install-opencv.sh](scripts/install-opencv.sh) for details.
-
-### Windows
-
-See [AGENTS.md](AGENTS.md) for Windows-specific setup instructions.
-
-## YOLO Model Export
-
-Before running the application with obstacle detection, export the YOLOv8 model to ONNX format:
-
-```bash
-# Run the export script
-./scripts/export_model.sh
-
-# Or manually:
-python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx')"
-mv yolov8n.onnx assets/
-```
-
-## Building
-
-### Linux (Recommended: use wrapper scripts)
-
-```bash
-# Build with GoCV support (automatically sets environment)
+# Build the Vue UI and Go backend
 ./scripts/build.sh
 
-# Build with race detector
-export OPENCV_DIR="/usr/local"
-export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
-go build -race -o robot_tracker ./cmd/main.go
-```
-
-**Note:** The wrapper scripts (`build.sh`, `run.sh`, `test.sh`) automatically set up the OpenCV environment (`OPENCV_DIR`, `LD_LIBRARY_PATH`, `PKG_CONFIG_PATH`). No need to modify `.bashrc`.
-
-### Windows
-
-```powershell
-# Set up environment (run as administrator)
-.\scripts\setup-gocv.ps1
-
-# Build
-go build -tags=gocv -o robot_tracker.exe ./cmd/main.go
-```
-
-## Running
-
-### Linux (Recommended: use wrapper scripts)
-
-```bash
-# Run demo mode (no camera required)
+# Run in demo mode (no camera or Arduino needed)
 ./scripts/run.sh --demo
-
-# Run with camera
-./scripts/run.sh
-
-# List available ports
-./scripts/run.sh --list-ports
-
-# Use custom config
-./scripts/run.sh --config config/custom.yaml
 ```
 
-**Note:** Wrapper scripts automatically set `OPENCV_DIR` and `LD_LIBRARY_PATH`.
+Open [http://localhost:9086](http://localhost:9086) to see the web UI.
 
-### Windows
+## Setup
 
-```powershell
-# Run demo mode
-.\robot_tracker.exe --demo
+### OpenCV
 
-# Run with specific port
-.\robot_tracker.exe --port COM3
+OpenCV 4.x is required (via [GoCV](https://gocv.io/) bindings).
 
-# List available ports
-.\robot_tracker.exe --list-ports
-```
-
-### macOS: Running Remotely over SSH
-
-macOS blocks camera access for processes started via SSH (the SSH daemon lacks camera permission). To start/stop the tracker remotely, use the LaunchAgent service manager:
-
+**Linux (Ubuntu/Debian):**
 ```bash
-# One-time setup (generates a LaunchAgent plist and loads it)
-./scripts/service.sh install
-
-# Start/stop from any terminal — including SSH sessions
-./scripts/service.sh start
-./scripts/service.sh stop
-./scripts/service.sh restart
-./scripts/service.sh status
-./scripts/service.sh log        # tail -f the log file
-./scripts/service.sh uninstall  # remove the LaunchAgent
+./scripts/install-dependencies.sh
 ```
 
-The LaunchAgent runs in your GUI login session, so it inherits camera permissions. Logs go to `~/Library/Logs/robot-tracker.log`.
-
-**After a reboot**, someone must log in to the Mac (GUI) before the LaunchAgent is available. To make this fully hands-off, enable automatic login in **System Settings > Users & Groups > Automatic Login**.
-
-## Project Structure
-
-```
-robot_tracker_go/
-├── cmd/main.go                 # Application entry point
-├── internal/
-│   ├── config/                 # Configuration loading
-│   ├── camera/                 # Camera abstraction
-│   ├── detection/              # AprilTag + YOLO detection
-│   ├── tracking/               # Multi-object tracking
-│   ├── position/               # Position estimation
-│   ├── planning/               # Path planning
-│   ├── controller/              # Arduino communication
-│   └── ui/                     # Display and navigation
-├── assets/
-│   └── yolov8n.onnx           # YOLO model
-├── config/                     # Configuration files
-├── scripts/
-│   ├── install-opencv.sh       # OpenCV installation script (Linux)
-│   ├── setup-gocv.ps1          # OpenCV setup script (Windows)
-│   └── export_model.sh         # YOLO model export script
-└── tests/                      # Unit and integration tests
+**macOS (Homebrew):**
+```bash
+brew install opencv
 ```
 
-## Configuration
-
-Edit `config/tracking_config.yaml` to configure:
-
-- Robot definitions (tag IDs, sizes, speeds)
-- Detection parameters (confidence thresholds)
-- Planning settings (step size, safety margins)
-- Camera settings
-
-## Hardware Recommendations
+The wrapper scripts (`build.sh`, `run.sh`, `test.sh`) automatically set the OpenCV environment variables (`OPENCV_DIR`, `LD_LIBRARY_PATH`, `PKG_CONFIG_PATH`). Always use the wrapper scripts rather than running `go build` directly.
 
 ### Camera
 
-A USB webcam is strongly recommended over WiFi/IP cameras. WiFi cameras (DroidCam, etc.) introduce 1-1.5 second frame delivery gaps due to WiFi jitter, causing the robot to lose steering corrections and pause repeatedly. USB cameras deliver frames at a consistent ~33ms interval.
+A USB webcam is strongly recommended over WiFi/IP cameras. WiFi cameras introduce 1--1.5 second frame delivery gaps due to WiFi jitter, causing steering pauses. USB cameras deliver frames at a consistent ~33 ms interval.
 
-| Option | Price | Resolution | FOV | Notes |
-|--------|-------|-----------|-----|-------|
-| **Logitech C920s Pro** | ~$50 | 1080p/30fps | 78° | **Recommended.** Manual focus via UVC, excellent OpenCV compatibility. |
-| Logitech Brio 100 | ~$25 | 1080p/30fps | 58° | Budget option. Fixed focus works well for overhead mounting. Narrower FOV limits arena size. |
-| ELP USB (wide-angle) | ~$25-40 | 1080p/30fps | 100-120° | Good for larger arenas. Avoid ultra-wide (>150°) — excessive distortion degrades AprilTag detection. |
-
-**Config change for USB cameras:** In `config/tracking_config.yaml`, replace the IP camera block with:
+In `config/tracking_config.yaml`:
 ```yaml
 cameras:
   - id: 0
@@ -187,35 +65,9 @@ cameras:
     fps: 30
 ```
 
-**Avoid:** 4K cameras (the detection pipeline can't use the extra pixels at ~5fps), ultra-wide fisheye lenses (>150° FOV). The AprilTag should be at least ~40 pixels across in the image for reliable detection.
+### Arduino / Serial
 
-### Compute Platform
-
-| Platform | AprilTag | YOLOv8 nano | Track + Plan | Effective FPS |
-|----------|----------|-------------|-------------|---------------|
-| **Mac Mini M4** | ~40-70ms | ~20-35ms | ~15ms | **~8-12fps** |
-| **x86 desktop (4+ cores)** | ~100-150ms | ~50-70ms | ~33ms | **~5fps** |
-| Raspberry Pi 5 | ~150-250ms | ~100-200ms | ~50ms | ~2-3fps |
-
-**Developed and tested on** x86_64 desktop/laptop with 4+ CPU cores (Linux). This is the current primary platform.
-
-**Mac Mini M4 (Apple Silicon)** is the fastest option — roughly 2-3x faster than a typical x86 desktop, giving ~8-12fps steering updates for noticeably tighter navigation. Requires macOS-specific setup:
-- Install OpenCV via Homebrew (`brew install opencv`) instead of the Linux install script
-- Build scripts (`build.sh`, `run.sh`, `test.sh`) are Linux-specific and need adaptation for macOS paths
-- Serial port uses `/dev/cu.usbserial-*` or `/dev/tty.usbmodem-*` instead of `/dev/ttyUSB0`
-- USB cameras work via AVFoundation backend in OpenCV — no driver issues expected
-
-**Raspberry Pi 5** works but navigation is noticeably more sluggish at ~2-3fps. Mitigations if using Pi 5:
-- Disable YOLO (set `conf_thres: 1.0`) if dynamic obstacle detection isn't needed — recovers ~100-200ms per frame
-- Increase `quad_decimate` from 2.0 to 3.0 for faster AprilTag detection at slight accuracy cost
-- Use the 8GB RAM model (4GB is tight with YOLO loaded)
-- Building OpenCV/GoCV on ARM64 requires compiling from source (~1-2 hours)
-
-**Portable alternative:** Intel N100-based mini PCs (~$100-150) deliver near-desktop performance in a small form factor and run the standard x86 Linux build without modification.
-
-## Serial Protocol
-
-Commands are single ASCII characters:
+Connect the Arduino over USB. The tracker sends single ASCII characters at 9600 baud:
 
 | Command  | Char | Description      |
 | -------- | ---- | ---------------- |
@@ -225,37 +77,124 @@ Commands are single ASCII characters:
 | RIGHT    | R    | Rotate CW        |
 | STOP     | S    | Stop immediately |
 
-Format: `{command}\r\n` (e.g., `F\r\n`)
+Format: `{char}\r\n` — for example `F\r\n`.
+
+```bash
+# Auto-detect serial port
+./scripts/run.sh
+
+# Specify a port
+./scripts/run.sh --port /dev/ttyUSB0    # Linux
+./scripts/run.sh --port /dev/cu.usbserial-0001  # macOS
+
+# List available ports
+./scripts/run.sh --list-ports
+```
+
+### YOLO Model
+
+A pre-trained YOLOv8n ONNX model is included at `assets/yolov8n.onnx`. No export step is needed.
+
+### macOS: Running Remotely over SSH
+
+macOS blocks camera access for processes started via SSH. Use the LaunchAgent service manager instead:
+
+```bash
+./scripts/service.sh install   # one-time setup
+./scripts/service.sh start     # start/stop from any terminal, including SSH
+./scripts/service.sh stop
+./scripts/service.sh status
+./scripts/service.sh log       # tail the log file
+./scripts/service.sh uninstall
+```
+
+After a reboot, someone must log in to the Mac GUI before the LaunchAgent is available. Enable automatic login in **System Settings > Users & Groups** to make this hands-off.
+
+## Hardware
+
+### Cameras
+
+| Option | Price | Resolution | FOV | Notes |
+|--------|-------|-----------|-----|-------|
+| **Logitech C920s Pro** | ~$50 | 1080p/30 fps | 78° | **Recommended.** Manual focus via UVC, excellent OpenCV compatibility. |
+| Logitech Brio 100 | ~$25 | 1080p/30 fps | 58° | Budget pick. Fixed focus works well overhead. Narrower FOV limits arena size. |
+| ELP USB (wide-angle) | ~$25--40 | 1080p/30 fps | 100--120° | Good for larger arenas. Avoid >150° — distortion degrades AprilTag detection. |
+
+The AprilTag should be at least ~40 px across in the image for reliable detection. Avoid 4K cameras — the detection pipeline can't use the extra pixels at ~5 fps.
+
+### Compute Platforms
+
+| Platform | AprilTag | YOLOv8 nano | Track + Plan | Effective FPS |
+|----------|----------|-------------|-------------|---------------|
+| **Mac Mini M4** | ~40--70 ms | ~20--35 ms | ~15 ms | **~8--12 fps** |
+| **x86 desktop (4+ cores)** | ~100--150 ms | ~50--70 ms | ~33 ms | **~5 fps** |
+| Raspberry Pi 5 | ~150--250 ms | ~100--200 ms | ~50 ms | ~2--3 fps |
+
+**Mac Mini M4** is the fastest option (roughly 2--3x faster than a typical x86 desktop). Install OpenCV via Homebrew. Serial ports are `/dev/cu.usbserial-*` or `/dev/tty.usbmodem-*`.
+
+**Raspberry Pi 5** works but navigation is noticeably more sluggish. If using Pi 5:
+- Disable YOLO (`conf_thres: 1.0`) if you don't need dynamic obstacle detection — saves ~100--200 ms per frame
+- Increase `quad_decimate` from 2.0 to 3.0 for faster AprilTag detection at slight accuracy cost
+- Use the 8 GB RAM model (4 GB is tight with YOLO loaded)
+
+**Budget alternative:** Intel N100-based mini PCs (~$100--150) deliver near-desktop performance in a small form factor and run the standard Linux build without modification.
+
+## Architecture
+
+Data flows through a pipeline:
+
+**Camera → Detection → Tracking → Planning → Controller**
+
+The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems.
+
+### Project Structure
+
+```
+robot_tracker_go/
+├── cmd/                        # Application entry point
+├── internal/
+│   ├── camera/                 # Camera abstraction
+│   ├── config/                 # YAML configuration loading
+│   ├── controller/             # Arduino serial communication
+│   ├── detection/              # AprilTag + YOLOv8 detection
+│   ├── planning/               # A* path planning + velocity obstacles
+│   ├── position/               # Homography calibration (pixel ↔ world)
+│   ├── tracking/               # ByteTrack multi-object tracker + Kalman filter
+│   ├── ui/                     # Gin HTTP server, MJPEG stream, WebSocket, REST API
+│   └── utils/                  # Logging utilities
+├── ui/                         # Vue 3 + TypeScript frontend (Pinia stores, canvas overlay)
+├── Arduino/                    # Arduino gamepad firmware
+├── assets/                     # YOLOv8 ONNX model
+├── config/                     # Configuration YAML files
+└── scripts/                    # Build, run, test, and install wrappers
+```
+
+## Configuration
+
+Edit `config/tracking_config.yaml` to configure:
+
+- Robot definitions (tag IDs, physical sizes, speeds)
+- Detection parameters (confidence thresholds, decimation)
+- Planning settings (step size, safety margins)
+- Camera settings (resolution, FPS, source)
 
 ## Testing
 
 ```bash
-# Run all tests (automatically sets environment)
-./scripts/test.sh
+# Run all tests (Go + Vue)
+./scripts/test.sh --verbose
 
-# Run all tests manually
-export OPENCV_DIR="/usr/local"
-export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
-go test ./... -v
+# Run a specific Go package
+go test -v ./internal/planning/
 
-# Run with coverage
-go test ./... -coverprofile=coverage.out
-go tool cover -html=coverage.out -o coverage.html
+# Run a single Go test
+go test -v -run TestFunctionName ./internal/planning/
+
+# Vue tests
+cd ui && npm run test:run        # CI mode
+cd ui && npm run test:coverage   # with coverage
 ```
-
-## Phase Status
-
-- [x] Phase 1: Foundation (Config, Serial Protocol, Arduino Controller, Command Queue)
-- [x] Phase 2: Core Mathematics (Position types, Homography, Position Estimator)
-- [x] Phase 3: Detection Pipeline (AprilTag + YOLO)
-- [x] Phase 4: Tracking (ByteTrack, Kalman Filter, Hungarian Algorithm)
-- [x] Phase 5: Path Planning (A*, Local Planner, Coordinator, Collision Detection)
-- [x] Phase 6: Web UI (Gin Web Server, MJPEG Streaming, WebSocket Overlay)
-- [x] Phase 7: Integration & Testing
-- [x] Phase 8: Web-Based Calibration
-- [x] Phase 9: Obstacle Detection (YOLO + Static Obstacles + Path Planning)
-- [x] Phase 10: Linux Migration (Updated Feb 7, 2026)
 
 ## License
 
-MIT
+[MIT](LICENSE)
