@@ -53,6 +53,8 @@ type RobotConfig struct {
 	AvoidanceStrength    float64 `yaml:"avoidance_strength"`
 	PauseThreshold       float64 `yaml:"pause_threshold"`
 	HeadingOffsetDegrees float64 `yaml:"heading_offset_degrees"`
+	CenterOffsetX        float64 `yaml:"center_offset_x"`
+	CenterOffsetY        float64 `yaml:"center_offset_y"`
 }
 
 type PlanningConfig struct {

@@ -69,6 +69,7 @@ type WebServer struct {
 
 	OnObstaclesChanged     func([]planning.Obstacle)
 	OnDestinationSet       func(int, [2]float64)
+	OnDestinationClear     func(int)
 	OnCalibrationComplete  func(string)
 	OnCommand              func(string) error
 	OnModeChange           func(string) error
@@ -216,7 +217,7 @@ func NewWebServer(addr string) *WebServer {
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusOK)
@@ -238,6 +239,7 @@ func (s *WebServer) setupRoutes() {
 	s.engine.GET("/ws", s.handleWebSocket)
 	s.engine.POST("/api/command", s.handleCommand)
 	s.engine.POST("/api/destination", s.handleDestination)
+	s.engine.DELETE("/api/destination", s.handleDestinationClear)
 	s.engine.GET("/api/status", s.handleStatus)
 	s.engine.GET("/api/obstacles", s.handleObstaclesList)
 	s.engine.POST("/api/obstacles", s.handleObstacleAdd)
@@ -466,6 +468,36 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": req})
 }
 
+func (s *WebServer) ClearDestination(robotID int) {
+	s.destinationMutex.Lock()
+	s.destination = DestinationMessage{Valid: false}
+	s.destinationMutex.Unlock()
+
+	cleared := DestinationMessage{RobotID: robotID, Valid: false}
+	s.BroadcastOverlay(OverlayMessage{
+		Type:        "destination_clear",
+		Destination: &cleared,
+	})
+}
+
+func (s *WebServer) handleDestinationClear(c *gin.Context) {
+	var req struct {
+		RobotID int `json:"robot_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.ClearDestination(req.RobotID)
+
+	if s.OnDestinationClear != nil {
+		go s.OnDestinationClear(req.RobotID)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "robot_id": req.RobotID})
+}
+
 func (s *WebServer) handleStatus(c *gin.Context) {
 	s.statsMutex.RLock()
 	tagCount := s.lastTagCount
@@ -555,7 +587,10 @@ func (s *WebServer) BroadcastPaths() {
 
 	paths := s.OnPathsChanged()
 	if len(paths) == 0 {
-		utils.Debugf("BroadcastPaths: no paths returned from OnPathsChanged")
+		s.BroadcastOverlay(OverlayMessage{
+			Type:  "paths",
+			Paths: &PathsMessage{Paths: []PathMessage{}},
+		})
 		return
 	}
 

@@ -96,6 +96,7 @@ type RobotSystem struct {
 	smoothedFPS         float64
 	startTime           time.Time
 	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
+	lastReplanTime      map[int]time.Time    // robotID -> last proximity replan time
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -110,6 +111,7 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		headingRejectCount: make(map[int]int),
 		headingLostCount:   make(map[int]int),
 		robotCommands:      make(map[int]string),
+		lastReplanTime:     make(map[int]time.Time),
 		startTime:          time.Now(),
 	}
 }
@@ -335,7 +337,7 @@ func (rs *RobotSystem) Initialize() error {
 	plannerConfig := &planning.PlannerConfig{
 		AStarConfig:            nil,
 		VelocityObstacleConfig: nil,
-		CollisionMargin:        0.05,
+		CollisionMargin:        0.08,
 	}
 	rs.planner = planning.NewPlanner(plannerConfig)
 	utils.Logf("Planner initialized")
@@ -479,6 +481,14 @@ func (rs *RobotSystem) Initialize() error {
 		rs.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
+	}
+
+	rs.webServer.OnDestinationClear = func(robotID int) {
+		utils.Logf("Destination cleared for robot %d", robotID)
+		rs.planner.CompletePath(robotID)
+		if rs.commandQueue != nil {
+			rs.commandQueue.Enqueue(controller.CommandStop)
+		}
 	}
 
 	rs.webServer.OnCalibrationComplete = func(calibFile string) {
@@ -865,11 +875,29 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 				worldPos := rs.positionEst.PixelToWorld(px, py)
 				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
-				track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+				robotDiameter := 0.30 // fallback
 				if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
-					track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+					// Compute pixel radius by projecting world-space footprint through homography
+					worldRadius := robotConfig.Diameter / 2
+					edgePx, edgePy := rs.positionEst.WorldToPixel(position.Point2D{
+						X: worldPos.X + worldRadius, Y: worldPos.Y,
+					})
+					dxR := float64(edgePx - px)
+					dyR := float64(edgePy - py)
+					track.PixelRadius = math.Sqrt(dxR*dxR + dyR*dyR)
+					robotDiameter = robotConfig.Diameter
+					// Apply center offset if configured (compensates for tag-to-robot-center distance / parallax)
+					if robotConfig.CenterOffsetX != 0 || robotConfig.CenterOffsetY != 0 {
+						if heading, ok := rs.lastHeading[*track.TagID]; ok {
+							cosH := math.Cos(heading)
+							sinH := math.Sin(heading)
+							worldPos.X += robotConfig.CenterOffsetX*cosH - robotConfig.CenterOffsetY*sinH
+							worldPos.Y += robotConfig.CenterOffsetX*sinH + robotConfig.CenterOffsetY*cosH
+						}
+					}
 				}
-				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
+				track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
 
 				rs.computeTrackHeading(track, detectionResult.Tags)
 			}
@@ -1076,6 +1104,31 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 			px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 			worldPos := rs.positionEst.PixelToWorld(px, py)
 
+			// Stop and replan when dangerously close to an obstacle
+			if clearance := rs.planner.GetClearance(robotID); clearance < 0.08 {
+				utils.Logf("PROXIMITY WARNING: Robot %d clearance=%.3fm — stopping and replanning", robotID, clearance)
+				if rs.commandQueue != nil {
+					rs.commandQueue.Enqueue(controller.CommandStop)
+					commandIssued = true
+				}
+				rs.robotCommands[robotID] = "stopped"
+				// Replan at most once every 3 seconds to avoid thrashing
+				if lastReplan, ok := rs.lastReplanTime[robotID]; !ok || time.Since(lastReplan) > 3*time.Second {
+					if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
+						rs.planner.ClearPathOnly(robotID)
+						pos := [2]float64{worldPos.X, worldPos.Y}
+						if newPath, ok := rs.planner.PlanPath(robotID, pos, goal); ok {
+							rs.planner.SetPath(robotID, newPath)
+							utils.Logf("Robot %d replanned: %d waypoints from (%.2f,%.2f)", robotID, len(newPath), pos[0], pos[1])
+						} else {
+							utils.Logf("Robot %d replan FAILED from (%.2f,%.2f) to (%.2f,%.2f)", robotID, pos[0], pos[1], goal[0], goal[1])
+						}
+						rs.lastReplanTime[robotID] = time.Now()
+					}
+				}
+				continue
+			}
+
 			// Check if robot is close to final destination
 			if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
 				dx := worldPos.X - goal[0]
@@ -1083,6 +1136,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				distToGoal := math.Sqrt(dx*dx + dy*dy)
 				if distToGoal < rs.waypointThreshold {
 					rs.planner.CompletePath(robotID)
+					rs.webServer.ClearDestination(robotID)
 					utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
 					if rs.commandQueue != nil {
 						rs.commandQueue.Enqueue(controller.CommandStop)
@@ -1450,7 +1504,13 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 					track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
 					if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
-						track.PixelRadius = (robotConfig.Diameter / 2) * rs.cfg.YOLO.PixelsPerMeter
+						worldRadius := robotConfig.Diameter / 2
+						edgePx, edgePy := rs.positionEst.WorldToPixel(position.Point2D{
+							X: worldPos.X + worldRadius, Y: worldPos.Y,
+						})
+						dxR := float64(edgePx - px)
+						dyR := float64(edgePy - py)
+						track.PixelRadius = math.Sqrt(dxR*dxR + dyR*dyR)
 					}
 				}
 			}

@@ -141,7 +141,7 @@ func RunSelfTest(rs *RobotSystem) {
 		fmt.Println("  Created new planner for testing")
 	}
 
-	rs.planner.AddRobot(1, [2]float64{0.5, 0.5}, 0.18)
+	rs.planner.AddRobot(1, [2]float64{0.5, 0.5}, 0.30)
 	goal := [2]float64{1.0, 1.0}
 
 	velocity, shouldPause := rs.planner.ComputeVelocityWithDynamicObstacles(
@@ -266,7 +266,11 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 					px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 					worldPos := rs.positionEst.PixelToWorld(px, py)
 					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
-					rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, 0.18)
+					robotDiameter := 0.30 // fallback
+				if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+					robotDiameter = robotConfig.Diameter
+				}
+				rs.planner.AddRobot(track.TrackID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
 				}
 			}
 		}
