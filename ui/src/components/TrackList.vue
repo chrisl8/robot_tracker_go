@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { getTrackColor } from '@/types/robot'
-import { Crosshair, Tag } from 'lucide-vue-next'
+import { Crosshair, Tag, X } from 'lucide-vue-next'
 
 const robotStore = useRobotStore()
 
@@ -37,6 +37,11 @@ function isSelected(trackId: number): boolean {
 function hasDestination(track: { id: number; tag_id?: number }): boolean {
     return track.tag_id !== undefined && robotStore.destination?.robot_id === track.tag_id
 }
+
+function onClearGoal(event: Event): void {
+    event.stopPropagation()
+    robotStore.clearDestination()
+}
 </script>
 
 <template>
@@ -65,7 +70,11 @@ function hasDestination(track: { id: number; tag_id?: number }): boolean {
                         {{ getTrackLabel(track) }}
                         <span v-if="track.tag_id" class="track-tag">Tag {{ track.tag_id }}</span>
                         <span v-if="isSelected(track.id)" class="track-selected">Selected</span>
-                        <span v-if="hasDestination(track)" class="track-destination">Goal</span>
+                        <span v-if="hasDestination(track)" class="track-destination"
+                            >Goal
+                            <button class="clear-goal-btn" @click="onClearGoal($event)">
+                                <X :size="10" /></button
+                        ></span>
                     </div>
                     <div class="track-conf">
                         {{ (track.confidence * 100).toFixed(0) }}% confidence
@@ -253,6 +262,26 @@ h4 {
     border-radius: 4px;
     color: white;
     font-weight: bold;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.clear-goal-btn {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.15s;
+}
+
+.clear-goal-btn:hover {
+    background: rgba(255, 255, 255, 0.4);
 }
 
 .track-unconfigured {

@@ -90,6 +90,9 @@ export const useRobotStore = defineStore('robot', () => {
                     })
                 }
                 break
+            case 'destination_clear':
+                setDestination(null)
+                break
             case 'paths':
                 if (data.paths && Array.isArray(data.paths.paths)) {
                     paths.value = data.paths.paths
@@ -186,6 +189,30 @@ export const useRobotStore = defineStore('robot', () => {
 
     function setDestination(dest: Destination | null): void {
         destination.value = dest
+    }
+
+    async function clearDestination(): Promise<boolean> {
+        const uiStore = useUIStore()
+        const robotId = destination.value?.robot_id
+        if (robotId === undefined) {
+            return false
+        }
+        try {
+            const response = await fetch('/api/destination', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ robot_id: robotId }),
+            })
+            if (response.ok) {
+                destination.value = null
+                uiStore.addLogEntry('info', 'Goal cleared for robot ' + robotId)
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error('Failed to clear destination:', error)
+            return false
+        }
     }
 
     function clearPaths(): void {
@@ -292,6 +319,7 @@ export const useRobotStore = defineStore('robot', () => {
         cancelDestinationMode,
         confirmDestination,
         setDestination,
+        clearDestination,
         clearPaths,
         setControlMode,
         emergencyStop,

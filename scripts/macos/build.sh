@@ -88,7 +88,7 @@ go build -tags=gocv -o robot_tracker ./cmd/
 # Without signing, macOS re-prompts for camera permission after every build.
 # Uses hardened runtime + stable identifier for reliable TCC persistence.
 CODESIGN_ID="com.chrisl8.robot-tracker"
-CODESIGN_FLAGS="--identifier $CODESIGN_ID --options runtime,library"
+CODESIGN_FLAGS="--identifier $CODESIGN_ID"
 
 sign_binary() {
     codesign -f -s "$IDENTITY" $CODESIGN_FLAGS robot_tracker 2>/dev/null

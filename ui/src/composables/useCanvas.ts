@@ -175,6 +175,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     let animationFrameId: number | null = null
     let lastFrameTime = 0
     let dirty = true
+    let pathPhase = 0
 
     // Watch for data changes — sets dirty flag for next rAF frame
     watch(
@@ -206,10 +207,12 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const hasAnimatedTracks = robotStore.tracks.some(
             t => t.configured && t.corners && t.corners.length === 4
         )
+        const hasPaths = robotStore.paths.length > 0
 
-        if (!dirty && !hasAnimatedTracks) return
+        if (!dirty && !hasAnimatedTracks && !hasPaths) return
 
         dirty = false
+        pathPhase += dt / 1000
         updateAnimationState(dt)
         render()
     }
@@ -336,10 +339,13 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         if (!ctx.value || !Array.isArray(pathMessages) || pathMessages.length === 0) return
 
         for (const path of pathMessages) {
-            if (!path.points || path.points.length < 2) continue
+            if (!path.points || path.points.length < 1) continue
 
+            const color = path.color || '#FFFF00'
+
+            // Draw path line
             ctx.value.beginPath()
-            ctx.value.strokeStyle = path.color || '#FFFF00'
+            ctx.value.strokeStyle = color
             ctx.value.lineWidth = 2
 
             const first = naturalToCanvas(path.points[0][0], path.points[0][1])
@@ -351,12 +357,59 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             }
             ctx.value.stroke()
 
-            // Draw waypoint dots
-            ctx.value.fillStyle = path.color || '#FFFF00'
-            for (let i = 0; i < path.points.length; i++) {
+            const lastIdx = path.points.length - 1
+            const pulse = 0.5 + 0.5 * Math.sin(pathPhase * 4 * Math.PI)
+
+            // Draw intermediate waypoint dots (indices 1 through length-2)
+            ctx.value.fillStyle = color
+            for (let i = 1; i < lastIdx; i++) {
                 const p = naturalToCanvas(path.points[i][0], path.points[i][1])
                 ctx.value.beginPath()
                 ctx.value.arc(p.x, p.y, 4, 0, Math.PI * 2)
+                ctx.value.fill()
+            }
+
+            // Draw first waypoint (index 0) — pulsing "next" indicator
+            const firstPt = naturalToCanvas(path.points[0][0], path.points[0][1])
+            const nextAlpha = 0.4 + 0.6 * pulse
+            const nextRadius = 4 + 3 * pulse
+            ctx.value.save()
+            ctx.value.globalAlpha = nextAlpha
+            ctx.value.fillStyle = color
+            ctx.value.shadowBlur = 8
+            ctx.value.shadowColor = color
+            ctx.value.beginPath()
+            ctx.value.arc(firstPt.x, firstPt.y, nextRadius, 0, Math.PI * 2)
+            ctx.value.fill()
+            ctx.value.restore()
+
+            // Draw last waypoint (index length-1) — goal ring indicator
+            // Only when there are 2+ points so it doesn't overlap the "next" pulse
+            if (lastIdx > 0) {
+                const lastPt = naturalToCanvas(path.points[lastIdx][0], path.points[lastIdx][1])
+                const glowAlpha = 0.3 + 0.4 * pulse
+                ctx.value.save()
+                ctx.value.shadowBlur = 10
+                ctx.value.shadowColor = color
+                ctx.value.globalAlpha = glowAlpha
+                ctx.value.beginPath()
+                ctx.value.arc(lastPt.x, lastPt.y, 12, 0, Math.PI * 2)
+                ctx.value.strokeStyle = color
+                ctx.value.lineWidth = 2
+                ctx.value.stroke()
+                ctx.value.restore()
+
+                // Inner solid ring (always visible)
+                ctx.value.beginPath()
+                ctx.value.arc(lastPt.x, lastPt.y, 8, 0, Math.PI * 2)
+                ctx.value.strokeStyle = color
+                ctx.value.lineWidth = 2
+                ctx.value.stroke()
+
+                // Small filled center dot
+                ctx.value.fillStyle = color
+                ctx.value.beginPath()
+                ctx.value.arc(lastPt.x, lastPt.y, 3, 0, Math.PI * 2)
                 ctx.value.fill()
             }
         }

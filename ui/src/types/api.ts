@@ -83,6 +83,7 @@ export type WebSocketMessage =
     | CalibrationMessage
     | CalibrationTagsMessage
     | DestinationMessage
+    | DestinationClearMessage
     | PathsMessage
 
 export interface TrackMessage {
@@ -181,6 +182,11 @@ export interface Destination {
 export interface DestinationMessage {
     type: 'destination'
     destination: Destination & { valid: boolean }
+}
+
+export interface DestinationClearMessage {
+    type: 'destination_clear'
+    destination: { robot_id: number; valid: false }
 }
 
 // API Request types

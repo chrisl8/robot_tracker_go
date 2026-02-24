@@ -31,6 +31,9 @@ const position = computed(() => {
         y: Math.round((y1 + y2) / 2).toString(),
     }
 })
+
+const cameraOk = computed(() => selectedTrack.value?.state === 'confirmed')
+const controllerOk = computed(() => robotStore.status?.arduinoState === 'Connected')
 </script>
 
 <template>
@@ -57,26 +60,14 @@ const position = computed(() => {
                     <span class="telemetry-label">Position</span>
                     <span class="telemetry-value">{{ position.x }}, {{ position.y }}</span>
                 </div>
-                <div class="telemetry-row">
-                    <span class="telemetry-label">Velocity</span>
-                    <span class="telemetry-value unavailable">--</span>
-                </div>
-                <div class="telemetry-divider"></div>
-                <div class="telemetry-row">
-                    <span class="telemetry-label">Battery</span>
-                    <span class="telemetry-value unavailable">--</span>
-                </div>
-                <div class="telemetry-row">
-                    <span class="telemetry-label">Signal</span>
-                    <span class="telemetry-value unavailable">--</span>
-                </div>
-                <div class="telemetry-row">
-                    <span class="telemetry-label">Temp</span>
-                    <span class="telemetry-value unavailable">--</span>
-                </div>
-                <div class="telemetry-row">
-                    <span class="telemetry-label">Motors</span>
-                    <span class="telemetry-value unavailable">--</span>
+                <div class="telemetry-row connection-row">
+                    <span class="telemetry-label">Connection</span>
+                    <span class="connection-indicators">
+                        <span class="connection-dot" :class="cameraOk ? 'ok' : 'err'">●</span>
+                        <span class="connection-sublabel">Camera</span>
+                        <span class="connection-dot" :class="controllerOk ? 'ok' : 'err'">●</span>
+                        <span class="connection-sublabel">Controller</span>
+                    </span>
                 </div>
             </div>
         </template>
@@ -146,14 +137,33 @@ h3::before {
     color: var(--text-primary);
 }
 
-.telemetry-value.unavailable {
-    color: var(--text-dim);
+.connection-row {
+    align-items: center;
 }
 
-.telemetry-divider {
-    height: 1px;
-    background: var(--border-subtle);
-    margin: 4px 0;
+.connection-indicators {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.connection-dot {
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+.connection-dot.ok {
+    color: var(--accent-green, #4ade80);
+}
+
+.connection-dot.err {
+    color: var(--accent-red, #f87171);
+}
+
+.connection-sublabel {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-right: 6px;
 }
 
 .telemetry-row-stacked {
