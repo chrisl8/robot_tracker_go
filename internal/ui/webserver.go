@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
-	"robot_tracker_go/internal/config"
-	"robot_tracker_go/internal/planning"
-	"robot_tracker_go/internal/position"
-	"robot_tracker_go/internal/tracking"
-	"robot_tracker_go/internal/utils"
+	"github.com/chrisl8/robot_tracker_go/internal/config"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
+	"github.com/chrisl8/robot_tracker_go/internal/position"
+	"github.com/chrisl8/robot_tracker_go/internal/tracking"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

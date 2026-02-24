@@ -11,7 +11,7 @@ import (
 
 	"gocv.io/x/gocv"
 
-	"robot_tracker_go/internal/utils"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
 // getMacOSCameraNames parses system_profiler output to get camera names in order.

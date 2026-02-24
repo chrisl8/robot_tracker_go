@@ -1,6 +1,6 @@
 package detection
 
-import "robot_tracker_go/internal/utils"
+import "github.com/chrisl8/robot_tracker_go/internal/utils"
 
 type DetectionType int
 

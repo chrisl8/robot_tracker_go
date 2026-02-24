@@ -9,11 +9,11 @@ import (
 	"image/draw"
 	"time"
 
-	"robot_tracker_go/internal/config"
-	"robot_tracker_go/internal/detection"
-	"robot_tracker_go/internal/planning"
-	"robot_tracker_go/internal/tracking"
-	"robot_tracker_go/internal/ui"
+	"github.com/chrisl8/robot_tracker_go/internal/config"
+	"github.com/chrisl8/robot_tracker_go/internal/detection"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
+	"github.com/chrisl8/robot_tracker_go/internal/tracking"
+	"github.com/chrisl8/robot_tracker_go/internal/ui"
 )
 
 var demoObstacles = []DemoObstacle{

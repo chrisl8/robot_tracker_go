@@ -5,8 +5,8 @@ package main
 import (
 	"testing"
 
-	"robot_tracker_go/internal/detection"
-	"robot_tracker_go/internal/planning"
+	"github.com/chrisl8/robot_tracker_go/internal/detection"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
 )
 
 func TestPlanningToDetectionConversion(t *testing.T) {

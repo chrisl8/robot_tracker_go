@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"robot_tracker_go/internal/utils"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
 type CommandQueue struct {

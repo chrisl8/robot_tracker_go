@@ -1,4 +1,4 @@
-module robot_tracker_go
+module github.com/chrisl8/robot_tracker_go
 
 go 1.24.0
 

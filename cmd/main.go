@@ -20,15 +20,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"robot_tracker_go/internal/camera"
-	"robot_tracker_go/internal/config"
-	"robot_tracker_go/internal/controller"
-	"robot_tracker_go/internal/detection"
-	"robot_tracker_go/internal/planning"
-	"robot_tracker_go/internal/position"
-	"robot_tracker_go/internal/tracking"
-	"robot_tracker_go/internal/ui"
-	"robot_tracker_go/internal/utils"
+	"github.com/chrisl8/robot_tracker_go/internal/camera"
+	"github.com/chrisl8/robot_tracker_go/internal/config"
+	"github.com/chrisl8/robot_tracker_go/internal/controller"
+	"github.com/chrisl8/robot_tracker_go/internal/detection"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
+	"github.com/chrisl8/robot_tracker_go/internal/position"
+	"github.com/chrisl8/robot_tracker_go/internal/tracking"
+	"github.com/chrisl8/robot_tracker_go/internal/ui"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
 type ControlMode int

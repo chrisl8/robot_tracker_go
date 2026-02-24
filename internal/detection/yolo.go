@@ -12,7 +12,7 @@ import (
 
 	"gocv.io/x/gocv"
 
-	"robot_tracker_go/internal/utils"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
 type YOLODetector struct {

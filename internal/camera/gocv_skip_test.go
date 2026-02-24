@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"testing"
 
-	"robot_tracker_go/internal/utils"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
 func TestOpenCVEnvironment(t *testing.T) {

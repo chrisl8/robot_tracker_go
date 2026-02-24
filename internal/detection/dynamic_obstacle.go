@@ -1,8 +1,8 @@
 package detection
 
 import (
-	"robot_tracker_go/internal/planning"
-	"robot_tracker_go/internal/position"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
+	"github.com/chrisl8/robot_tracker_go/internal/position"
 )
 
 func YOLODetectionsToDynamicObstacles(
