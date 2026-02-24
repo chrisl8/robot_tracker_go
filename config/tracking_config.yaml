@@ -139,10 +139,12 @@ controller:
 robots:
   - tag_id: 1 # AprilTag ID for robot identification
     name: "robot_0"
-    diameter: 0.18 # meters (for obstacle avoidance)
+    diameter: 0.30 # meters foot-to-foot (for obstacle avoidance)
     speed: 0.15 # m/s (max forward speed)
     turn_rate: 1.0 # rad/s (max turn speed)
     heading_offset_degrees: 0 # adjust if arrow doesn't point forward (try 90, -90, 180)
+    center_offset_x: 0.0 # meters forward from tag center to robot center (for parallax correction)
+    center_offset_y: 0.0 # meters left from tag center to robot center (for parallax correction)
 
   # Add more robots by their tag IDs:
   # - tag_id: 5
@@ -219,17 +221,17 @@ path_execution:
   max_wait_frames: 2       # frames to drive forward after burst while heading catches up.
                            # Robot moves forward (not stop) during these frames when angle < 90°,
                            # like a human alternating turn taps with forward motion.
-  forward_threshold_deg: 25.0 # Hysteresis ENTRY threshold: robot must be within this angle
+  forward_threshold_deg: 20.0 # Hysteresis ENTRY threshold: robot must be within this angle
                               # of the waypoint bearing to START driving forward.
-                              # EXIT threshold is automatically +15° (= 40°): robot must
+                              # EXIT threshold is automatically +10° (= 30°): robot must
                               # drift this far off before switching back to turning.
-                              # This 15° dead zone prevents oscillation from 5-15° heading noise.
+                              # This 10° dead zone prevents oscillation from 5-15° heading noise.
                               # Without hysteresis, a single 30° threshold caused 40s of
                               # forward/turn oscillation; 45° let the robot drive forward
                               # when 38-43° off target. Hysteresis eliminates both problems.
                               #
-                              # Continuous turning kicks in at 1.5× exit threshold (= 60°).
-                              # Below 60°: burst/wait for precision. Above 60°: continuous
+                              # Continuous turning kicks in at 1.5× exit threshold (= 45°).
+                              # Below 45°: burst/wait for precision. Above 45°: continuous
                               # turn commands every frame (no stopping) for faster rotation.
   tracking_lost_timeout_s: 3.0 # seconds to keep driving after AprilTag detection is lost.
                                # During normal driving, the AprilTag is frequently not detected

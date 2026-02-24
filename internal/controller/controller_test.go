@@ -341,7 +341,7 @@ func TestBearingToCommand_Hysteresis(t *testing.T) {
 
 	t.Run("stays forward despite noise crossing entry threshold", func(t *testing.T) {
 		executor := NewPathExecutor(0.15, 1.0)
-		executor.ForwardThresholdDeg = 25.0 // enter=25°, exit=40°
+		executor.ForwardThresholdDeg = 25.0 // enter=25°, exit=35° (25+10)
 
 		// Start aligned → forward (enters forward mode, isTurning=false)
 		cmd := executor.BearingToCommand(0, 10*deg, 0)
@@ -349,29 +349,29 @@ func TestBearingToCommand_Hysteresis(t *testing.T) {
 			t.Fatalf("frame 1: got %c, want Forward", cmd)
 		}
 
-		// Heading drifts to 30° — nudge correction (above 20° nudge threshold),
+		// Heading drifts to 20° — nudge correction (above 17.5° nudge threshold),
 		// but stays in forward mode (isTurning=false, hysteresis still active).
-		cmd = executor.BearingToCommand(0, 30*deg, 0)
+		cmd = executor.BearingToCommand(0, 20*deg, 0)
 		if cmd != CommandRight {
-			t.Fatalf("frame 2 (30° diff, nudge correction): got %c, want Right (nudge)", cmd)
+			t.Fatalf("frame 2 (20° diff, nudge correction): got %c, want Right (nudge)", cmd)
 		}
 
-		// Heading drifts to 35° — forward (nudge cooldown active, hysteresis keeps forward mode)
-		cmd = executor.BearingToCommand(0, 35*deg, 0)
+		// Heading drifts to 30° — forward (nudge cooldown active, hysteresis keeps forward mode)
+		cmd = executor.BearingToCommand(0, 30*deg, 0)
 		if cmd != CommandForward {
-			t.Fatalf("frame 3 (35° diff, nudge cooldown): got %c, want Forward", cmd)
+			t.Fatalf("frame 3 (30° diff, nudge cooldown): got %c, want Forward", cmd)
 		}
 
-		// Heading drifts to 45° — exceeds exit threshold (40°), should start turning
-		cmd = executor.BearingToCommand(0, 45*deg, 0)
+		// Heading drifts to 40° — exceeds exit threshold (35°), should start turning
+		cmd = executor.BearingToCommand(0, 40*deg, 0)
 		if cmd == CommandForward {
-			t.Fatalf("frame 4 (45° diff, beyond exit threshold): got Forward, want turn")
+			t.Fatalf("frame 4 (40° diff, beyond exit threshold): got Forward, want turn")
 		}
 	})
 
 	t.Run("must align tightly before re-entering forward", func(t *testing.T) {
 		executor := NewPathExecutor(0.15, 1.0)
-		executor.ForwardThresholdDeg = 25.0 // enter=25°, exit=40°
+		executor.ForwardThresholdDeg = 25.0 // enter=25°, exit=35° (25+10)
 
 		// Start with large angle → turn (enters turning mode)
 		cmd := executor.BearingToCommand(0, 60*deg, 0)
@@ -387,7 +387,7 @@ func TestBearingToCommand_Hysteresis(t *testing.T) {
 			executor.BearingToCommand(0, 60*deg, 0) // wait + timeout
 		}
 
-		// Now at 30° diff — below exit threshold (40°) but above entry (25°).
+		// Now at 30° diff — below exit threshold (35°) but above entry (25°).
 		// Should NOT go forward yet (still in turning mode, needs <25° to enter forward).
 		cmd = executor.BearingToCommand(0, 30*deg, 0)
 		if cmd == CommandForward {
@@ -416,9 +416,9 @@ func TestBearingToCommand_ContinuousTurn(t *testing.T) {
 
 	t.Run("large angle sends continuous turn without burst/wait", func(t *testing.T) {
 		executor := NewPathExecutor(0.15, 1.0)
-		executor.ForwardThresholdDeg = 25.0 // exit=40°, continuous=60°
+		executor.ForwardThresholdDeg = 25.0 // exit=35°, continuous=52.5°
 
-		// 80° off target — above 60° continuous threshold, below 135° rear threshold
+		// 80° off target — above 52.5° continuous threshold, below 135° rear threshold
 		// Every frame should return a turn command (no stops for burst/wait)
 		for i := 1; i <= 5; i++ {
 			cmd := executor.BearingToCommand(0, 80*deg, 0)
@@ -539,21 +539,21 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 		// Enter forward mode
 		executor.BearingToCommand(0, 5*deg, 0)
 
-		// Trigger nudge
+		// Trigger nudge (22° > nudge threshold of 17.5°)
 		cmd := executor.BearingToCommand(0, 22*deg, 0)
 		if cmd != CommandRight {
 			t.Fatalf("nudge frame: got %c, want Right", cmd)
 		}
 
-		// Next 5 frames should be Forward (cooldown=5)
-		for i := 1; i <= 5; i++ {
+		// Next 3 frames should be Forward (cooldown=3)
+		for i := 1; i <= 3; i++ {
 			cmd = executor.BearingToCommand(0, 22*deg, 0)
 			if cmd != CommandForward {
 				t.Fatalf("cooldown frame %d: got %c, want Forward", i, cmd)
 			}
 		}
 
-		// Frame 7: cooldown expired → nudge again
+		// Frame 5: cooldown expired → nudge again
 		cmd = executor.BearingToCommand(0, 22*deg, 0)
 		if cmd != CommandRight {
 			t.Fatalf("after cooldown: got %c, want Right (nudge)", cmd)
@@ -562,12 +562,12 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 
 	t.Run("no nudge below threshold", func(t *testing.T) {
 		executor := NewPathExecutor(0.15, 1.0)
-		executor.ForwardThresholdDeg = 25.0 // nudge=20°
+		executor.ForwardThresholdDeg = 25.0 // nudge=17.5°
 
 		// Enter forward mode
 		executor.BearingToCommand(0, 5*deg, 0)
 
-		// 15° is below nudge threshold (20°) → always Forward
+		// 15° is below nudge threshold (17.5°) → always Forward
 		for i := range 10 {
 			cmd := executor.BearingToCommand(0, 15*deg, 0)
 			if cmd != CommandForward {
@@ -583,8 +583,8 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 		// Enter forward mode with well-aligned heading
 		executor.BearingToCommand(0, 5*deg, 0)
 
-		// Still in forward mode at 20° (below exit threshold of 40°)
-		cmd := executor.BearingToCommand(0, 20*deg, 0)
+		// Still in forward mode at 15° (below nudge threshold of 17.5° and exit threshold of 35°)
+		cmd := executor.BearingToCommand(0, 15*deg, 0)
 		if cmd != CommandForward {
 			t.Fatalf("got %c, want Forward (within hysteresis band)", cmd)
 		}

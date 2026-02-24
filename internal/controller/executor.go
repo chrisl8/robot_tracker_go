@@ -20,9 +20,9 @@ type Velocity struct {
 //
 //   - Hysteresis on forward/turn: A single forward threshold (e.g. 30° or 45°)
 //     causes oscillation because heading noise constantly crosses any single boundary.
-//     Instead, we use two thresholds: ForwardThresholdDeg (tight, e.g. 25°) to ENTER
-//     forward mode, and ForwardThresholdDeg+15° (wide, e.g. 40°) to EXIT forward mode.
-//     The 15° dead zone absorbs typical heading noise without triggering mode switches.
+//     Instead, we use two thresholds: ForwardThresholdDeg (tight, e.g. 20°) to ENTER
+//     forward mode, and ForwardThresholdDeg+10° (wide, e.g. 30°) to EXIT forward mode.
+//     The 10° dead zone absorbs typical heading noise without triggering mode switches.
 //
 //   - Burst/drive pattern: The robot's heading in the camera feed lags physical rotation
 //     by 1-3 frames. Sending continuous turn commands causes overshoot. Instead, send
@@ -31,9 +31,9 @@ type Velocity struct {
 //     forward motion, never stopping between corrections.
 //
 //   - Nudge corrections: While driving forward, if the heading drifts past half the
-//     exit threshold (~20°), a single turn command is injected to correct course.
+//     exit threshold (~15°), a single turn command is injected to correct course.
 //     A cooldown prevents over-correcting from noise. This creates three forward-mode
-//     zones: 0-20° = pure forward, 20-40° = forward with periodic nudges, >40° = turn.
+//     zones: 0-15° = pure forward, 15-30° = forward with periodic nudges, >30° = turn.
 //
 //   - Spin detection: Large heading deltas (>20°/frame) usually indicate AprilTag
 //     detection noise during rotation, not actual robot spinning. The robot stops
@@ -44,7 +44,7 @@ type PathExecutor struct {
 	SpinThresholdDeg    float64 // heading delta (°/frame) above which robot is "spinning"
 	BurstFrames         int     // frames of continuous turning per burst
 	MaxWaitFrames       int     // frames to wait after burst for heading to update
-	ForwardThresholdDeg float64 // angle diff (°) to ENTER forward mode (hysteresis: exits at +15°)
+	ForwardThresholdDeg float64 // angle diff (°) to ENTER forward mode (hysteresis: exits at +10°)
 	isTurning           bool    // hysteresis state: true = actively turning, widens forward entry
 	nudgeCooldown       int     // frames remaining before next nudge correction allowed
 	waitingForUpdate    bool
@@ -135,7 +135,7 @@ func (e *PathExecutor) BearingToCommand(robotHeading, bearingToWaypoint, heading
 	// driving forward, but heading must drift far off (exitForwardThresh) before
 	// switching back to turning. The 15° dead zone absorbs typical noise.
 	enterForwardThresh := e.ForwardThresholdDeg * math.Pi / 180       // e.g. 25° — must be this aligned to start forward
-	exitForwardThresh := (e.ForwardThresholdDeg + 15) * math.Pi / 180 // e.g. 40° — must drift this far to start turning
+	exitForwardThresh := (e.ForwardThresholdDeg + 10) * math.Pi / 180 // e.g. 30° — must drift this far to start turning
 	// Use the wider tolerance when already going forward, tighter when turning
 	forwardThreshold := enterForwardThresh
 	if !e.isTurning {
@@ -246,7 +246,7 @@ func (e *PathExecutor) BearingToCommand(robotHeading, bearingToWaypoint, heading
 			} else {
 				cmd = CommandLeft
 			}
-			e.nudgeCooldown = 5 // wait 5 frames before next nudge
+			e.nudgeCooldown = 3 // wait 3 frames before next nudge
 		} else {
 			cmd = CommandForward
 			if e.nudgeCooldown > 0 {
