@@ -74,7 +74,9 @@ func (p *DetectionPipeline) fuseDetections(tags []AprilTag, yoloDetections []YOL
 		confidence := 1.0
 
 		if matchedIdx >= 0 {
-			bbox = yoloDetections[matchedIdx].Bbox
+			// findMatchingYOLO only returns indices produced by ranging over
+			// yoloDetections itself, so matchedIdx is always in bounds here.
+			bbox = yoloDetections[matchedIdx].Bbox //nolint:nilaway
 			confidence = yoloDetections[matchedIdx].Confidence
 			yoloMatched[matchedIdx] = true
 		}
