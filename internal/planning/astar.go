@@ -113,38 +113,33 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 		return nil, false
 	}
 
-	// If the robot's current position is inside an expanded obstacle, find the
-	// nearest free cell so the planner can still route out of it.
+	// If the robot's current position is inside an expanded obstacle, clear
+	// obstacle cells around start so A* can plan from the actual position.
+	// The robot is physically here, so the expanded-obstacle markup is wrong
+	// for cells the robot already occupies. Clearing in expanding radius
+	// until we reach free space lets A* route out naturally.
 	if obstacleMap[startNode.Pos] {
-		utils.Debugf("A*: start is inside expanded obstacle, searching for nearest free cell...")
-		found := false
-		for radius := 1; radius <= 20; radius++ {
+		utils.Debugf("A*: start is inside expanded obstacle, clearing cells around start...")
+		for radius := 0; radius <= 20; radius++ {
+			reachedFreeSpace := false
 			for dx := -radius; dx <= radius; dx++ {
 				for dy := -radius; dy <= radius; dy++ {
-					if abs(dx) != radius && abs(dy) != radius {
-						continue // only check the perimeter of this radius
+					cell := [2]int{startNode.Pos[0] + dx, startNode.Pos[1] + dy}
+					if cell[0] >= 0 && cell[0] < gridWidth &&
+						cell[1] >= 0 && cell[1] < gridHeight {
+						// Only check the perimeter for originally-free cells;
+						// inner cells were cleared by previous iterations.
+						onPerimeter := dx == -radius || dx == radius || dy == -radius || dy == radius
+						if onPerimeter && !obstacleMap[cell] {
+							reachedFreeSpace = true
+						}
+						delete(obstacleMap, cell)
 					}
-					candidate := [2]int{startNode.Pos[0] + dx, startNode.Pos[1] + dy}
-					if candidate[0] >= 0 && candidate[0] < gridWidth &&
-						candidate[1] >= 0 && candidate[1] < gridHeight &&
-						!obstacleMap[candidate] {
-						utils.Debugf("A*: found free cell at grid=(%d,%d), offset=(%d,%d) from start",candidate[0], candidate[1], dx, dy)
-						startNode.Pos = candidate
-						found = true
-						break
-					}
-				}
-				if found {
-					break
 				}
 			}
-			if found {
+			if reachedFreeSpace {
 				break
 			}
-		}
-		if !found {
-			utils.Debugf("A*: FAILED - could not find free cell near start")
-			return nil, false
 		}
 	}
 
@@ -392,11 +387,4 @@ func worldToGrid(obs Obstacle, resolution float64, width, height int) [][2]int {
 	}
 
 	return cells
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }

@@ -86,8 +86,8 @@ func TestAStar_Plan_ObstacleAtStart(t *testing.T) {
 			WorldBottomRight: [2]float64{1, 1},
 		},
 	}
-	// The planner handles "start inside obstacle" by finding the nearest free cell,
-	// so the robot can escape if it starts inside an expanded obstacle. This should
+	// The planner handles "start inside obstacle" by clearing expanded-obstacle
+	// cells around the start so A* can plan from the actual position. This should
 	// succeed and produce a valid path.
 	path, found := astar.Plan([2]float64{0.5, 0.5}, [2]float64{3, 3}, obstacles)
 
