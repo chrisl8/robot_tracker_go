@@ -167,3 +167,16 @@ func TestDetectionPipeline_SetObstacles_FromPlanning(t *testing.T) {
 		t.Errorf("expected clearance 0.05, got %f", stored[0].Clearance)
 	}
 }
+
+// TestDemoModeNeverUsesTheRealCalibrationFile guards against demo runs (and
+// Playwright, which starts one) overwriting the real camera's calibration.
+func TestDemoModeNeverUsesTheRealCalibrationFile(t *testing.T) {
+	demo := &RobotSystem{demoMode: true}
+	if got := demo.cameraDisplayName(); got != demoCameraName {
+		t.Fatalf("demo camera name = %q, want %q", got, demoCameraName)
+	}
+	real := &RobotSystem{}
+	if real.cameraDisplayName() != "" {
+		t.Errorf("no camera configured should give an empty name, got %q", real.cameraDisplayName())
+	}
+}

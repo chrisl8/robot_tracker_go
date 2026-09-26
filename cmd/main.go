@@ -63,7 +63,13 @@ func ParseControlMode(s string) ControlMode {
 	}
 }
 
+// demoCameraName is the camera name used for calibration files while running
+// on synthetic demo data, so a demo run (including Playwright's) can never read
+// or overwrite the real camera's calibration.
+const demoCameraName = "demo"
+
 type RobotSystem struct {
+	demoMode          bool
 	cfg               *config.Config
 	cam               camera.Camera
 	detectionPipe     *detection.DetectionPipeline
@@ -300,6 +306,9 @@ func (rs *RobotSystem) initDemoMode() {
 // (e.g. while macOS is still waiting on camera permission), so the calibration
 // file used for loading and saving never depends on camera start-up timing.
 func (rs *RobotSystem) cameraDisplayName() string {
+	if rs.demoMode {
+		return demoCameraName
+	}
 	if rs.cam != nil {
 		return rs.cam.GetName()
 	}
@@ -1642,6 +1651,7 @@ func main() {
 	}
 
 	rs := NewRobotSystem(cfg)
+	rs.demoMode = *demoMode
 	if cfg != nil {
 		if err := rs.Initialize(); err != nil {
 			utils.Logf("Warning: Failed to initialize robot system: %v", err)
@@ -1733,6 +1743,15 @@ func main() {
 					time.Sleep(33*time.Millisecond - elapsed)
 				}
 			}
+		}
+	}
+
+	if *demoMode {
+		// Also covers falling back to demo because the camera never opened:
+		// calibrating on synthetic frames must not overwrite the real file.
+		rs.demoMode = true
+		if rs.webServer != nil {
+			rs.webServer.SetCameraName(demoCameraName)
 		}
 	}
 
