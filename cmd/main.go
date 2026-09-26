@@ -296,6 +296,19 @@ func (rs *RobotSystem) initDemoMode() {
 	}
 }
 
+// cameraDisplayName names the configured camera even before it has opened
+// (e.g. while macOS is still waiting on camera permission), so the calibration
+// file used for loading and saving never depends on camera start-up timing.
+func (rs *RobotSystem) cameraDisplayName() string {
+	if rs.cam != nil {
+		return rs.cam.GetName()
+	}
+	if rs.cameraConfig != nil {
+		return camera.DisplayName(rs.cameraConfig.URL, rs.cameraConfig.CameraID)
+	}
+	return ""
+}
+
 func classesToMap(classes []string) map[string]bool {
 	m := make(map[string]bool)
 	for _, c := range classes {
@@ -366,8 +379,8 @@ func (rs *RobotSystem) Initialize() error {
 	}
 
 	calibrationPath := "config/calibration_default.yaml"
-	if rs.cam != nil {
-		calibrationPath = ui.GetCalibrationFilename(rs.cam.GetName())
+	if name := rs.cameraDisplayName(); name != "" {
+		calibrationPath = ui.GetCalibrationFilename(name)
 		utils.Logf("Using calibration file: %s", calibrationPath)
 	}
 	obstaclesPath := ""
@@ -564,8 +577,8 @@ func (rs *RobotSystem) Initialize() error {
 		return rs.GetControlMode().String(), rs.IsEmergencyStopped()
 	}
 
-	if rs.cam != nil {
-		rs.webServer.SetCameraName(rs.cam.GetName())
+	if name := rs.cameraDisplayName(); name != "" {
+		rs.webServer.SetCameraName(name)
 	}
 	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
 		rs.webServer.SetPositionEstimator(rs.positionEst)

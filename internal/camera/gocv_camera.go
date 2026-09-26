@@ -247,10 +247,7 @@ func (c *GoCVCamera) GetFrameAsImage() (interface{}, error) {
 }
 
 func (c *GoCVCamera) GetName() string {
-	if c.url != "" {
-		return fmt.Sprintf("Video: %s", c.url)
-	}
-	return fmt.Sprintf("Camera %d", c.cameraID)
+	return DisplayName(c.url, c.cameraID)
 }
 
 func (c *GoCVCamera) IsConnected() bool {
