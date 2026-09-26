@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/chrisl8/robot_tracker_go/internal/position"
 )
 
 type Config struct {
@@ -200,6 +202,13 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	for _, robot := range cfg.Robots {
+		if position.IsTargetTagID(robot.TagID) {
+			return nil, fmt.Errorf("robot %q uses tag_id %d, which is reserved for the calibration target (%d-%d)",
+				robot.Name, robot.TagID, position.TargetIDMin, position.TargetIDMax)
+		}
 	}
 
 	return &cfg, nil

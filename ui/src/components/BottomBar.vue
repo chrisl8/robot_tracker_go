@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -11,6 +11,16 @@ defineProps<{
 const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
+
+const calibrationBadge = computed(() => {
+    if (uiStore.calibration.state !== 'calibrated') {
+        return { text: 'Not Calibrated', cls: 'not-calibrated' }
+    }
+    if (uiStore.calibration.resolutionMismatch) {
+        return { text: 'Recalibrate (resolution changed)', cls: 'not-calibrated' }
+    }
+    return { text: 'Calibrated', cls: 'calibrated' }
+})
 
 const missionTime = ref('00:00:00')
 const startTime = Date.now()
@@ -71,12 +81,10 @@ onUnmounted(() => {
         <div class="bottom-bar-group">
             <div
                 class="calibration-badge"
-                :class="
-                    uiStore.calibration.state === 'calibrated' ? 'calibrated' : 'not-calibrated'
-                "
+                :class="calibrationBadge.cls"
                 @click="uiStore.openCalibration()"
             >
-                {{ uiStore.calibration.state === 'calibrated' ? 'Calibrated' : 'Not Calibrated' }}
+                {{ calibrationBadge.text }}
             </div>
         </div>
 

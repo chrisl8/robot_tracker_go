@@ -3,6 +3,9 @@ package position
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -23,13 +26,71 @@ type CalibrationData struct {
 }
 
 type CalibrationConfig struct {
-	Version      int              `yaml:"version"`
-	Camera       CameraInfo       `yaml:"camera"`
-	Intrinsics   CameraIntrinsics `yaml:"intrinsics"`
-	Homography   [][]float64      `yaml:"homography"`
-	WorldScale   float64          `yaml:"world_scale"`
-	TagSize      float64          `yaml:"tag_size"`
-	CalibratedAt string           `yaml:"calibrated_at"`
+	Version      int               `yaml:"version"`
+	Camera       CameraInfo        `yaml:"camera"`
+	Intrinsics   *CameraIntrinsics `yaml:"intrinsics,omitempty"`
+	Homography   [][]float64       `yaml:"homography"`
+	WorldScale   float64           `yaml:"world_scale"`
+	TagSize      float64           `yaml:"tag_size"`
+	CalibratedAt string            `yaml:"calibrated_at"`
+	Fit          *CalibrationFit   `yaml:"fit,omitempty"`
+}
+
+// CalibrationFit records how the calibration target was laid out and how well
+// the fitted homography reproduced it.
+type CalibrationFit struct {
+	RMSCm  float64 `yaml:"rms_cm"`
+	MaxCm  float64 `yaml:"max_cm"`
+	Rating string  `yaml:"rating"`
+	Width  float64 `yaml:"width"`
+	Depth  float64 `yaml:"depth"`
+	Tags   int     `yaml:"tags"`
+}
+
+// NewCalibrationConfig builds the file contents for a fitted calibration
+// target, recording the actual frame resolution it was made at.
+func NewCalibrationConfig(cameraName string, frameWidth, frameHeight int, fit *FitResult, at time.Time) *CalibrationConfig {
+	h := fit.Homography
+	return &CalibrationConfig{
+		Version: 2,
+		Camera: CameraInfo{
+			Name:       cameraName,
+			Resolution: [2]int{frameWidth, frameHeight},
+		},
+		Homography: [][]float64{
+			{h.H[0][0], h.H[0][1], h.H[0][2]},
+			{h.H[1][0], h.H[1][1], h.H[1][2]},
+			{h.H[2][0], h.H[2][1], h.H[2][2]},
+		},
+		WorldScale:   h.PixelsPerMeter,
+		TagSize:      TargetTagSize,
+		CalibratedAt: at.UTC().Format(time.RFC3339),
+		Fit: &CalibrationFit{
+			RMSCm:  fit.RMSCm,
+			MaxCm:  fit.MaxCm,
+			Rating: fit.Rating,
+			Width:  fit.Width,
+			Depth:  fit.Depth,
+			Tags:   len(fit.PerTag),
+		},
+	}
+}
+
+// SaveCalibration writes cfg as YAML to path, creating the directory.
+func SaveCalibration(path string, cfg *CalibrationConfig) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal calibration: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		return fmt.Errorf("failed to create calibration directory: %w", err)
+	}
+	// #nosec G304
+	// #nosec G306
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("failed to write calibration file: %w", err)
+	}
+	return nil
 }
 
 type CameraInfo struct {
@@ -39,6 +100,9 @@ type CameraInfo struct {
 
 type PositionEstimator struct {
 	homography     *Homography
+	resMu          sync.Mutex
+	calibratedRes  [2]int
+	frameRes       [2]int
 	intrinsics     *CameraIntrinsics
 	obstacles      []Obstacle
 	smoothing      bool
@@ -94,7 +158,10 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 
 		if matrix, ok := intrinsicsData["camera_matrix"].([]interface{}); ok {
 			for i := 0; i < 3 && i < len(matrix); i++ {
-				row := matrix[i].([]interface{})
+				row, ok := matrix[i].([]interface{})
+				if !ok {
+					continue
+				}
 				for j := 0; j < 3 && j < len(row); j++ {
 					e.intrinsics.CameraMatrix[i][j] = utils.ToFloat64(row[j])
 				}
@@ -108,6 +175,15 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 			e.intrinsics.Height = height
 		}
 	}
+
+	e.resMu.Lock()
+	e.calibratedRes = [2]int{}
+	if camera, ok := calibration["camera"].(map[string]interface{}); ok {
+		if res, ok := camera["resolution"].([]interface{}); ok && len(res) >= 2 {
+			e.calibratedRes = [2]int{int(utils.ToFloat64(res[0])), int(utils.ToFloat64(res[1]))}
+		}
+	}
+	e.resMu.Unlock()
 
 	if homographyData, ok := calibration["homography"].([]interface{}); ok && len(homographyData) >= 3 {
 		row0, _ := homographyData[0].([]interface{})
@@ -134,6 +210,34 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 
 	utils.Logf("Loaded calibration from %s", path)
 	return nil
+}
+
+// SetFrameSize records the live camera frame size so a calibration made at a
+// different resolution can be flagged.
+func (e *PositionEstimator) SetFrameSize(width, height int) {
+	e.resMu.Lock()
+	e.frameRes = [2]int{width, height}
+	e.resMu.Unlock()
+}
+
+// CalibratedResolution returns the resolution stored in the loaded
+// calibration file, if any.
+func (e *PositionEstimator) CalibratedResolution() (width, height int, ok bool) {
+	e.resMu.Lock()
+	defer e.resMu.Unlock()
+	return e.calibratedRes[0], e.calibratedRes[1], e.calibratedRes[0] > 0 && e.calibratedRes[1] > 0
+}
+
+// ResolutionMismatch reports whether the loaded calibration was made at a
+// different resolution than the camera is currently delivering. Pixel
+// coordinates only map to the floor correctly at the calibrated resolution.
+func (e *PositionEstimator) ResolutionMismatch() bool {
+	e.resMu.Lock()
+	defer e.resMu.Unlock()
+	if e.calibratedRes[0] == 0 || e.frameRes[0] == 0 {
+		return false
+	}
+	return e.calibratedRes != e.frameRes
 }
 
 func (e *PositionEstimator) LoadObstacles(path string) error {

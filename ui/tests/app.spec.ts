@@ -26,8 +26,9 @@ test.describe('Robot Tracker UI Integration', () => {
         await page.locator('.calibration-badge').click()
         await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
         await expect(page.locator('.calibration-step.active h2')).toContainText(
-            'Step 1: Enter Tag Size'
+            'Step 1: Print the Calibration Tags'
         )
+        await expect(page.locator('a[href="/calibration-tags/print.html"]')).toBeVisible()
     })
 
     test('should close calibration wizard when clicking overlay', async ({ page }) => {
@@ -37,12 +38,26 @@ test.describe('Robot Tracker UI Integration', () => {
         await expect(page.locator('.calibration-wizard')).toBeHidden({ timeout: 3000 })
     })
 
-    test('should show detected tags step when clicking Detect Tags', async ({ page }) => {
+    test('should walk through the calibration wizard steps', async ({ page }) => {
         await page.locator('.calibration-badge').click()
         await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
-        await page.locator('.calibration-btn.primary:has-text("Detect Tags")').click()
+
+        await page.locator('.calibration-btn.primary:has-text("Next: Lay Out")').click()
         await expect(page.locator('.calibration-step.active h2')).toContainText(
-            'Step 2: Select Detected Tag'
+            'Step 2: Lay Out the Tags'
+        )
+        await expect(page.locator('input[type="number"]')).toHaveCount(2)
+
+        await page.locator('.calibration-btn.primary:has-text("Next: Check Placement")').click()
+        await expect(page.locator('.calibration-step.active h2')).toContainText(
+            'Step 3: Adjust Placement'
+        )
+        await expect(page.locator('.detected-tag-item')).toHaveCount(5, { timeout: 5000 })
+        await expect(page.locator('.calibration-btn.primary:has-text("Calibrate")')).toBeVisible()
+
+        await page.locator('.calibration-btn.secondary:has-text("Back")').click()
+        await expect(page.locator('.calibration-step.active h2')).toContainText(
+            'Step 2: Lay Out the Tags'
         )
     })
 })
@@ -53,6 +68,14 @@ test.describe('API Endpoints', () => {
         expect(response.status()).toBe(200)
         const data = await response.json()
         expect(data).toHaveProperty('state')
+    })
+
+    test('should return the calibration target layout', async ({ request }) => {
+        const response = await request.get('http://localhost:9086/api/calibration/detected-tags')
+        expect(response.status()).toBe(200)
+        const data = await response.json()
+        expect(data.target.tags).toHaveLength(5)
+        expect(data.target.tagSize).toBeGreaterThan(0)
     })
 
     test('should return obstacles', async ({ request }) => {

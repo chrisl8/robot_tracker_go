@@ -43,10 +43,12 @@ const THEME = {
     // Calibration tag
     calibTagStroke: 'rgba(224, 230, 237, 0.5)',
     calibTagLabel: 'rgba(224, 230, 237, 0.7)',
-    calibSelectedGlow: '#00d9ff',
-    calibSelectedStroke: '#00d9ff',
-    calibSelectedFill: 'rgba(0, 217, 255, 0.3)',
-    calibCornerFill: '#00d9ff',
+    calibOkStroke: '#00e676',
+    calibOkFill: 'rgba(0, 230, 118, 0.25)',
+    calibWarnStroke: '#ffab00',
+    calibWarnFill: 'rgba(255, 171, 0, 0.25)',
+    calibBlockStroke: '#ff3d00',
+    calibBlockFill: 'rgba(255, 61, 0, 0.25)',
 
     // Invalid flash
     flashOuter: 'rgba(255, 61, 0, 0.8)',
@@ -188,7 +190,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             obstacleStore.obstacles,
             obstacleStore.drawRect,
             uiStore.panels,
-            uiStore.selectedCalibrationTagId,
+            uiStore.calibrationTarget,
+            uiStore.calibrationPlacement,
             uiStore.detectedTags,
             mousePosition.value,
         ],
@@ -610,106 +613,86 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         if (!ctx.value) return
 
         const detectedTags = uiStore.detectedTags
-        const selectedTagId = uiStore.selectedCalibrationTagId
-        const calibrationOpen = uiStore.panels.calibrationOpen
+        if (!uiStore.panels.calibrationOpen || detectedTags.length === 0) return
 
-        if (!calibrationOpen || detectedTags.length === 0) return
+        const target = uiStore.calibrationTarget
+        const placement = uiStore.calibrationPlacement
 
-        // Draw all detected tags with dim markers for spatial context
         for (const tag of detectedTags) {
             if (!tag.corners || tag.corners.length !== 4) continue
-            if (tag.id === selectedTagId) continue // drawn separately below
 
-            const scaledCorners = tag.corners.map((corner: [number, number]) =>
+            const corners = tag.corners.map((corner: [number, number]) =>
                 naturalToCanvas(corner[0], corner[1])
             )
+            const cx = (corners[0].x + corners[2].x) / 2
+            const cy = (corners[0].y + corners[2].y) / 2
 
-            ctx.value.strokeStyle = THEME.calibTagStroke
-            ctx.value.lineWidth = 1
-            ctx.value.setLineDash([])
             ctx.value.beginPath()
-            ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
-            ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
-            ctx.value.lineTo(scaledCorners[2].x, scaledCorners[2].y)
-            ctx.value.lineTo(scaledCorners[3].x, scaledCorners[3].y)
+            ctx.value.moveTo(corners[0].x, corners[0].y)
+            for (const corner of corners.slice(1)) {
+                ctx.value.lineTo(corner.x, corner.y)
+            }
             ctx.value.closePath()
+            ctx.value.setLineDash([])
+
+            const targetTag = target?.tags.find(t => t.id === tag.id)
+            if (!targetTag) {
+                ctx.value.strokeStyle = THEME.calibTagStroke
+                ctx.value.lineWidth = 1
+                ctx.value.stroke()
+                ctx.value.fillStyle = THEME.calibTagLabel
+                ctx.value.font = THEME.fontCalibSmall
+                ctx.value.textAlign = 'center'
+                ctx.value.textBaseline = 'middle'
+                ctx.value.fillText(`Tag ${tag.id}`, cx, cy)
+                continue
+            }
+
+            const severity = placement?.tags.find(t => t.id === tag.id)?.severity ?? 'ok'
+            const stroke =
+                severity === 'blocking'
+                    ? THEME.calibBlockStroke
+                    : severity === 'warning'
+                      ? THEME.calibWarnStroke
+                      : THEME.calibOkStroke
+            const fill =
+                severity === 'blocking'
+                    ? THEME.calibBlockFill
+                    : severity === 'warning'
+                      ? THEME.calibWarnFill
+                      : THEME.calibOkFill
+
+            ctx.value.fillStyle = fill
+            ctx.value.fill()
+            ctx.value.strokeStyle = stroke
+            ctx.value.lineWidth = 3
             ctx.value.stroke()
 
-            const cx = (scaledCorners[0].x + scaledCorners[2].x) / 2
-            const cy = (scaledCorners[0].y + scaledCorners[2].y) / 2
-            ctx.value.fillStyle = THEME.calibTagLabel
-            ctx.value.font = THEME.fontCalibSmall
+            // Line from the centre to the middle of the top edge shows which way is UP
+            ctx.value.beginPath()
+            ctx.value.moveTo(cx, cy)
+            ctx.value.lineTo((corners[0].x + corners[1].x) / 2, (corners[0].y + corners[1].y) / 2)
+            ctx.value.lineWidth = 2
+            ctx.value.stroke()
+
+            ctx.value.fillStyle = stroke
+            for (const corner of corners) {
+                ctx.value.beginPath()
+                ctx.value.arc(corner.x, corner.y, 4, 0, Math.PI * 2)
+                ctx.value.fill()
+            }
+
+            const label = targetTag.label.split(' (')[0]
+            ctx.value.font = THEME.fontCalibLarge
             ctx.value.textAlign = 'center'
             ctx.value.textBaseline = 'middle'
-            ctx.value.fillText(`Tag ${tag.id}`, cx, cy)
+            const labelWidth = ctx.value.measureText(label).width + 12
+            ctx.value.fillStyle = stroke
+            ctx.value.fillRect(cx - labelWidth / 2, cy + 8, labelWidth, 22)
+            ctx.value.fillStyle = THEME.labelBg
+            ctx.value.fillText(label, cx, cy + 19)
         }
 
-        // Draw selected tag with prominent highlight
-        if (selectedTagId === null) {
-            ctx.value.textAlign = 'left'
-            ctx.value.textBaseline = 'alphabetic'
-            return
-        }
-
-        const selectedTag = detectedTags.find(tag => tag.id === selectedTagId)
-        if (!selectedTag || !selectedTag.corners || selectedTag.corners.length !== 4) {
-            ctx.value.textAlign = 'left'
-            ctx.value.textBaseline = 'alphabetic'
-            return
-        }
-
-        const scaledCorners = selectedTag.corners.map((corner: [number, number]) =>
-            naturalToCanvas(corner[0], corner[1])
-        )
-
-        // Glow effect
-        ctx.value.save()
-        ctx.value.shadowBlur = 15
-        ctx.value.shadowColor = THEME.calibSelectedGlow
-
-        // Thick cyan outline
-        ctx.value.strokeStyle = THEME.calibSelectedStroke
-        ctx.value.lineWidth = 4
-        ctx.value.setLineDash([])
-        ctx.value.beginPath()
-        ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
-        ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
-        ctx.value.lineTo(scaledCorners[2].x, scaledCorners[2].y)
-        ctx.value.lineTo(scaledCorners[3].x, scaledCorners[3].y)
-        ctx.value.closePath()
-        ctx.value.stroke()
-
-        ctx.value.restore()
-
-        // Stronger fill
-        ctx.value.fillStyle = THEME.calibSelectedFill
-        ctx.value.beginPath()
-        ctx.value.moveTo(scaledCorners[0].x, scaledCorners[0].y)
-        ctx.value.lineTo(scaledCorners[1].x, scaledCorners[1].y)
-        ctx.value.lineTo(scaledCorners[2].x, scaledCorners[2].y)
-        ctx.value.lineTo(scaledCorners[3].x, scaledCorners[3].y)
-        ctx.value.closePath()
-        ctx.value.fill()
-
-        // Corner markers
-        ctx.value.fillStyle = THEME.calibCornerFill
-        for (const corner of scaledCorners) {
-            ctx.value.beginPath()
-            ctx.value.arc(corner.x, corner.y, 5, 0, Math.PI * 2)
-            ctx.value.fill()
-        }
-
-        // Larger label
-        const centerX = (scaledCorners[0].x + scaledCorners[2].x) / 2
-        const centerY = (scaledCorners[0].y + scaledCorners[2].y) / 2
-        ctx.value.fillStyle = THEME.calibSelectedStroke
-        ctx.value.fillRect(centerX - 35, centerY - 27, 70, 24)
-
-        ctx.value.fillStyle = THEME.labelBg
-        ctx.value.font = THEME.fontCalibLarge
-        ctx.value.textAlign = 'center'
-        ctx.value.textBaseline = 'middle'
-        ctx.value.fillText(`Tag ${selectedTagId}`, centerX, centerY - 15)
         ctx.value.textAlign = 'left'
         ctx.value.textBaseline = 'alphabetic'
     }

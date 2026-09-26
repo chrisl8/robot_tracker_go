@@ -48,6 +48,8 @@ export interface RobotStatus {
 export interface CalibrationState {
     state: 'not_calibrated' | 'calibrating' | 'complete' | 'calibrated'
     message?: string
+    resolutionMismatch?: boolean
+    calibratedResolution?: [number, number]
 }
 
 export interface DetectedTagInfo {
@@ -56,21 +58,54 @@ export interface DetectedTagInfo {
     corners: [number, number][]
 }
 
+export type CalibrationTagRole = 'center' | 'corner'
+
+export interface CalibrationTargetTag {
+    id: number
+    label: string
+    role: CalibrationTagRole
+    col: number
+    row: number
+}
+
+export interface CalibrationTarget {
+    tagSize: number
+    defaultWidth: number
+    defaultDepth: number
+    tags: CalibrationTargetTag[]
+}
+
 export interface CalibrationTagsResponse {
     tags: DetectedTagInfo[]
-    count: number
+    frameWidth: number
+    frameHeight: number
+    target: CalibrationTarget
+}
+
+export type CalibrationRating = 'good' | 'ok' | 'poor'
+
+export interface CalibrationTagResidual {
+    id: number
+    label: string
+    rmsCm: number
+    maxCm: number
+}
+
+export interface CalibrationComputeRequest {
+    width: number
+    depth: number
+    tags: { id: number; corners: [number, number][] }[]
 }
 
 export interface CalibrationComputeResponse {
     state: string
-    tag_id?: number
-    computed_width?: number
-    computed_height?: number
-    pixels_per_meter?: number
+    rmsCm?: number
+    maxCm?: number
+    rating?: CalibrationRating
+    perTag?: CalibrationTagResidual[]
     message?: string
     error?: string
     filename?: string
-    homography?: number[][]
 }
 
 // WebSocket message types (discriminated union)
@@ -81,7 +116,6 @@ export type WebSocketMessage =
     | StatusMessage
     | BBoxMessage
     | CalibrationMessage
-    | CalibrationTagsMessage
     | DestinationMessage
     | DestinationClearMessage
     | PathsMessage
@@ -144,24 +178,12 @@ export interface CalibrationMessage {
     calibration: CalibrationState
 }
 
-export interface CalibrationTagsMessage {
-    type: 'calibration_tags'
-    tags: DetectedTagInfo[]
-    count: number
-}
-
 // API Request types
 export interface AddObstacleRequest {
     pixel_top_left: [number, number]
     pixel_bottom_right: [number, number]
     name: string
     clearance: number
-}
-
-export interface CalibrationComputeRequest {
-    tag_id: number
-    tag_size: number
-    corners: [number, number][]
 }
 
 // Command types

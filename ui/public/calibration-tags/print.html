@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Calibration Tags - Print Sheet</title>
+        <style>
+            @page {
+                size: auto;
+                margin: 8mm;
+            }
+            * {
+                box-sizing: border-box;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            body {
+                margin: 0;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    'Segoe UI',
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                color: #000;
+                background: #fff;
+            }
+            .instructions {
+                max-width: 190mm;
+                margin: 0 auto;
+                padding: 12px 16px 20px;
+                background: #f4f6f8;
+                border-bottom: 2px solid #c5ccd3;
+                line-height: 1.45;
+            }
+            .instructions h1 {
+                margin: 0 0 8px;
+                font-size: 22px;
+            }
+            .instructions ol {
+                margin: 8px 0;
+                padding-left: 22px;
+            }
+            .instructions li {
+                margin: 4px 0;
+            }
+            .instructions .warn {
+                font-weight: 700;
+            }
+            .sheet {
+                width: 194mm;
+                margin: 0 auto;
+                padding: 0;
+                text-align: center;
+                break-after: page;
+                page-break-after: always;
+            }
+            .sheet:last-of-type {
+                break-after: auto;
+                page-break-after: auto;
+            }
+            .label {
+                font-size: 15mm;
+                font-weight: 800;
+                line-height: 1.05;
+                margin: 0;
+            }
+            .sublabel {
+                font-size: 5mm;
+                margin: 1mm 0 0;
+            }
+            .up {
+                height: 14mm;
+                margin: 2mm 0 0;
+                font-size: 5mm;
+                font-weight: 700;
+            }
+            .up svg {
+                display: block;
+                margin: 0 auto;
+                width: 8mm;
+                height: 9mm;
+            }
+            .tag {
+                display: block;
+                width: 187.5mm;
+                height: 187.5mm;
+                margin: 0 auto;
+            }
+            .checks {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8mm;
+                margin-top: 3mm;
+                font-size: 4mm;
+            }
+            .scale {
+                width: 100mm;
+                border-top: 0.6mm solid #000;
+                position: relative;
+                padding-top: 1.5mm;
+                text-align: center;
+            }
+            .scale::before,
+            .scale::after {
+                content: '';
+                position: absolute;
+                top: -2mm;
+                width: 0.6mm;
+                height: 4mm;
+                background: #000;
+            }
+            .scale::before {
+                left: 0;
+            }
+            .scale::after {
+                right: 0;
+            }
+            .checknote {
+                text-align: left;
+                max-width: 80mm;
+            }
+            @media print {
+                .instructions {
+                    display: none;
+                }
+            }
+            @media screen {
+                .sheet {
+                    margin: 12px auto;
+                    padding: 8mm 0;
+                    border: 1px dashed #999;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <section class="instructions">
+            <h1>Calibration tags: print sheet</h1>
+            <p>
+                Five tags, one per page: <strong>Center</strong> and <strong>Corner 1-4</strong>.
+                The calibration wizard tells you where to put them.
+            </p>
+            <ol>
+                <li>
+                    Print at <strong>100% / "Actual size"</strong>. Do
+                    <span class="warn">not</span> use "Fit to page" or "Scale to fit". Letter and A4
+                    both work.
+                </li>
+                <li>Use plain matte paper (glossy paper causes glare the camera cannot read).</li>
+                <li>
+                    On every page, check that the scale bar measures <strong>10 cm</strong> and that
+                    the black square measures <strong>15 cm</strong> across. If not, fix the print
+                    scale and reprint that page.
+                </li>
+                <li>
+                    Cut off the page margins and tape each tag flat on the floor (no curling or
+                    wrinkles).
+                </li>
+                <li>
+                    The arrow on each tag marks its <strong>UP</strong> side: point it toward the
+                    top of the camera image.
+                </li>
+            </ol>
+            <p>
+                The tags only need to be on the floor while you calibrate. Pick them up afterwards
+                and use them again only if the camera moves or its resolution changes.
+            </p>
+        </section>
+
+        <section class="sheet">
+            <h2 class="label">CENTER</h2>
+            <p class="sublabel">Middle of the driving area (tag ID 100)</p>
+            <div class="up">
+                <svg viewBox="0 0 8 9" aria-hidden="true">
+                    <path d="M4 0 L8 5 H5.2 V9 H2.8 V5 H0 Z" fill="#000" />
+                </svg>
+                UP
+            </div>
+            <img class="tag" src="tag-100.svg" alt="Calibration tag 100 (Center)" />
+            <div class="checks">
+                <div class="scale">10 cm</div>
+                <div class="checknote">
+                    Black square must measure 15 cm. If not, reprint at 100%.
+                </div>
+            </div>
+        </section>
+
+        <section class="sheet">
+            <h2 class="label">CORNER 1</h2>
+            <p class="sublabel">Top-left as seen by the camera (tag ID 101)</p>
+            <div class="up">
+                <svg viewBox="0 0 8 9" aria-hidden="true">
+                    <path d="M4 0 L8 5 H5.2 V9 H2.8 V5 H0 Z" fill="#000" />
+                </svg>
+                UP
+            </div>
+            <img class="tag" src="tag-101.svg" alt="Calibration tag 101 (Corner 1)" />
+            <div class="checks">
+                <div class="scale">10 cm</div>
+                <div class="checknote">
+                    Black square must measure 15 cm. If not, reprint at 100%.
+                </div>
+            </div>
+        </section>
+
+        <section class="sheet">
+            <h2 class="label">CORNER 2</h2>
+            <p class="sublabel">Top-right as seen by the camera (tag ID 102)</p>
+            <div class="up">
+                <svg viewBox="0 0 8 9" aria-hidden="true">
+                    <path d="M4 0 L8 5 H5.2 V9 H2.8 V5 H0 Z" fill="#000" />
+                </svg>
+                UP
+            </div>
+            <img class="tag" src="tag-102.svg" alt="Calibration tag 102 (Corner 2)" />
+            <div class="checks">
+                <div class="scale">10 cm</div>
+                <div class="checknote">
+                    Black square must measure 15 cm. If not, reprint at 100%.
+                </div>
+            </div>
+        </section>
+
+        <section class="sheet">
+            <h2 class="label">CORNER 3</h2>
+            <p class="sublabel">Bottom-right as seen by the camera (tag ID 103)</p>
+            <div class="up">
+                <svg viewBox="0 0 8 9" aria-hidden="true">
+                    <path d="M4 0 L8 5 H5.2 V9 H2.8 V5 H0 Z" fill="#000" />
+                </svg>
+                UP
+            </div>
+            <img class="tag" src="tag-103.svg" alt="Calibration tag 103 (Corner 3)" />
+            <div class="checks">
+                <div class="scale">10 cm</div>
+                <div class="checknote">
+                    Black square must measure 15 cm. If not, reprint at 100%.
+                </div>
+            </div>
+        </section>
+
+        <section class="sheet">
+            <h2 class="label">CORNER 4</h2>
+            <p class="sublabel">Bottom-left as seen by the camera (tag ID 104)</p>
+            <div class="up">
+                <svg viewBox="0 0 8 9" aria-hidden="true">
+                    <path d="M4 0 L8 5 H5.2 V9 H2.8 V5 H0 Z" fill="#000" />
+                </svg>
+                UP
+            </div>
+            <img class="tag" src="tag-104.svg" alt="Calibration tag 104 (Corner 4)" />
+            <div class="checks">
+                <div class="scale">10 cm</div>
+                <div class="checknote">
+                    Black square must measure 15 cm. If not, reprint at 100%.
+                </div>
+            </div>
+        </section>
+    </body>
+</html>

@@ -12,7 +12,7 @@ Built for [Vorpal the Hexapod](https://log.ekpyroticfrood.net/vorpal-the-hexapod
 - **YOLOv8 obstacle detection** — real-time detection of objects on the playing field
 - **A\* path planning** — global paths with velocity-obstacle local avoidance and multi-robot coordination
 - **Vue 3 web UI** — live MJPEG video with canvas overlay showing tracks, paths, and obstacle boundaries; click anywhere to send a robot there
-- **Web-based calibration** — four-point homography mapping from pixel coordinates to real-world positions
+- **Guided web calibration** — print five tags, lay them out, and the wizard checks placement live, fits the pixel-to-floor mapping and reports its accuracy in centimeters
 - **Arduino serial control** — single ASCII commands (F/B/L/R/S) at 9600 baud
 - **Demo mode** — run the full UI with simulated robots, no camera or hardware required
 
@@ -91,6 +91,29 @@ Format: `{char}\r\n` — for example `F\r\n`.
 ./scripts/run.sh --list-ports
 ```
 
+### Calibration
+
+Calibration teaches the system how camera pixels map to positions on the floor. It uses a
+printable target of five tags: one **Center** tag and four **Corner** tags (tag36h11 IDs 100-104,
+reserved: robots must not use them).
+
+1. Open the web UI and click the calibration badge at the bottom to start the wizard.
+2. **Print** the tags from the link in the wizard (or open `/calibration-tags/print.html`).
+   Print at 100% / "Actual size", not "fit to page", on matte paper. Each black square must measure
+   **15 cm**; if it doesn't, reprint.
+3. **Lay out** the tags on the floor where the robots will drive: Center in the middle, the four corners
+   on a rectangle whose width and depth you measure with a tape measure and enter in the wizard. Every tag's
+   UP arrow points toward the top of the camera image.
+4. **Adjust** using the live checklist: it tells you when a tag is too small, too tilted, too near the edge of
+   the picture, or when the tags don't cover enough of the view. Move tags as suggested, then calibrate.
+5. The wizard reports the fit error in centimeters. A misplaced tag is named and the calibration is **not**
+   saved until the layout is fixed.
+
+**Pick the tags up afterwards.** They are only needed while calibrating; the result is saved to
+`config/calibration_<camera>.yaml` and loaded on every start. Recalibrate only if the camera is moved or
+its resolution changes (the calibration records its resolution, and the UI badge says "Recalibrate"
+if the camera is now delivering a different one).
+
 ### YOLO Model
 
 A pre-trained YOLOv8n ONNX model is included at `assets/yolov8n.onnx`. No export step is needed.
@@ -158,7 +181,7 @@ robot_tracker_go/
 │   ├── controller/             # Arduino serial communication
 │   ├── detection/              # AprilTag + YOLOv8 detection
 │   ├── planning/               # A* path planning + velocity obstacles
-│   ├── position/               # Homography calibration (pixel ↔ world)
+│   ├── position/               # Homography calibration (pixel ↔ world) and calibration target fit
 │   ├── tracking/               # ByteTrack multi-object tracker + Kalman filter
 │   ├── ui/                     # Gin HTTP server, MJPEG stream, WebSocket, REST API
 │   └── utils/                  # Logging utilities

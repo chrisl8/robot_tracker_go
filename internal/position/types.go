@@ -83,10 +83,3 @@ func sqrt(x float64) float64 {
 	}
 	return result
 }
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}

@@ -831,6 +831,10 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	}
 	_ = ok
 
+	if rs.positionEst != nil {
+		rs.positionEst.SetFrameSize(width, height)
+	}
+
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 	detectTime := time.Since(frameStart)
 
@@ -934,7 +938,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 			Corners: tag.Corners,
 		})
 	}
-	rs.webServer.UpdateDetectedTags(detectedTags)
+	rs.webServer.UpdateDetectedTags(detectedTags, width, height)
 
 	if rs.frameNum%10 == 0 && rs.webServer != nil {
 		paths := rs.planner.GetPaths()
@@ -1557,7 +1561,8 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 				Corners: tag.Corners,
 			})
 		}
-		rs.webServer.UpdateDetectedTags(detectedTags)
+		detectedTags = append(detectedTags, demoCalibrationTagInfos(width, height)...)
+		rs.webServer.UpdateDetectedTags(detectedTags, width, height)
 	}
 }
 

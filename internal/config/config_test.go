@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -93,5 +95,34 @@ func TestGetRobotByName_NotFound(t *testing.T) {
 	robot := cfg.GetRobotByName("nonexistent")
 	if robot != nil {
 		t.Error("GetRobotByName() should return nil for nonexistent robot")
+	}
+}
+
+func TestLoad_ReservedCalibrationTagIDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		tagID   int
+		wantErr bool
+	}{
+		{"ordinary robot id", 1, false},
+		{"just below reserved range", 99, false},
+		{"first reserved id", 100, true},
+		{"last reserved id", 104, true},
+		{"just above reserved range", 105, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			content := fmt.Sprintf("robots:\n  - tag_id: %d\n    name: \"r\"\n    diameter: 0.18\n", tt.tagID)
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatalf("writing config: %v", err)
+			}
+
+			_, err := Load(path)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }

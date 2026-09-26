@@ -5,6 +5,7 @@ package ui
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -26,7 +27,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"gopkg.in/yaml.v3"
 )
 
 type WebServer struct {
@@ -49,13 +49,14 @@ type WebServer struct {
 	calibrationMessage  string
 	calibrationFilename string
 	calibrationTagSize  float64
-	calibrationData     *CalibrationSaveRequest
 	cameraName          string
 
 	arduinoConnected bool
 	arduinoMutex     sync.RWMutex
 
 	detectedTags    []DetectedTagInfo
+	detectedFrameW  int
+	detectedFrameH  int
 	detectedTagsMut sync.RWMutex
 	lastTagUpdate   time.Time
 
@@ -171,22 +172,6 @@ type CommandRequest struct {
 	Command string `json:"command"`
 }
 
-type CalibrationStartRequest struct {
-	TagSize float64 `json:"tagSize"`
-}
-
-type CalibrationDetectRequest struct {
-	TagID   int           `json:"tagId"`
-	Corners [4][2]float64 `json:"corners"`
-}
-
-type CalibrationSaveRequest struct {
-	ComputedWidth  float64     `json:"computedWidth"`
-	ComputedHeight float64     `json:"computedHeight"`
-	PixelsPerMeter float64     `json:"pixelsPerMeter"`
-	Homography     [][]float64 `json:"homography"`
-}
-
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -233,6 +218,7 @@ func (s *WebServer) setupRoutes() {
 		utils.Logf("Warning: Failed to create static FS sub-directory: %v", err)
 	} else {
 		s.engine.GET("/assets/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
+		s.engine.GET("/calibration-tags/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
 	}
 	s.engine.GET("/", s.handleIndex)
 	s.engine.GET("/stream", s.handleMJPEG)
@@ -639,27 +625,24 @@ func (s *WebServer) handleCalibrationStatus(c *gin.Context) {
 	tagSize := s.calibrationTagSize
 	s.calibrationMutex.RUnlock()
 
-	c.JSON(http.StatusOK, gin.H{
-		"state":    state,
-		"message":  message,
-		"filename": filename,
-		"tagSize":  tagSize,
-	})
+	resp := gin.H{
+		"state":              state,
+		"message":            message,
+		"filename":           filename,
+		"tagSize":            tagSize,
+		"resolutionMismatch": false,
+	}
+	if pe := s.positionEstimator; pe != nil {
+		resp["resolutionMismatch"] = pe.ResolutionMismatch()
+		if w, h, ok := pe.CalibratedResolution(); ok {
+			resp["calibratedResolution"] = [2]int{w, h}
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (s *WebServer) handleCalibrationStart(c *gin.Context) {
-	var req CalibrationStartRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	tagSize := req.TagSize
-	if tagSize <= 0 {
-		tagSize = 0.15
-	}
-
-	s.SetCalibrationState("detecting", "Looking for AprilTags...", "", tagSize)
+	s.SetCalibrationState("detecting", "Looking for the calibration tags...", "", position.TargetTagSize)
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "detecting"})
 }
@@ -670,174 +653,167 @@ type DetectedTagInfo struct {
 	Corners [4][2]float64 `json:"corners"`
 }
 
-type CalibrationDetectedTagsResponse struct {
-	Tags  []DetectedTagInfo `json:"tags"`
-	Count int               `json:"count"`
+// CalibrationTargetSpec describes the printable calibration target so the UI
+// does not have to hardcode tag IDs, labels or sizes.
+type CalibrationTargetSpec struct {
+	TagSize      float64              `json:"tagSize"`
+	DefaultWidth float64              `json:"defaultWidth"`
+	DefaultDepth float64              `json:"defaultDepth"`
+	Tags         []position.TargetTag `json:"tags"`
 }
 
-func (s *WebServer) UpdateDetectedTags(tags []DetectedTagInfo) {
+func calibrationTargetSpec() CalibrationTargetSpec {
+	return CalibrationTargetSpec{
+		TagSize:      position.TargetTagSize,
+		DefaultWidth: position.DefaultTargetWidth,
+		DefaultDepth: position.DefaultTargetDepth,
+		Tags:         position.TargetTags(),
+	}
+}
+
+type CalibrationDetectedTagsResponse struct {
+	Tags        []DetectedTagInfo     `json:"tags"`
+	Count       int                   `json:"count"`
+	FrameWidth  int                   `json:"frameWidth"`
+	FrameHeight int                   `json:"frameHeight"`
+	Target      CalibrationTargetSpec `json:"target"`
+}
+
+func (s *WebServer) UpdateDetectedTags(tags []DetectedTagInfo, frameWidth, frameHeight int) {
 	s.detectedTagsMut.Lock()
 	s.detectedTags = tags
+	s.detectedFrameW = frameWidth
+	s.detectedFrameH = frameHeight
 	s.lastTagUpdate = time.Now()
 	s.detectedTagsMut.Unlock()
 }
 
 func (s *WebServer) handleCalibrationDetectedTags(c *gin.Context) {
 	s.detectedTagsMut.RLock()
-	if time.Since(s.lastTagUpdate) > 2*time.Second {
-		s.detectedTags = nil
-	}
 	tags := s.detectedTags
+	if time.Since(s.lastTagUpdate) > 2*time.Second {
+		tags = nil
+	}
+	width, height := s.detectedFrameW, s.detectedFrameH
 	s.detectedTagsMut.RUnlock()
-	c.JSON(http.StatusOK, gin.H{"tags": tags, "count": len(tags)})
+
+	if tags == nil {
+		tags = []DetectedTagInfo{}
+	}
+	c.JSON(http.StatusOK, CalibrationDetectedTagsResponse{
+		Tags:        tags,
+		Count:       len(tags),
+		FrameWidth:  width,
+		FrameHeight: height,
+		Target:      calibrationTargetSpec(),
+	})
+}
+
+type CalibrationTagCapture struct {
+	ID      int           `json:"id"`
+	Corners [4][2]float64 `json:"corners"`
 }
 
 type CalibrationComputeRequest struct {
-	TagID   int         `json:"tagId"`
-	TagSize float64     `json:"tagSize"`
-	Corners [][]float64 `json:"corners"`
+	Width float64                 `json:"width"`
+	Depth float64                 `json:"depth"`
+	Tags  []CalibrationTagCapture `json:"tags"`
 }
 
 type CalibrationComputeResponse struct {
-	State          string      `json:"state"`
-	TagID          int         `json:"tagId,omitempty"`
-	ComputedWidth  float64     `json:"computedWidth,omitempty"`
-	ComputedHeight float64     `json:"computedHeight,omitempty"`
-	PixelsPerMeter float64     `json:"pixelsPerMeter,omitempty"`
-	Message        string      `json:"message,omitempty"`
-	Error          string      `json:"error,omitempty"`
-	Filename       string      `json:"filename,omitempty"`
-	Homography     [][]float64 `json:"homography,omitempty"`
+	State      string            `json:"state"`
+	RMSCm      float64           `json:"rmsCm"`
+	MaxCm      float64           `json:"maxCm"`
+	QualityCm  float64           `json:"qualityCm"`
+	Rating     string            `json:"rating,omitempty"`
+	WorstTagID int               `json:"worstTagId,omitempty"`
+	PerTag     []position.TagFit `json:"perTag,omitempty"`
+	Message    string            `json:"message,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Filename   string            `json:"filename,omitempty"`
+}
+
+func worstTagLabel(fit *position.FitResult) string {
+	for _, t := range fit.PerTag {
+		if t.ID == fit.WorstTagID {
+			return t.Label
+		}
+	}
+	return ""
 }
 
 func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 	var req CalibrationComputeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, CalibrationComputeResponse{State: "error", Error: err.Error()})
 		return
 	}
 
-	utils.Logf("Calibration compute: tagId=%d, tagSize=%.3f, corners=%v", req.TagID, req.TagSize, req.Corners)
-
-	tagSize := req.TagSize
-	if tagSize <= 0 {
-		tagSize = 0.15
+	captures := make([]position.TargetCapture, 0, len(req.Tags))
+	for _, t := range req.Tags {
+		capture := position.TargetCapture{ID: t.ID}
+		for i, corner := range t.Corners {
+			capture.Corners[i] = position.Point2D{X: corner[0], Y: corner[1]}
+		}
+		captures = append(captures, capture)
 	}
+	utils.Logf("Calibration compute: %d tags, spread %.2f x %.2f m", len(captures), req.Width, req.Depth)
 
-	if len(req.Corners) < 4 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "need at least 4 corner points"})
-		return
-	}
-
-	halfSize := tagSize / 2.0
-
-	srcPoints := []position.Point2D{
-		{X: req.Corners[0][0], Y: req.Corners[0][1]},
-		{X: req.Corners[1][0], Y: req.Corners[1][1]},
-		{X: req.Corners[2][0], Y: req.Corners[2][1]},
-		{X: req.Corners[3][0], Y: req.Corners[3][1]},
-	}
-
-	dstPoints := []position.Point2D{
-		{X: -halfSize, Y: -halfSize},
-		{X: halfSize, Y: -halfSize},
-		{X: halfSize, Y: halfSize},
-		{X: -halfSize, Y: halfSize},
-	}
-
-	h := position.NewHomography()
-	err := h.ComputeFromPoints(srcPoints, dstPoints)
+	fit, err := position.FitTarget(captures, req.Width, req.Depth)
 	if err != nil {
-		utils.Logf("Homography compute failed: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to compute homography: %v", err)})
+		resp := CalibrationComputeResponse{State: "error", Error: err.Error()}
+		if fit != nil {
+			resp.RMSCm, resp.MaxCm, resp.QualityCm = fit.RMSCm, fit.MaxCm, fit.QualityCm
+			resp.Rating, resp.WorstTagID, resp.PerTag = fit.Rating, fit.WorstTagID, fit.PerTag
+			if errors.Is(err, position.ErrPoorFit) {
+				resp.Error = fmt.Sprintf("The tags do not line up with the measured layout (%.1f cm off). %s looks the most out of place. Check the tape-measure distances and that every tag lies flat and points the same way, then try again. Nothing was saved.",
+					fit.QualityCm, worstTagLabel(fit))
+			}
+		}
+		utils.Logf("Calibration rejected: %v", err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
-	utils.Logf("Homography computed: valid=%v, H=%v", h.IsValid(), h.H)
-
-	computedWidth := tagSize
-	computedHeight := tagSize
-
-	pixelsPerMeter := h.GetPixelsPerMeter()
-
-	hMatrix := [][]float64{
-		{h.H[0][0], h.H[0][1], h.H[0][2]},
-		{h.H[1][0], h.H[1][1], h.H[1][2]},
-		{h.H[2][0], h.H[2][1], h.H[2][2]},
+	s.detectedTagsMut.RLock()
+	frameW, frameH := s.detectedFrameW, s.detectedFrameH
+	s.detectedTagsMut.RUnlock()
+	if frameW <= 0 || frameH <= 0 {
+		c.JSON(http.StatusBadRequest, CalibrationComputeResponse{State: "error", Error: "no camera frame has been seen yet"})
+		return
 	}
 
-	s.calibrationMutex.Lock()
-	s.calibrationData = &CalibrationSaveRequest{
-		ComputedWidth:  computedWidth,
-		ComputedHeight: computedHeight,
-		PixelsPerMeter: pixelsPerMeter,
-		Homography:     hMatrix,
-	}
-	s.calibrationTagSize = tagSize
-	s.calibrationMutex.Unlock()
+	utils.Logf("Homography fit: rms=%.2fcm max=%.2fcm quality=%.2fcm rating=%s H=%v",
+		fit.RMSCm, fit.MaxCm, fit.QualityCm, fit.Rating, fit.Homography.H)
 
 	cameraFile := GetCalibrationFilename(s.cameraName)
-
-	calib := &position.CalibrationConfig{
-		Version: 1,
-		Camera: position.CameraInfo{
-			Name:       s.cameraName,
-			Resolution: [2]int{1280, 720},
-		},
-		Intrinsics: position.CameraIntrinsics{
-			CameraMatrix: [3][3]float64{
-				{pixelsPerMeter * 800, 0, 640},
-				{0, pixelsPerMeter * 800, 360},
-				{0, 0, 1},
-			},
-			DistortionCoeffs: [5]float64{0, 0, 0, 0, 0},
-			Width:            1280,
-			Height:           720,
-		},
-		Homography:   hMatrix,
-		WorldScale:   pixelsPerMeter,
-		TagSize:      tagSize,
-		CalibratedAt: "2026-02-06",
-	}
-
-	saveToFile := func(filename string) error {
-		data, err := yaml.Marshal(calib)
-		if err != nil {
-			return fmt.Errorf("failed to marshal: %w", err)
-		}
-		dir := filepath.Dir(filename)
-		if err := os.MkdirAll(dir, 0750); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
-		}
-		// #nosec G304
-		// #nosec G306
-		if err := os.WriteFile(filename, data, 0600); err != nil {
-			return fmt.Errorf("failed to write file: %w", err)
-		}
-		return nil
-	}
-
-	if err := saveToFile(cameraFile); err != nil {
-		utils.Logf("Warning: failed to save calibration: %v", err)
+	cfg := position.NewCalibrationConfig(s.cameraName, frameW, frameH, fit, time.Now())
+	if err := position.SaveCalibration(cameraFile, cfg); err != nil {
+		utils.Logf("Failed to save calibration: %v", err)
+		c.JSON(http.StatusInternalServerError, CalibrationComputeResponse{State: "error", Error: err.Error()})
+		return
 	}
 
 	if s.OnCalibrationComplete != nil {
 		s.OnCalibrationComplete(cameraFile)
 	}
 
-	s.SetCalibrationState("complete",
-		fmt.Sprintf("Calibration complete! Area: %.2fm x %.2fm", computedWidth, computedHeight),
-		cameraFile, tagSize)
+	message := fmt.Sprintf("Calibration saved: %.1f cm average error (%s).", fit.RMSCm, fit.Rating)
+	if fit.Rating != position.RatingGood {
+		message += fmt.Sprintf(" %s is the least consistent tag; re-check its position if accuracy matters.", worstTagLabel(fit))
+	}
+	s.SetCalibrationState("calibrated", message, cameraFile, position.TargetTagSize)
 
 	c.JSON(http.StatusOK, CalibrationComputeResponse{
-		State:          "complete",
-		TagID:          req.TagID,
-		ComputedWidth:  computedWidth,
-		ComputedHeight: computedHeight,
-		PixelsPerMeter: pixelsPerMeter,
-		Message:        "Calibration computed successfully",
-		Filename:       cameraFile,
-		Homography:     hMatrix,
+		State:      "calibrated",
+		RMSCm:      fit.RMSCm,
+		MaxCm:      fit.MaxCm,
+		QualityCm:  fit.QualityCm,
+		Rating:     fit.Rating,
+		WorstTagID: fit.WorstTagID,
+		PerTag:     fit.PerTag,
+		Message:    message,
+		Filename:   cameraFile,
 	})
 }
 

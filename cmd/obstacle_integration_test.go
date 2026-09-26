@@ -303,3 +303,18 @@ func TestExcludeYOLONearKnownRobots_PassthroughWhenUncalibrated(t *testing.T) {
 		t.Errorf("expected passthrough (uncalibrated) to keep all detections, got %d", len(filtered))
 	}
 }
+
+// TestDemoTargetCapturesFitCleanly guards the demo-mode calibration target:
+// it must be a layout the real fit rates "good", otherwise the wizard demo
+// (and its Playwright coverage) would show a misleading failure.
+func TestDemoTargetCapturesFitCleanly(t *testing.T) {
+	for _, size := range [][2]int{{1280, 720}, {1920, 1080}} {
+		fit, err := position.FitTarget(demoTargetCaptures(size[0], size[1]), position.DefaultTargetWidth, position.DefaultTargetDepth)
+		if err != nil {
+			t.Fatalf("%dx%d: FitTarget failed: %v", size[0], size[1], err)
+		}
+		if fit.Rating != position.RatingGood {
+			t.Errorf("%dx%d: rating = %s (quality %.2f cm), want good", size[0], size[1], fit.Rating, fit.QualityCm)
+		}
+	}
+}

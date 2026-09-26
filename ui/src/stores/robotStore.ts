@@ -76,7 +76,11 @@ export const useRobotStore = defineStore('robot', () => {
                 break
             case 'calibration':
                 if (data.calibration) {
-                    uiStore.setCalibrationState(data.calibration.state, data.calibration.message)
+                    uiStore.setCalibrationState(
+                        data.calibration.state,
+                        data.calibration.message,
+                        data.calibration.resolutionMismatch === true
+                    )
                 }
                 break
             case 'destination':

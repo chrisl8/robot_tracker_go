@@ -354,9 +354,26 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 				Corners: tag.Corners,
 			})
 		}
-		rs.webServer.UpdateDetectedTags(detectedTags)
+		detectedTags = append(detectedTags, demoCalibrationTagInfos(width, height)...)
+		rs.webServer.UpdateDetectedTags(detectedTags, width, height)
 
 		frameNum++
 		time.Sleep(33 * time.Millisecond)
 	}
+}
+
+func demoCalibrationTagInfos(width, height int) []ui.DetectedTagInfo {
+	captures := demoTargetCaptures(width, height)
+	infos := make([]ui.DetectedTagInfo, 0, len(captures))
+	for _, c := range captures {
+		var info ui.DetectedTagInfo
+		info.ID = c.ID
+		for i, p := range c.Corners {
+			info.Corners[i] = [2]float64{p.X, p.Y}
+			info.Center[0] += p.X / 4
+			info.Center[1] += p.Y / 4
+		}
+		infos = append(infos, info)
+	}
+	return infos
 }

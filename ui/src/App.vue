@@ -43,7 +43,11 @@ async function loadInitialData(): Promise<void> {
         // Load calibration status
         const calibrationResponse = await fetch('/api/calibration/status')
         const calibrationData = await calibrationResponse.json()
-        uiStore.setCalibrationState(calibrationData.state, calibrationData.message)
+        uiStore.setCalibrationState(
+            calibrationData.state,
+            calibrationData.message,
+            calibrationData.resolutionMismatch === true
+        )
     } catch (e) {
         console.error('Failed to load initial data:', e)
     }

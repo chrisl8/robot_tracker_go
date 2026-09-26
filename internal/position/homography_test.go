@@ -2,6 +2,7 @@ package position
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -277,5 +278,169 @@ func TestHomography_RotationTransform(t *testing.T) {
 
 	if math.Abs(world.X) > 0.001 || math.Abs(world.Y-1) > 0.001 {
 		t.Errorf("90-degree rotation failed, got (%f, %f), want (0, 1)", world.X, world.Y)
+	}
+}
+
+// truthWorldToPixel is a perspective-heavy world->pixel matrix used to
+// generate synthetic correspondences for the fit tests.
+var truthWorldToPixel = [3][3]float64{
+	{600, 30, 640},
+	{20, 550, 360},
+	{0.0002, 0.0005, 1},
+}
+
+func projectWorldToPixel(w Point2D) Point2D {
+	m := truthWorldToPixel
+	x := m[0][0]*w.X + m[0][1]*w.Y + m[0][2]
+	y := m[1][0]*w.X + m[1][1]*w.Y + m[1][2]
+	d := m[2][0]*w.X + m[2][1]*w.Y + m[2][2]
+	return Point2D{X: x / d, Y: y / d}
+}
+
+// gridWorldPoints returns an n-point spread over roughly a 1.2 x 0.8 m area.
+func gridWorldPoints(n int) []Point2D {
+	if n == 4 {
+		return []Point2D{{-0.6, -0.4}, {0.6, -0.4}, {0.6, 0.4}, {-0.6, 0.4}}
+	}
+	pts := make([]Point2D, 0, n)
+	for i := 0; i < n; i++ {
+		fx := float64(i%5)/4 - 0.5
+		fy := float64(i/5%4)/3 - 0.5
+		pts = append(pts, Point2D{X: fx * 1.2, Y: fy*0.8 + 0.01*float64(i)})
+	}
+	return pts
+}
+
+func TestHomography_ComputeFromPoints_RecoversTruth(t *testing.T) {
+	tests := []struct {
+		name       string
+		numPoints  int
+		noisePx    float64
+		wantMaxMM  float64
+		wantRMSCmU float64 // upper bound on fit RMS in cm
+	}{
+		{"exact four points", 4, 0, 0.01, 0.001},
+		{"exact twenty points", 20, 0, 0.01, 0.001},
+		{"twenty points half-pixel noise", 20, 0.5, 4, 0.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rng := rand.New(rand.NewSource(1))
+			world := gridWorldPoints(tt.numPoints)
+			pixels := make([]Point2D, len(world))
+			for i, w := range world {
+				p := projectWorldToPixel(w)
+				p.X += rng.NormFloat64() * tt.noisePx
+				p.Y += rng.NormFloat64() * tt.noisePx
+				pixels[i] = p
+			}
+
+			h := NewHomography()
+			if err := h.ComputeFromPoints(pixels, world); err != nil {
+				t.Fatalf("ComputeFromPoints failed: %v", err)
+			}
+
+			// Check recovery on points that were NOT part of the fit.
+			for _, w := range []Point2D{{0.1, -0.2}, {-0.55, 0.35}, {0.5, 0.3}} {
+				got := h.PixelToWorld(projectWorldToPixel(w))
+				errMM := math.Hypot(got.X-w.X, got.Y-w.Y) * 1000
+				if errMM > tt.wantMaxMM {
+					t.Errorf("world %v recovered as (%.4f, %.4f): %.3f mm off, want <= %.3f mm",
+						w, got.X, got.Y, errMM, tt.wantMaxMM)
+				}
+			}
+
+			rms, _, _ := h.ReprojectionError(pixels, world)
+			if rms > tt.wantRMSCmU {
+				t.Errorf("fit RMS = %.4f cm, want <= %.4f cm", rms, tt.wantRMSCmU)
+			}
+		})
+	}
+}
+
+func TestHomography_ComputeFromPoints_Degenerate(t *testing.T) {
+	line := []Point2D{{0, 0}, {1, 1}, {2, 2}, {3, 3}}
+	square := []Point2D{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	same := []Point2D{{5, 5}, {5, 5}, {5, 5}, {5, 5}}
+
+	tests := []struct {
+		name     string
+		src, dst []Point2D
+	}{
+		{"collinear source", line, square},
+		{"collinear destination", square, line},
+		{"coincident source", same, square},
+		{"mismatched lengths", square, square[:3]},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHomography()
+			if err := h.ComputeFromPoints(tt.src, tt.dst); err == nil {
+				t.Error("expected an error")
+			}
+			if h.Valid {
+				t.Error("homography must not be marked valid after a failed fit")
+			}
+		})
+	}
+}
+
+func TestHomography_ReprojectionError(t *testing.T) {
+	world := gridWorldPoints(20)
+	pixels := make([]Point2D, len(world))
+	for i, w := range world {
+		pixels[i] = projectWorldToPixel(w)
+	}
+
+	// Move one destination point 10 cm: the worst residual must land on it.
+	const bad = 7
+	skewed := append([]Point2D(nil), world...)
+	skewed[bad].X += 0.10
+
+	h := NewHomography()
+	if err := h.ComputeFromPoints(pixels, skewed); err != nil {
+		t.Fatalf("ComputeFromPoints failed: %v", err)
+	}
+	rms, maxCm, perPoint := h.ReprojectionError(pixels, skewed)
+
+	if len(perPoint) != len(world) {
+		t.Fatalf("got %d per-point errors, want %d", len(perPoint), len(world))
+	}
+	worst := 0
+	for i, e := range perPoint {
+		if e > perPoint[worst] {
+			worst = i
+		}
+	}
+	if worst != bad {
+		t.Errorf("worst residual at point %d, want %d (errors: %v)", worst, bad, perPoint)
+	}
+	if maxCm < 5 || maxCm > 10.5 {
+		t.Errorf("maxCm = %.2f, want between 5 and 10.5", maxCm)
+	}
+	if rms <= 0 || rms > maxCm {
+		t.Errorf("rmsCm = %.2f, want in (0, maxCm=%.2f]", rms, maxCm)
+	}
+
+	invalid := NewHomography()
+	if rms, maxCm, perPoint := invalid.ReprojectionError(pixels, world); rms != 0 || maxCm != 0 || perPoint != nil {
+		t.Error("invalid homography should report no error data")
+	}
+}
+
+func TestHomography_PixelsPerMeterFromTag(t *testing.T) {
+	// A 100 px tag covering 0.15 m: about 667 px/m.
+	half := 0.075
+	src := []Point2D{{0, 0}, {100, 0}, {100, 100}, {0, 100}}
+	dst := []Point2D{{-half, -half}, {half, -half}, {half, half}, {-half, half}}
+	h := NewHomography()
+	if err := h.ComputeFromPoints(src, dst); err != nil {
+		t.Fatalf("ComputeFromPoints failed: %v", err)
+	}
+	want := 100 / 0.15
+	if math.Abs(h.PixelsPerMeter-want)/want > 0.01 {
+		t.Errorf("PixelsPerMeter = %.1f, want about %.1f", h.PixelsPerMeter, want)
 	}
 }

@@ -424,7 +424,7 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
         uiStore.showFootprints = true
         uiStore.setDetectedTags([
             {
-                id: 1,
+                id: 100,
                 corners: [
                     [100, 100],
                     [200, 100],
@@ -434,7 +434,19 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
                 center: [150, 150],
             },
         ])
-        uiStore.setSelectedCalibrationTag(1)
+        uiStore.setCalibrationTarget({
+            tagSize: 0.15,
+            defaultWidth: 1.0,
+            defaultDepth: 0.6,
+            tags: [{ id: 100, label: 'Center', role: 'center', col: 0, row: 0 }],
+        })
+        uiStore.setCalibrationPlacement({
+            tags: [{ id: 100, label: 'Center', found: true, sizePx: 100, severity: 'warning' }],
+            issues: [],
+            allFound: false,
+            canCalibrate: false,
+        })
+        uiStore.openCalibration()
 
         robotStore.setTracks([
             {

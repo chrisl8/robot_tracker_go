@@ -25,6 +25,7 @@ const mockCanvas = {
         textAlign: '',
         textBaseline: '',
         fillText: vi.fn(),
+        measureText: vi.fn(() => ({ width: 50 })),
     })),
     getBoundingClientRect: vi.fn(() => ({ left: 0, top: 0, width: 800, height: 600 })),
     parentElement: {
@@ -100,16 +101,15 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
     })
 
     describe('REGRESSION-002: Calibration Tag Highlighting', () => {
-        it('should render calibration tag when selected', async () => {
+        it('should render a calibration target tag with its role label', async () => {
             const { useCanvas } = await import('@/composables/useCanvas')
             const { useUIStore } = await import('@/stores/uiStore')
 
             const uiStore = useUIStore()
 
-            // Set up a selected calibration tag using correct method names
             uiStore.setDetectedTags([
                 {
-                    id: 1,
+                    id: 100,
                     corners: [
                         [100, 100],
                         [200, 100],
@@ -119,7 +119,19 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
                     center: [150, 150],
                 },
             ])
-            uiStore.setSelectedCalibrationTag(1)
+            uiStore.setCalibrationTarget({
+                tagSize: 0.15,
+                defaultWidth: 1.0,
+                defaultDepth: 0.6,
+                tags: [{ id: 100, label: 'Center', role: 'center', col: 0, row: 0 }],
+            })
+            uiStore.setCalibrationPlacement({
+                tags: [{ id: 100, label: 'Center', found: true, sizePx: 100, severity: 'warning' }],
+                issues: [],
+                allFound: false,
+                canCalibrate: false,
+            })
+            uiStore.openCalibration()
 
             const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
             const { render } = useCanvas(canvasRef)

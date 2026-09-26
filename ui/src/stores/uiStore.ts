@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { CalibrationState, DetectedTagInfo } from '@/types/api'
+import type { CalibrationState, CalibrationTarget, DetectedTagInfo } from '@/types/api'
+import type { PlacementAssessment } from '@/composables/calibrationPlacement'
 import type {
     Toast,
     ToastType,
@@ -27,7 +28,8 @@ export const useUIStore = defineStore('ui', () => {
     })
 
     const detectedTags = ref<DetectedTagInfo[]>([])
-    const selectedCalibrationTagId = ref<number | null>(null)
+    const calibrationTarget = ref<CalibrationTarget | null>(null)
+    const calibrationPlacement = ref<PlacementAssessment | null>(null)
 
     const showFootprints = ref(true)
     const activityLog = ref<LogEntry[]>([])
@@ -85,16 +87,29 @@ export const useUIStore = defineStore('ui', () => {
     }
 
     // Actions - Calibration
-    function setCalibrationState(state: CalibrationState['state'], message: string = ''): void {
-        calibration.value = { state, message }
+    function setCalibrationState(
+        state: CalibrationState['state'],
+        message: string = '',
+        resolutionMismatch: boolean = false
+    ): void {
+        calibration.value = { state, message, resolutionMismatch }
     }
 
     function setDetectedTags(tags: DetectedTagInfo[]): void {
         detectedTags.value = tags
     }
 
-    function setSelectedCalibrationTag(tagId: number | null): void {
-        selectedCalibrationTagId.value = tagId
+    function setCalibrationTarget(target: CalibrationTarget | null): void {
+        calibrationTarget.value = target
+    }
+
+    function setCalibrationPlacement(placement: PlacementAssessment | null): void {
+        calibrationPlacement.value = placement
+    }
+
+    function resetCalibrationWizard(): void {
+        detectedTags.value = []
+        calibrationPlacement.value = null
     }
 
     // Actions - Keyboard
@@ -143,7 +158,8 @@ export const useUIStore = defineStore('ui', () => {
         toasts,
         calibration,
         detectedTags,
-        selectedCalibrationTagId,
+        calibrationTarget,
+        calibrationPlacement,
         keyboard,
         showFootprints,
         activityLog,
@@ -159,7 +175,9 @@ export const useUIStore = defineStore('ui', () => {
         // Calibration actions
         setCalibrationState,
         setDetectedTags,
-        setSelectedCalibrationTag,
+        setCalibrationTarget,
+        setCalibrationPlacement,
+        resetCalibrationWizard,
         // Keyboard actions
         setKey,
         resetKeyboard,
