@@ -43,6 +43,7 @@ const THEME = {
     // Calibration tag
     calibTagStroke: 'rgba(224, 230, 237, 0.5)',
     calibTagLabel: 'rgba(224, 230, 237, 0.7)',
+    calibGuideStroke: 'rgba(255, 255, 255, 0.8)',
     calibOkStroke: '#00e676',
     calibOkFill: 'rgba(0, 230, 118, 0.25)',
     calibWarnStroke: '#ffab00',
@@ -192,6 +193,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             uiStore.panels,
             uiStore.calibrationTarget,
             uiStore.calibrationPlacement,
+            uiStore.calibrationClearView,
             uiStore.detectedTags,
             mousePosition.value,
         ],
@@ -324,6 +326,12 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         if (!ctx.value) return
         updateVideoScale()
         clear()
+        if (uiStore.calibrationClearView) {
+            // Placing calibration tags: show only the guide boxes and the tags themselves
+            renderCalibrationGuides()
+            renderCalibrationTag()
+            return
+        }
         // Obstacles are now drawn by the backend on the video frame
         renderDestinationMarker()
         renderFootprints()
@@ -609,6 +617,107 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         ctx.value.fillRect(drawRect.x1, drawRect.y1, width, height)
     }
 
+    function roundedRectPath(x: number, y: number, w: number, h: number, r: number): void {
+        const c = ctx.value
+        if (!c) return
+        c.beginPath()
+        c.moveTo(x + r, y)
+        c.lineTo(x + w - r, y)
+        c.arc(x + w - r, y + r, r, -Math.PI / 2, 0)
+        c.lineTo(x + w, y + h - r)
+        c.arc(x + w - r, y + h - r, r, 0, Math.PI / 2)
+        c.lineTo(x + r, y + h)
+        c.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI)
+        c.lineTo(x, y + r)
+        c.arc(x + r, y + r, r, Math.PI, (3 * Math.PI) / 2)
+        c.closePath()
+    }
+
+    function renderCalibrationGuides(): void {
+        const c = ctx.value
+        const placement = uiStore.calibrationPlacement
+        if (!c || !placement) return
+
+        const sx = videoScale.value.x || 1
+        const sy = videoScale.value.y || 1
+
+        for (const guide of placement.guides) {
+            const center = naturalToCanvas(guide.cx, guide.cy)
+            const w = guide.sizePx * sx
+            const h = guide.sizePx * sy
+            const left = center.x - w / 2
+            const top = center.y - h / 2
+
+            const stroke =
+                guide.state === 'inside'
+                    ? THEME.calibOkStroke
+                    : guide.state === 'outside'
+                      ? THEME.calibWarnStroke
+                      : THEME.calibGuideStroke
+
+            roundedRectPath(left, top, w, h, Math.min(w, h) * 0.12)
+            if (guide.state === 'inside') {
+                c.fillStyle = THEME.calibOkFill
+                c.fill()
+            }
+            c.strokeStyle = stroke
+            c.lineWidth = guide.state === 'empty' ? 2 : 3
+            c.setLineDash(guide.state === 'inside' ? [] : [10, 7])
+            c.stroke()
+            c.setLineDash([])
+
+            // A tag detected outside its box gets a line pointing toward the box
+            if (guide.state === 'outside' && guide.tagX !== null && guide.tagY !== null) {
+                const tag = naturalToCanvas(guide.tagX, guide.tagY)
+                const endX = Math.min(Math.max(tag.x, left), left + w)
+                const endY = Math.min(Math.max(tag.y, top), top + h)
+                const angle = Math.atan2(endY - tag.y, endX - tag.x)
+                c.beginPath()
+                c.moveTo(tag.x, tag.y)
+                c.lineTo(endX, endY)
+                c.lineWidth = 3
+                c.strokeStyle = THEME.calibWarnStroke
+                c.stroke()
+                c.beginPath()
+                c.moveTo(endX, endY)
+                c.lineTo(endX - 12 * Math.cos(angle - 0.5), endY - 12 * Math.sin(angle - 0.5))
+                c.moveTo(endX, endY)
+                c.lineTo(endX - 12 * Math.cos(angle + 0.5), endY - 12 * Math.sin(angle + 0.5))
+                c.stroke()
+            }
+
+            const label = guide.label.split(' (')[0]
+            c.font = THEME.fontCalibLarge
+            c.textAlign = 'center'
+            c.textBaseline = 'middle'
+            const labelWidth = c.measureText(label).width + 12
+            c.fillStyle = stroke
+            c.fillRect(center.x - labelWidth / 2, top - 24, labelWidth, 20)
+            c.fillStyle = THEME.labelBg
+            c.fillText(label, center.x, top - 14)
+
+            const role = uiStore.calibrationTarget?.tags.find(t => t.id === guide.id)?.role
+            if (role === 'center' && guide.state !== 'inside') {
+                // The Center tag defines the world axes: its UP arrow must point up the video
+                c.fillStyle = THEME.calibGuideStroke
+                c.strokeStyle = THEME.calibGuideStroke
+                c.lineWidth = 2
+                c.beginPath()
+                c.moveTo(center.x, center.y + h * 0.22)
+                c.lineTo(center.x, center.y - h * 0.22)
+                c.moveTo(center.x, center.y - h * 0.22)
+                c.lineTo(center.x - 7, center.y - h * 0.22 + 10)
+                c.moveTo(center.x, center.y - h * 0.22)
+                c.lineTo(center.x + 7, center.y - h * 0.22 + 10)
+                c.stroke()
+                c.fillText('UP', center.x, center.y + h * 0.36)
+            }
+        }
+
+        c.textAlign = 'left'
+        c.textBaseline = 'alphabetic'
+    }
+
     function renderCalibrationTag(): void {
         if (!ctx.value) return
 
@@ -636,6 +745,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             ctx.value.setLineDash([])
 
             const targetTag = target?.tags.find(t => t.id === tag.id)
+            if (!targetTag && uiStore.calibrationClearView) continue
             if (!targetTag) {
                 ctx.value.strokeStyle = THEME.calibTagStroke
                 ctx.value.lineWidth = 1
@@ -682,7 +792,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 ctx.value.fill()
             }
 
-            const label = targetTag.label.split(' (')[0]
+            const label = `${targetTag.label.split(' (')[0]} #${tag.id}`
             ctx.value.font = THEME.fontCalibLarge
             ctx.value.textAlign = 'center'
             ctx.value.textBaseline = 'middle'

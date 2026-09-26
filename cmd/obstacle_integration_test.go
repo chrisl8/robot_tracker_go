@@ -309,7 +309,7 @@ func TestExcludeYOLONearKnownRobots_PassthroughWhenUncalibrated(t *testing.T) {
 // (and its Playwright coverage) would show a misleading failure.
 func TestDemoTargetCapturesFitCleanly(t *testing.T) {
 	for _, size := range [][2]int{{1280, 720}, {1920, 1080}} {
-		fit, err := position.FitTarget(demoTargetCaptures(size[0], size[1]), position.DefaultTargetWidth, position.DefaultTargetDepth)
+		fit, err := position.FitTarget(demoTargetCaptures(size[0], size[1]))
 		if err != nil {
 			t.Fatalf("%dx%d: FitTarget failed: %v", size[0], size[1], err)
 		}

@@ -6,9 +6,7 @@ import type { PlacementAssessment } from '@/composables/calibrationPlacement'
 
 const TARGET: CalibrationTarget = {
     tagSize: 0.15,
-    defaultWidth: 1.0,
-    defaultDepth: 0.6,
-    tags: [{ id: 100, label: 'Center', role: 'center', col: 0, row: 0 }],
+    tags: [{ id: 100, label: 'Center', role: 'center', guideX: 0.5, guideY: 0.5 }],
 }
 
 const TAG: DetectedTagInfo = {
@@ -25,6 +23,18 @@ const TAG: DetectedTagInfo = {
 const PLACEMENT: PlacementAssessment = {
     tags: [{ id: 100, label: 'Center', found: true, sizePx: 100, severity: 'ok' }],
     issues: [],
+    guides: [
+        {
+            id: 100,
+            label: 'Center',
+            cx: 50,
+            cy: 50,
+            sizePx: 100,
+            state: 'inside',
+            tagX: 50,
+            tagY: 50,
+        },
+    ],
     allFound: true,
     canCalibrate: true,
 }
@@ -40,6 +50,8 @@ describe('uiStore calibration', () => {
         expect(store.detectedTags).toEqual([])
         expect(store.calibrationTarget).toBeNull()
         expect(store.calibrationPlacement).toBeNull()
+        expect(store.calibrationStep).toBe('print')
+        expect(store.calibrationClearView).toBe(false)
     })
 
     it('opens and closes the calibration panel', () => {
@@ -81,5 +93,32 @@ describe('uiStore calibration', () => {
         expect(store.detectedTags).toEqual([])
         expect(store.calibrationPlacement).toBeNull()
         expect(store.calibrationTarget).toEqual(TARGET)
+    })
+
+    it('clears the canvas view only while the wizard is on the place step', () => {
+        const store = useUIStore()
+        store.setCalibrationStep('place')
+        expect(store.calibrationClearView).toBe(false) // wizard not open yet
+        store.openCalibration()
+        expect(store.calibrationClearView).toBe(true)
+        store.setCalibrationStep('result')
+        expect(store.calibrationClearView).toBe(false)
+        store.setCalibrationStep('place')
+        expect(store.calibrationClearView).toBe(true)
+    })
+
+    it('restores the normal view when the wizard closes or resets', () => {
+        const store = useUIStore()
+        store.openCalibration()
+        store.setCalibrationStep('place')
+        store.closeCalibration()
+        expect(store.calibrationClearView).toBe(false)
+        expect(store.calibrationStep).toBe('print')
+
+        store.openCalibration()
+        store.setCalibrationStep('place')
+        store.resetCalibrationWizard()
+        expect(store.calibrationStep).toBe('print')
+        expect(store.calibrationClearView).toBe(false)
     })
 })

@@ -44,3 +44,5 @@ export interface LogEntry {
     type: LogEntryType
     message: string
 }
+
+export type CalibrationStep = 'print' | 'place' | 'result'

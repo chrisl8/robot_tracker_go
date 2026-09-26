@@ -333,14 +333,16 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 		}
 
 		overlay := rs.detectionPipe.DrawResults(rgbaImg.Pix, width, height, demoTagsResult)
+		var overlayImg image.Image
 		if overlay != nil {
-			overlayImg := decodeToImage(overlay, width, height)
-			if overlayImg != nil {
-				rs.webServer.PushFrame(overlayImg)
-			} else {
-				rs.webServer.PushFrame(rgbaWithTags)
-			}
-		} else {
+			overlayImg = decodeToImage(overlay, width, height)
+		}
+		switch {
+		case rs.webServer.CalibrationViewActive():
+			rs.webServer.PushFrame(rgbaImg)
+		case overlayImg != nil:
+			rs.webServer.PushFrame(overlayImg)
+		default:
 			rs.webServer.PushFrame(rgbaWithTags)
 		}
 

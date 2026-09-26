@@ -121,13 +121,23 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
             ])
             uiStore.setCalibrationTarget({
                 tagSize: 0.15,
-                defaultWidth: 1.0,
-                defaultDepth: 0.6,
-                tags: [{ id: 100, label: 'Center', role: 'center', col: 0, row: 0 }],
+                tags: [{ id: 100, label: 'Center', role: 'center', guideX: 0.5, guideY: 0.5 }],
             })
             uiStore.setCalibrationPlacement({
                 tags: [{ id: 100, label: 'Center', found: true, sizePx: 100, severity: 'warning' }],
                 issues: [],
+                guides: [
+                    {
+                        id: 100,
+                        label: 'Center',
+                        cx: 320,
+                        cy: 240,
+                        sizePx: 100,
+                        state: 'outside',
+                        tagX: 150,
+                        tagY: 150,
+                    },
+                ],
                 allFound: false,
                 canCalibrate: false,
             })

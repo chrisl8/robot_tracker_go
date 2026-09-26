@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { CalibrationState, CalibrationTarget, DetectedTagInfo } from '@/types/api'
 import type { PlacementAssessment } from '@/composables/calibrationPlacement'
 import type {
+    CalibrationStep,
     Toast,
     ToastType,
     PanelState,
@@ -30,6 +31,11 @@ export const useUIStore = defineStore('ui', () => {
     const detectedTags = ref<DetectedTagInfo[]>([])
     const calibrationTarget = ref<CalibrationTarget | null>(null)
     const calibrationPlacement = ref<PlacementAssessment | null>(null)
+    const calibrationStep = ref<CalibrationStep>('print')
+    // While placing calibration tags the canvas shows only the calibration view.
+    const calibrationClearView = computed(
+        () => panels.value.calibrationOpen && calibrationStep.value === 'place'
+    )
 
     const showFootprints = ref(true)
     const activityLog = ref<LogEntry[]>([])
@@ -64,6 +70,7 @@ export const useUIStore = defineStore('ui', () => {
 
     function closeCalibration(): void {
         panels.value.calibrationOpen = false
+        calibrationStep.value = 'print'
     }
 
     // Actions - Toasts
@@ -107,9 +114,14 @@ export const useUIStore = defineStore('ui', () => {
         calibrationPlacement.value = placement
     }
 
+    function setCalibrationStep(step: CalibrationStep): void {
+        calibrationStep.value = step
+    }
+
     function resetCalibrationWizard(): void {
         detectedTags.value = []
         calibrationPlacement.value = null
+        calibrationStep.value = 'print'
     }
 
     // Actions - Keyboard
@@ -160,6 +172,8 @@ export const useUIStore = defineStore('ui', () => {
         detectedTags,
         calibrationTarget,
         calibrationPlacement,
+        calibrationStep,
+        calibrationClearView,
         keyboard,
         showFootprints,
         activityLog,
@@ -177,6 +191,7 @@ export const useUIStore = defineStore('ui', () => {
         setDetectedTags,
         setCalibrationTarget,
         setCalibrationPlacement,
+        setCalibrationStep,
         resetCalibrationWizard,
         // Keyboard actions
         setKey,

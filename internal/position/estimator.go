@@ -36,14 +36,12 @@ type CalibrationConfig struct {
 	Fit          *CalibrationFit   `yaml:"fit,omitempty"`
 }
 
-// CalibrationFit records how the calibration target was laid out and how well
-// the fitted homography reproduced it.
+// CalibrationFit records how well the fitted homography reproduced the
+// calibration target tags.
 type CalibrationFit struct {
 	RMSCm  float64 `yaml:"rms_cm"`
 	MaxCm  float64 `yaml:"max_cm"`
 	Rating string  `yaml:"rating"`
-	Width  float64 `yaml:"width"`
-	Depth  float64 `yaml:"depth"`
 	Tags   int     `yaml:"tags"`
 }
 
@@ -69,8 +67,6 @@ func NewCalibrationConfig(cameraName string, frameWidth, frameHeight int, fit *F
 			RMSCm:  fit.RMSCm,
 			MaxCm:  fit.MaxCm,
 			Rating: fit.Rating,
-			Width:  fit.Width,
-			Depth:  fit.Depth,
 			Tags:   len(fit.PerTag),
 		},
 	}

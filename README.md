@@ -12,7 +12,7 @@ Built for [Vorpal the Hexapod](https://log.ekpyroticfrood.net/vorpal-the-hexapod
 - **YOLOv8 obstacle detection** — real-time detection of objects on the playing field
 - **A\* path planning** — global paths with velocity-obstacle local avoidance and multi-robot coordination
 - **Vue 3 web UI** — live MJPEG video with canvas overlay showing tracks, paths, and obstacle boundaries; click anywhere to send a robot there
-- **Guided web calibration** — print five tags, lay them out, and the wizard checks placement live, fits the pixel-to-floor mapping and reports its accuracy in centimeters
+- **Guided web calibration** — print five tags, drop them roughly in the boxes the wizard draws on the video, and it solves the pixel-to-floor mapping (no measuring) and reports its accuracy in centimeters
 - **Arduino serial control** — single ASCII commands (F/B/L/R/S) at 9600 baud
 - **Demo mode** — run the full UI with simulated robots, no camera or hardware required
 
@@ -100,14 +100,15 @@ reserved: robots must not use them).
 1. Open the web UI and click the calibration badge at the bottom to start the wizard.
 2. **Print** the tags from the link in the wizard (or open `/calibration-tags/print.html`).
    Print at 100% / "Actual size", not "fit to page", on matte paper. Each black square must measure
-   **15 cm**; if it doesn't, reprint.
-3. **Lay out** the tags on the floor where the robots will drive: Center in the middle, the four corners
-   on a rectangle whose width and depth you measure with a tape measure and enter in the wizard. Every tag's
-   UP arrow points toward the top of the camera image.
-4. **Adjust** using the live checklist: it tells you when a tag is too small, too tilted, too near the edge of
-   the picture, or when the tags don't cover enough of the view. Move tags as suggested, then calibrate.
-5. The wizard reports the fit error in centimeters. A misplaced tag is named and the calibration is **not**
-   saved until the layout is fixed.
+   **15 cm**; if it doesn't, reprint. That size is the only measurement the calibration relies on.
+3. **Place** the tags on the floor where the robots will drive. The wizard clears the view and draws
+   five boxes on the live video; drop each tag roughly in its box. No tape measure, no precision: the
+   tags can be off-square and rotated any way (only the Center tag's UP arrow should point toward the
+   top of the video, since it sets the floor's axes). The software works out where the tags really are
+   from their known size.
+4. Press Calibrate. The wizard reports the fit error in centimeters, and optionally shows a couple of
+   distances between tags you can spot-check with a tape measure. If a tag fits badly (curled, or printed
+   at the wrong size) it is named and nothing is saved.
 
 **Pick the tags up afterwards.** They are only needed while calibrating; the result is saved to
 `config/calibration_<camera>.yaml` and loaded on every start. Recalibrate only if the camera is moved or

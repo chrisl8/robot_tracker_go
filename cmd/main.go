@@ -915,8 +915,12 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	rs.executeAutonomousControl(trackingResult.Tracks)
 
-	overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult)
-	if len(overlay) > 0 && len(overlay) < width*height*3 {
+	if rs.webServer.CalibrationViewActive() {
+		// Calibration wizard open: send the clean camera view, no detection overlay.
+		if img != nil {
+			rs.webServer.PushFrame(img)
+		}
+	} else if overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult); len(overlay) > 0 && len(overlay) < width*height*3 {
 		rs.webServer.PushRawJPEG(overlay)
 	} else if img != nil {
 		rs.webServer.PushFrame(img)
@@ -1530,7 +1534,9 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		rs.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.robotCommands)
 	}
 
-	if rs.detectionPipe != nil && rs.webServer != nil {
+	if rs.detectionPipe != nil && rs.webServer != nil && rs.webServer.CalibrationViewActive() {
+		rs.webServer.PushFrame(img)
+	} else if rs.detectionPipe != nil && rs.webServer != nil {
 		overlay := rs.detectionPipe.DrawResults(img.Pix, width, height, result)
 		if overlay != nil {
 			overlayImg := decodeToImage(overlay, width, height)

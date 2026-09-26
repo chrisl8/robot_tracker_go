@@ -2,13 +2,14 @@
 import { ref, computed, watch } from 'vue'
 import { useDraggable, useIntervalFn } from '@vueuse/core'
 import { useUIStore } from '@/stores/uiStore'
-import { assessPlacement } from '@/composables/calibrationPlacement'
+import { assessPlacement, PLACEMENT_THRESHOLDS } from '@/composables/calibrationPlacement'
 import type {
     CalibrationComputeRequest,
     CalibrationComputeResponse,
     CalibrationRating,
     CalibrationTagsResponse,
 } from '@/types/api'
+import type { CalibrationStep } from '@/types/ui'
 
 const SAVED_MESSAGE =
     'Calibration saved. Pick the tags up; you only need them again if the camera moves or its resolution changes.'
@@ -32,43 +33,65 @@ const handleRef = ref<HTMLElement | null>(null)
 const initialX = window.innerWidth / 2 - 260
 const initialY = window.innerHeight / 2 - 300
 
+const step = ref<CalibrationStep>('print')
+const docked = computed(() => step.value === 'place')
+const dockMoved = ref(false)
+const pinned = ref(false)
+const lastPosition = ref({ x: initialX, y: initialY })
+
 const { x, y } = useDraggable(dialogRef, {
     initialValue: { x: initialX, y: initialY },
     handle: handleRef,
+    onStart: () => {
+        // The docked panel is anchored to the bottom; switch to free positioning on first drag
+        if (docked.value && dialogRef.value) {
+            const rect = dialogRef.value.getBoundingClientRect()
+            x.value = rect.left
+            y.value = rect.top
+            dockMoved.value = true
+        }
+    },
     onEnd: () => {
-        if (pinned.value) {
+        if (pinned.value && !docked.value) {
             lastPosition.value = { x: x.value, y: y.value }
         }
     },
 })
 
-const step = ref(1)
-const pinned = ref(false)
-const lastPosition = ref({ x: initialX, y: initialY })
+const contentStyle = computed(() => {
+    if (docked.value && !dockMoved.value) return {}
+    if (docked.value) return { left: `${x.value}px`, top: `${y.value}px` }
+    return {
+        left: `${pinned.value ? lastPosition.value.x : x.value}px`,
+        top: `${pinned.value ? lastPosition.value.y : y.value}px`,
+    }
+})
+
 const frame = ref({ width: 1280, height: 720 })
-const width = ref(1.0)
-const depth = ref(0.6)
-const layoutInitialized = ref(false)
 const busy = ref(false)
 const result = ref<{ ok: boolean; data: CalibrationComputeResponse } | null>(null)
 let fetching = false
 
-const minSpread = computed(() => (target.value ? target.value.tagSize * 2 + 0.1 : 0.4))
-const layoutValid = computed(
-    () =>
-        Number.isFinite(width.value) &&
-        Number.isFinite(depth.value) &&
-        width.value >= minSpread.value &&
-        depth.value >= minSpread.value
-)
-
 const ratingLabels: Record<CalibrationRating, string> = { good: 'Good', ok: 'OK', poor: 'Poor' }
 
 const worstTag = computed(() => {
-    const perTag = result.value?.data.perTag
-    if (!perTag || perTag.length === 0) return null
+    const data = result.value?.data
+    const perTag = data?.perTag
+    if (!data || !perTag || perTag.length === 0) return null
+    const byId = perTag.find(t => t.id === data.worstTagId)
+    if (byId) return byId
     return perTag.reduce((worst, t) => (t.rmsCm > worst.rmsCm ? t : worst))
 })
+
+const hints = computed(() => (assessment.value ? assessment.value.issues : []))
+const visibleHints = computed(() => hints.value.slice(0, PLACEMENT_THRESHOLDS.maxVisibleHints))
+const hiddenHintCount = computed(() => hints.value.length - visibleHints.value.length)
+
+function tagState(id: number, found: boolean): string {
+    if (!found) return 'Not detected'
+    const state = assessment.value?.guides.find(g => g.id === id)?.state
+    return state === 'inside' ? 'In box' : 'Near box'
+}
 
 function shortLabel(label: string): string {
     return label.split(' (')[0]
@@ -102,12 +125,10 @@ const { pause, resume } = useIntervalFn(fetchDetectedTags, POLL_INTERVAL_MS, { i
 
 async function computeCalibration(): Promise<void> {
     const t = target.value
-    if (!t || !assessment.value?.canCalibrate || !layoutValid.value || busy.value) return
+    if (!t || !assessment.value?.canCalibrate || busy.value) return
 
     const ids = new Set(t.tags.map(tag => tag.id))
     const body: CalibrationComputeRequest = {
-        width: width.value,
-        depth: depth.value,
         tags: uiStore.detectedTags
             .filter(tag => ids.has(tag.id))
             .map(tag => ({ id: tag.id, corners: tag.corners })),
@@ -123,7 +144,7 @@ async function computeCalibration(): Promise<void> {
         const data = (await response.json()) as CalibrationComputeResponse
         const ok = response.ok && !data.error
         result.value = { ok, data }
-        step.value = 4
+        step.value = 'result'
         if (ok) {
             uiStore.setCalibrationState('calibrated', data.message ?? SAVED_MESSAGE)
             uiStore.showToast('Calibration saved', 'success')
@@ -140,7 +161,7 @@ async function computeCalibration(): Promise<void> {
 
 function close(): void {
     uiStore.closeCalibration()
-    step.value = 1
+    step.value = 'print'
     result.value = null
     uiStore.resetCalibrationWizard()
 }
@@ -166,16 +187,22 @@ watch(
     { immediate: true }
 )
 
-watch(target, t => {
-    if (t && !layoutInitialized.value) {
-        width.value = t.defaultWidth
-        depth.value = t.defaultDepth
-        layoutInitialized.value = true
-    }
-})
+watch(
+    step,
+    (current, previous) => {
+        uiStore.setCalibrationStep(current)
+        if (current === 'place') {
+            dockMoved.value = false
+        } else if (previous === 'place') {
+            x.value = pinned.value ? lastPosition.value.x : initialX
+            y.value = pinned.value ? lastPosition.value.y : initialY
+        }
+    },
+    { immediate: true }
+)
 
 watch([isOpen, step], ([open, currentStep]) => {
-    if (open && currentStep === 3) {
+    if (open && currentStep === 'place') {
         fetchDetectedTags()
         resume()
     } else {
@@ -185,7 +212,7 @@ watch([isOpen, step], ([open, currentStep]) => {
 
 watch(isOpen, open => {
     if (open) {
-        step.value = 1
+        step.value = 'print'
         result.value = null
         fetchDetectedTags()
         if (pinned.value) {
@@ -202,25 +229,19 @@ watch(isOpen, open => {
 
 <template>
     <Teleport to="body">
-        <div v-if="isOpen" class="calibration-wizard">
-            <div
-                class="calibration-overlay"
-                :class="{ transparent: step === 3 }"
-                @click="close"
-            ></div>
+        <div v-if="isOpen" class="calibration-wizard" :class="{ docked }">
+            <div v-if="!docked" class="calibration-overlay" @click="close"></div>
             <div
                 ref="dialogRef"
                 class="calibration-content"
-                :class="{ pinned }"
-                :style="{
-                    left: `${pinned ? lastPosition.x : x}px`,
-                    top: `${pinned ? lastPosition.y : y}px`,
-                }"
+                :class="{ pinned, moved: dockMoved }"
+                :style="contentStyle"
             >
                 <div ref="handleRef" class="calibration-header">
                     <h2>Calibration</h2>
                     <div class="calibration-actions">
                         <button
+                            v-if="!docked"
                             class="calibration-btn-icon"
                             :class="{ pinned }"
                             @click="togglePin"
@@ -233,13 +254,14 @@ watch(isOpen, open => {
                 </div>
 
                 <div class="calibration-body">
-                    <div v-if="step === 1" class="calibration-step active">
+                    <div v-if="step === 'print'" class="calibration-step active">
                         <h2>Step 1: Print the Calibration Tags</h2>
 
                         <p class="wizard-text">
                             Calibration uses five special tags: one <strong>Center</strong> tag and
                             four <strong>Corner</strong> tags. Print them once and keep them; you
-                            only need to lay them out again if the camera moves.
+                            only need them again if the camera moves. There is nothing to measure:
+                            in the next step you lay each tag roughly inside its box on the video.
                         </p>
 
                         <div class="link-list">
@@ -272,7 +294,9 @@ watch(isOpen, open => {
                             <li>
                                 Each tag's black square must measure
                                 <strong>{{ tagSizeCm }} cm</strong>. If it does not, reprint at
-                                100%. The sheet has a scale bar to check.
+                                100%. The sheet has a scale bar to check. The tag size is how the
+                                camera learns real distances, so this is the one thing that has to
+                                be right.
                             </li>
                             <li>Matte paper works best, since glossy paper glares under lights.</li>
                         </ul>
@@ -281,132 +305,51 @@ watch(isOpen, open => {
                             <button class="calibration-btn secondary" @click="cancelCalibration">
                                 Cancel
                             </button>
-                            <button class="calibration-btn primary" @click="step = 2">
-                                Next: Lay Out
+                            <button class="calibration-btn primary" @click="step = 'place'">
+                                Next: Place Tags
                             </button>
                         </div>
                     </div>
 
-                    <div v-else-if="step === 2" class="calibration-step active">
-                        <h2>Step 2: Lay Out the Tags</h2>
+                    <div v-else-if="step === 'place'" class="calibration-step active">
+                        <h2>Step 2: Place the Tags</h2>
 
-                        <svg
-                            class="layout-diagram"
-                            viewBox="0 0 300 190"
-                            role="img"
-                            aria-label="Tag layout as seen by the camera"
-                        >
-                            <text x="150" y="12" class="diagram-note" text-anchor="middle">
-                                top of the camera view
-                            </text>
-                            <rect x="40" y="26" width="220" height="140" class="diagram-area" />
-                            <g class="diagram-tag">
-                                <rect x="28" y="38" width="24" height="24" />
-                                <rect x="248" y="38" width="24" height="24" />
-                                <rect x="248" y="130" width="24" height="24" />
-                                <rect x="28" y="130" width="24" height="24" />
-                                <rect x="138" y="84" width="24" height="24" class="center" />
-                            </g>
-                            <g class="diagram-text" text-anchor="middle">
-                                <text x="40" y="54">1</text>
-                                <text x="260" y="54">2</text>
-                                <text x="260" y="146">3</text>
-                                <text x="40" y="146">4</text>
-                                <text x="150" y="100">C</text>
-                                <text x="150" y="184">Width</text>
-                            </g>
-                            <text x="6" y="100" class="diagram-note">Depth</text>
-                        </svg>
-
-                        <ul class="wizard-list">
-                            <li>
-                                Put the <strong>Center</strong> tag in the middle of the area the
-                                robot will drive in.
-                            </li>
-                            <li>
-                                Put the four <strong>Corner</strong> tags on a rectangle around it,
-                                as far apart as the robot will travel. Corner 1 is top-left as seen
-                                in the camera view, then clockwise.
-                            </li>
-                            <li>
-                                Turn every tag so its <strong>UP</strong> arrow points toward the
-                                top of the camera view, and lay them flat.
-                            </li>
-                            <li>
-                                Measure the distance between the tags with a tape measure and enter
-                                it below (corner to corner, tag centers).
-                            </li>
-                        </ul>
-
-                        <div class="layout-inputs">
-                            <label>
-                                Width (m)
-                                <input
-                                    v-model.number="width"
-                                    type="number"
-                                    step="0.05"
-                                    :min="minSpread"
-                                    class="spread-input"
-                                />
-                            </label>
-                            <label>
-                                Depth (m)
-                                <input
-                                    v-model.number="depth"
-                                    type="number"
-                                    step="0.05"
-                                    :min="minSpread"
-                                    class="spread-input"
-                                />
-                            </label>
-                        </div>
-                        <div v-if="!layoutValid" class="calibration-status warning">
-                            Width and depth must each be at least {{ minSpread.toFixed(2) }} m.
-                        </div>
-
-                        <div class="calibration-buttons">
-                            <button class="calibration-btn secondary" @click="step = 1">
-                                Back
-                            </button>
-                            <button
-                                class="calibration-btn primary"
-                                :disabled="!layoutValid"
-                                @click="step = 3"
-                            >
-                                Next: Check Placement
-                            </button>
-                        </div>
-                    </div>
-
-                    <div v-else-if="step === 3" class="calibration-step active">
-                        <h2>Step 3: Adjust Placement</h2>
+                        <p class="wizard-text">
+                            Lay each tag flat inside its dashed box on the video. Rough is fine, no
+                            measuring. Turn the <strong>Center</strong> tag so its UP arrow points
+                            toward the top of the video.
+                        </p>
 
                         <div v-if="!assessment" class="calibration-status info">
                             Waiting for the camera...
                         </div>
 
                         <template v-else>
-                            <div class="detected-tags-list">
+                            <div class="detected-tags-list compact">
                                 <div
                                     v-for="tag in assessment.tags"
                                     :key="tag.id"
                                     class="detected-tag-item"
                                     :class="`sev-${tag.severity}`"
                                 >
-                                    <span class="tag-id">{{ tag.label }}</span>
+                                    <span class="tag-id">{{ shortLabel(tag.label) }}</span>
                                     <span class="tag-status">
-                                        {{ tag.found ? `${tag.sizePx} px` : 'Not detected' }}
+                                        {{ tag.found ? `${tag.sizePx} px` : '' }}
+                                        {{ tagState(tag.id, tag.found) }}
                                     </span>
                                 </div>
                             </div>
 
-                            <ul v-if="assessment.issues.length > 0" class="placement-issues">
+                            <ul v-if="hints.length > 0" class="placement-issues compact">
                                 <li
-                                    v-for="(issue, i) in assessment.issues"
+                                    v-for="(issue, i) in visibleHints"
                                     :key="i"
-                                    :class="issue.severity"
+                                    :class="issue.tip ? 'tip' : issue.severity"
                                 >
                                     {{ issue.message }}
+                                </li>
+                                <li v-if="hiddenHintCount > 0" class="more">
+                                    +{{ hiddenHintCount }} more
                                 </li>
                             </ul>
                             <div v-else class="calibration-status success">
@@ -415,7 +358,7 @@ watch(isOpen, open => {
                         </template>
 
                         <div class="calibration-buttons">
-                            <button class="calibration-btn secondary" @click="step = 2">
+                            <button class="calibration-btn secondary" @click="step = 'print'">
                                 Back
                             </button>
                             <button
@@ -428,16 +371,30 @@ watch(isOpen, open => {
                         </div>
                     </div>
 
-                    <div v-else-if="step === 4 && result" class="calibration-step active">
-                        <h2>Step 4: Result</h2>
+                    <div v-else-if="step === 'result' && result" class="calibration-step active">
+                        <h2>Step 3: Result</h2>
 
                         <div
                             class="calibration-status"
                             :class="result.ok ? 'success' : 'error'"
                             data-testid="calibration-result"
                         >
-                            {{ result.ok ? SAVED_MESSAGE : result.data.error }}
+                            <template v-if="result.ok">{{ SAVED_MESSAGE }}</template>
+                            <template v-else>
+                                Nothing was saved. Every tag must lie flat and be printed at exactly
+                                {{ tagSizeCm }} cm.
+                                <template v-if="worstTag">
+                                    {{ shortLabel(worstTag.label) }} looks the most out of place.
+                                </template>
+                            </template>
                         </div>
+                        <p
+                            v-if="!result.ok && result.data.error"
+                            class="error-detail"
+                            data-testid="calibration-error-detail"
+                        >
+                            {{ result.data.error }}
+                        </p>
 
                         <div v-if="result.data.rmsCm !== undefined" class="result-summary">
                             <span
@@ -482,18 +439,31 @@ watch(isOpen, open => {
                         </table>
 
                         <div
-                            v-if="worstTag && result.data.rating && result.data.rating !== 'good'"
-                            class="calibration-status warning"
+                            v-if="result.data.checks && result.data.checks.length > 0"
+                            data-testid="calibration-checks"
                         >
-                            {{ shortLabel(worstTag.label) }} has the largest error. Check its
-                            position and the tape measurements, then calibrate again.
+                            <div class="section-title">Optional sanity check</div>
+                            <ul class="check-list">
+                                <li
+                                    v-for="check in result.data.checks"
+                                    :key="`${check.fromId}-${check.toId}`"
+                                >
+                                    {{ shortLabel(check.fromLabel) }} to
+                                    {{ shortLabel(check.toLabel) }} should be
+                                    {{ check.meters.toFixed(2) }} m apart.
+                                </li>
+                            </ul>
+                            <p class="check-note">
+                                If a tape measure disagrees by more than about 3 cm, check that the
+                                tags printed at {{ tagSizeCm }} cm.
+                            </p>
                         </div>
 
                         <div class="calibration-buttons">
                             <button
                                 v-if="!result.ok"
                                 class="calibration-btn secondary"
-                                @click="step = 3"
+                                @click="step = 'place'"
                             >
                                 Back to Placement
                             </button>
@@ -670,68 +640,6 @@ watch(isOpen, open => {
 .calibration-link.primary-link {
     font-size: 1rem;
     font-weight: 600;
-}
-
-.layout-diagram {
-    width: 100%;
-    max-width: 320px;
-    display: block;
-    margin: 0 auto 12px;
-}
-
-.diagram-area {
-    fill: none;
-    stroke: var(--border-subtle);
-    stroke-dasharray: 4 4;
-}
-
-.diagram-tag rect {
-    fill: var(--panel-dark);
-    stroke: var(--accent-cyan);
-    stroke-width: 1.5;
-}
-
-.diagram-tag rect.center {
-    fill: rgba(0, 217, 255, 0.2);
-}
-
-.diagram-text text,
-.diagram-note {
-    fill: var(--text-dim);
-    font-family: var(--font-data);
-    font-size: 11px;
-}
-
-.layout-inputs {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.layout-inputs label {
-    flex: 1;
-    font-size: 0.8rem;
-    color: var(--text-dim);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.spread-input {
-    width: 100%;
-    padding: 10px;
-    border: 2px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--panel-dark);
-    color: var(--text-primary);
-    font-family: var(--font-data);
-    font-size: 1.1rem;
-    text-align: center;
-}
-
-.spread-input:focus {
-    outline: none;
-    border-color: var(--accent-cyan);
 }
 
 .calibration-buttons {
@@ -925,5 +833,173 @@ watch(isOpen, open => {
 .result-table tr.worst td {
     color: #ffab00;
     font-weight: bold;
+}
+
+.calibration-wizard.docked {
+    pointer-events: none;
+}
+
+.calibration-wizard.docked .calibration-content {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    left: 50%;
+    bottom: 16px;
+    top: auto;
+    transform: translateX(-50%);
+    width: min(780px, 94vw);
+    max-width: none;
+    max-height: 46vh;
+    background: rgba(20, 27, 38, 0.96);
+}
+
+.calibration-wizard.docked .calibration-content.moved {
+    bottom: auto;
+    transform: none;
+}
+
+/* Wide screens: live in the right sidebar column, never over the video */
+@media (min-width: 1200px) {
+    .calibration-wizard.docked .calibration-content:not(.moved) {
+        left: auto;
+        right: 12px;
+        top: 12px;
+        bottom: calc(var(--bottom-bar-height, 56px) + 12px);
+        transform: none;
+        width: 270px;
+        max-height: none;
+    }
+
+    .calibration-wizard.docked .calibration-content.moved {
+        width: 270px;
+        max-height: 80vh;
+    }
+
+    .calibration-wizard.docked .calibration-body {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    .calibration-wizard.docked .calibration-step.active {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+
+    .calibration-wizard.docked .calibration-buttons {
+        flex-direction: column;
+        margin-top: auto;
+        padding-top: 10px;
+    }
+
+    .calibration-wizard.docked .detected-tags-list.compact {
+        flex-direction: column;
+        flex-wrap: nowrap;
+    }
+
+    .calibration-wizard.docked .detected-tags-list.compact .detected-tag-item {
+        flex: none;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+    }
+}
+
+.calibration-wizard.docked .calibration-header {
+    padding: 8px 16px;
+    border-radius: 12px 12px 0 0;
+}
+
+.calibration-wizard.docked .calibration-header h2 {
+    font-size: 1rem;
+}
+
+.calibration-wizard.docked .calibration-body {
+    padding: 10px 16px 14px;
+}
+
+.calibration-wizard.docked .calibration-step h2 {
+    margin-bottom: 8px;
+    font-size: 1rem;
+}
+
+.calibration-wizard.docked .wizard-text {
+    margin-bottom: 8px;
+    font-size: 0.82rem;
+}
+
+.calibration-wizard.docked .calibration-buttons {
+    margin-top: 10px;
+}
+
+.calibration-wizard.docked .calibration-btn {
+    padding: 8px;
+    font-size: 0.9rem;
+}
+
+.detected-tags-list.compact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.detected-tags-list.compact .detected-tag-item {
+    flex: 1 1 130px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    margin-bottom: 0;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+}
+
+.placement-issues.compact li {
+    font-size: 0.8rem;
+    padding: 5px 10px;
+    margin-bottom: 4px;
+}
+
+.placement-issues li.tip {
+    border-left-color: var(--accent-cyan);
+}
+
+.placement-issues li.more {
+    font-family: var(--font-data);
+    color: var(--text-dim);
+    border-left-color: transparent;
+}
+
+.check-list {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    font-family: var(--font-data);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.check-list li {
+    padding: 3px 0;
+}
+
+.check-note,
+.error-detail {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.4;
+    margin-bottom: 12px;
+}
+
+.section-title {
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
 }
 </style>

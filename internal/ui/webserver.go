@@ -12,9 +12,9 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"runtime"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +57,7 @@ type WebServer struct {
 	detectedTags    []DetectedTagInfo
 	detectedFrameW  int
 	detectedFrameH  int
+	lastTagPoll     time.Time
 	detectedTagsMut sync.RWMutex
 	lastTagUpdate   time.Time
 
@@ -68,15 +69,15 @@ type WebServer struct {
 	destinationMutex sync.RWMutex
 	destination      DestinationMessage
 
-	OnObstaclesChanged     func([]planning.Obstacle)
-	OnDestinationSet       func(int, [2]float64)
-	OnDestinationClear     func(int)
-	OnCalibrationComplete  func(string)
-	OnCommand              func(string) error
-	OnModeChange           func(string) error
-	OnEmergencyStop        func()
-	OnClearEmergencyStop   func() error
-	OnGetControlState      func() (string, bool)
+	OnObstaclesChanged    func([]planning.Obstacle)
+	OnDestinationSet      func(int, [2]float64)
+	OnDestinationClear    func(int)
+	OnCalibrationComplete func(string)
+	OnCommand             func(string) error
+	OnModeChange          func(string) error
+	OnEmergencyStop       func()
+	OnClearEmergencyStop  func() error
+	OnGetControlState     func() (string, bool)
 
 	OnPathsChanged    func() map[int][][2]float64
 	positionEstimator *position.PositionEstimator
@@ -116,13 +117,13 @@ type BBoxMessage struct {
 }
 
 type TrackMessage struct {
-	ID          int            `json:"id"`
-	TagID       *int           `json:"tag_id,omitempty"`
-	BBox        []int          `json:"bbox"`
-	History     [][2]int       `json:"history"`
-	Color       string         `json:"color"`
-	Confidence  float64        `json:"confidence"`
-	State       string         `json:"state"`
+	ID            int            `json:"id"`
+	TagID         *int           `json:"tag_id,omitempty"`
+	BBox          []int          `json:"bbox"`
+	History       [][2]int       `json:"history"`
+	Color         string         `json:"color"`
+	Confidence    float64        `json:"confidence"`
+	State         string         `json:"state"`
 	Configured    bool           `json:"configured"`
 	Name          string         `json:"name,omitempty"`
 	PixelRadius   *float64       `json:"pixel_radius,omitempty"`
@@ -656,18 +657,14 @@ type DetectedTagInfo struct {
 // CalibrationTargetSpec describes the printable calibration target so the UI
 // does not have to hardcode tag IDs, labels or sizes.
 type CalibrationTargetSpec struct {
-	TagSize      float64              `json:"tagSize"`
-	DefaultWidth float64              `json:"defaultWidth"`
-	DefaultDepth float64              `json:"defaultDepth"`
-	Tags         []position.TargetTag `json:"tags"`
+	TagSize float64              `json:"tagSize"`
+	Tags    []position.TargetTag `json:"tags"`
 }
 
 func calibrationTargetSpec() CalibrationTargetSpec {
 	return CalibrationTargetSpec{
-		TagSize:      position.TargetTagSize,
-		DefaultWidth: position.DefaultTargetWidth,
-		DefaultDepth: position.DefaultTargetDepth,
-		Tags:         position.TargetTags(),
+		TagSize: position.TargetTagSize,
+		Tags:    position.TargetTags(),
 	}
 }
 
@@ -688,7 +685,25 @@ func (s *WebServer) UpdateDetectedTags(tags []DetectedTagInfo, frameWidth, frame
 	s.detectedTagsMut.Unlock()
 }
 
+// calibrationPollWindow is how recently the calibration wizard must have
+// polled for tags for the stream to count as "in calibration view".
+const calibrationPollWindow = 3 * time.Second
+
+// CalibrationViewActive reports whether the calibration wizard is open and
+// polling for tags. While it is, the video stream is sent without the
+// detection overlay so the user sees only the clean camera view. Deriving
+// this from polling means it clears itself if the browser goes away.
+func (s *WebServer) CalibrationViewActive() bool {
+	s.detectedTagsMut.RLock()
+	defer s.detectedTagsMut.RUnlock()
+	return !s.lastTagPoll.IsZero() && time.Since(s.lastTagPoll) < calibrationPollWindow
+}
+
 func (s *WebServer) handleCalibrationDetectedTags(c *gin.Context) {
+	s.detectedTagsMut.Lock()
+	s.lastTagPoll = time.Now()
+	s.detectedTagsMut.Unlock()
+
 	s.detectedTagsMut.RLock()
 	tags := s.detectedTags
 	if time.Since(s.lastTagUpdate) > 2*time.Second {
@@ -715,22 +730,21 @@ type CalibrationTagCapture struct {
 }
 
 type CalibrationComputeRequest struct {
-	Width float64                 `json:"width"`
-	Depth float64                 `json:"depth"`
-	Tags  []CalibrationTagCapture `json:"tags"`
+	Tags []CalibrationTagCapture `json:"tags"`
 }
 
 type CalibrationComputeResponse struct {
-	State      string            `json:"state"`
-	RMSCm      float64           `json:"rmsCm"`
-	MaxCm      float64           `json:"maxCm"`
-	QualityCm  float64           `json:"qualityCm"`
-	Rating     string            `json:"rating,omitempty"`
-	WorstTagID int               `json:"worstTagId,omitempty"`
-	PerTag     []position.TagFit `json:"perTag,omitempty"`
-	Message    string            `json:"message,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	Filename   string            `json:"filename,omitempty"`
+	State      string                   `json:"state"`
+	RMSCm      float64                  `json:"rmsCm"`
+	MaxCm      float64                  `json:"maxCm"`
+	QualityCm  float64                  `json:"qualityCm"`
+	Rating     string                   `json:"rating,omitempty"`
+	WorstTagID int                      `json:"worstTagId,omitempty"`
+	PerTag     []position.TagFit        `json:"perTag,omitempty"`
+	Checks     []position.DistanceCheck `json:"checks,omitempty"`
+	Message    string                   `json:"message,omitempty"`
+	Error      string                   `json:"error,omitempty"`
+	Filename   string                   `json:"filename,omitempty"`
 }
 
 func worstTagLabel(fit *position.FitResult) string {
@@ -757,16 +771,16 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 		}
 		captures = append(captures, capture)
 	}
-	utils.Logf("Calibration compute: %d tags, spread %.2f x %.2f m", len(captures), req.Width, req.Depth)
+	utils.Logf("Calibration compute: %d tags", len(captures))
 
-	fit, err := position.FitTarget(captures, req.Width, req.Depth)
+	fit, err := position.FitTarget(captures)
 	if err != nil {
 		resp := CalibrationComputeResponse{State: "error", Error: err.Error()}
 		if fit != nil {
 			resp.RMSCm, resp.MaxCm, resp.QualityCm = fit.RMSCm, fit.MaxCm, fit.QualityCm
-			resp.Rating, resp.WorstTagID, resp.PerTag = fit.Rating, fit.WorstTagID, fit.PerTag
+			resp.Rating, resp.WorstTagID, resp.PerTag, resp.Checks = fit.Rating, fit.WorstTagID, fit.PerTag, fit.Checks
 			if errors.Is(err, position.ErrPoorFit) {
-				resp.Error = fmt.Sprintf("The tags do not line up with the measured layout (%.1f cm off). %s looks the most out of place. Check the tape-measure distances and that every tag lies flat and points the same way, then try again. Nothing was saved.",
+				resp.Error = fmt.Sprintf("The tags do not fit together as flat 15 cm squares (%.1f cm off). %s fits worst. Make sure every tag lies flat, is not curled, and was printed at exactly 15 cm, then try again. Nothing was saved.",
 					fit.QualityCm, worstTagLabel(fit))
 			}
 		}
@@ -800,7 +814,7 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 
 	message := fmt.Sprintf("Calibration saved: %.1f cm average error (%s).", fit.RMSCm, fit.Rating)
 	if fit.Rating != position.RatingGood {
-		message += fmt.Sprintf(" %s is the least consistent tag; re-check its position if accuracy matters.", worstTagLabel(fit))
+		message += fmt.Sprintf(" %s fits worst; make sure it lies flat and printed at 15 cm if accuracy matters.", worstTagLabel(fit))
 	}
 	s.SetCalibrationState("calibrated", message, cameraFile, position.TargetTagSize)
 
@@ -812,6 +826,7 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 		Rating:     fit.Rating,
 		WorstTagID: fit.WorstTagID,
 		PerTag:     fit.PerTag,
+		Checks:     fit.Checks,
 		Message:    message,
 		Filename:   cameraFile,
 	})

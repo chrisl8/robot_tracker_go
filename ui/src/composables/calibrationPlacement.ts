@@ -5,19 +5,25 @@ export const PLACEMENT_THRESHOLDS = {
     minTagPxBlock: 25,
     minAspectWarn: 0.6,
     minAspectBlock: 0.35,
-    maxCenterOffsetFrac: 0.2,
+    boxWarnFrac: 0.12,
     minSpreadXFrac: 0.5,
     minSpreadYFrac: 0.4,
     edgeMarginFrac: 0.03,
     rotationWarnDeg: 20,
-    rotationBlockDeg: 45,
+    maxVisibleHints: 3,
+    boxToTagRatio: 2,
+    fallbackBoxFrac: 0.09,
+    centerGuideEpsilon: 0.05,
 } as const
 
 export type PlacementSeverity = 'ok' | 'warning' | 'blocking'
+export type GuideState = 'empty' | 'inside' | 'outside'
 
 export interface PlacementIssue {
     tagId: number | null
     severity: 'warning' | 'blocking'
+    /** A tip is advice only: it never changes a tag's colour or blocks Calibrate. */
+    tip?: boolean
     message: string
 }
 
@@ -29,9 +35,22 @@ export interface TagPlacementStatus {
     severity: PlacementSeverity
 }
 
+/** A guide box in natural video-frame pixels, plus how the tag sits relative to it. */
+export interface GuideBox {
+    id: number
+    label: string
+    cx: number
+    cy: number
+    sizePx: number
+    state: GuideState
+    tagX: number | null
+    tagY: number | null
+}
+
 export interface PlacementAssessment {
     tags: TagPlacementStatus[]
     issues: PlacementIssue[]
+    guides: GuideBox[]
     allFound: boolean
     canCalibrate: boolean
 }
@@ -64,9 +83,22 @@ function shortLabel(label: string): string {
     return label.split(' (')[0]
 }
 
+function median(values: number[]): number {
+    const sorted = [...values].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
 function worse(a: PlacementSeverity, b: PlacementSeverity): PlacementSeverity {
     const rank: Record<PlacementSeverity, number> = { ok: 0, warning: 1, blocking: 2 }
     return rank[a] >= rank[b] ? a : b
+}
+
+function guideDescription(tag: CalibrationTargetTag): string {
+    const eps = PLACEMENT_THRESHOLDS.centerGuideEpsilon
+    const vertical = tag.guideY < 0.5 - eps ? 'top' : tag.guideY > 0.5 + eps ? 'bottom' : ''
+    const horizontal = tag.guideX < 0.5 - eps ? 'left' : tag.guideX > 0.5 + eps ? 'right' : ''
+    return [vertical, horizontal].filter(Boolean).join('-') || 'middle'
 }
 
 export function assessPlacement(
@@ -103,7 +135,7 @@ export function assessPlacement(
             issues.push({
                 tagId: t.id,
                 severity: 'blocking',
-                message: `${t.label} not detected yet. Make sure it is flat, in view and well lit.`,
+                message: `${t.label} not detected yet. Put it in its dashed box, flat and well lit.`,
             })
             continue
         }
@@ -118,6 +150,40 @@ export function assessPlacement(
             severity: 'ok',
         })
     }
+
+    const sizes = [...statuses.values()].flatMap(s => (s.sizePx === null ? [] : [s.sizePx]))
+    const boxSizePx =
+        sizes.length > 0 ? T.boxToTagRatio * median(sizes) : T.fallbackBoxFrac * frame.width
+
+    const guides: GuideBox[] = target.tags.map(t => {
+        const cx = t.guideX * frame.width
+        const cy = t.guideY * frame.height
+        const pts = geometry.get(t.id)
+        if (!pts) {
+            return {
+                id: t.id,
+                label: t.label,
+                cx,
+                cy,
+                sizePx: boxSizePx,
+                state: 'empty',
+                tagX: null,
+                tagY: null,
+            }
+        }
+        const c = centroid(pts)
+        const inside = Math.abs(c.x - cx) <= boxSizePx / 2 && Math.abs(c.y - cy) <= boxSizePx / 2
+        return {
+            id: t.id,
+            label: t.label,
+            cx,
+            cy,
+            sizePx: boxSizePx,
+            state: inside ? 'inside' : 'outside',
+            tagX: c.x,
+            tagY: c.y,
+        }
+    })
 
     for (const t of target.tags) {
         const pts = geometry.get(t.id)
@@ -156,23 +222,22 @@ export function assessPlacement(
             )
         }
 
-        const topAngle = Math.atan2(
-            pts[1].y - pts[0].y + (pts[2].y - pts[3].y),
-            pts[1].x - pts[0].x + (pts[2].x - pts[3].x)
-        )
-        const rotationDeg = Math.abs((topAngle * 180) / Math.PI)
-        if (rotationDeg > T.rotationBlockDeg) {
-            flag(
-                t,
-                'blocking',
-                `${name} is rotated. Turn it so its UP arrow points toward the top of the camera view.`
+        // Only the Center tag's orientation matters, and only for tidy floor axes.
+        if (t.role === 'center') {
+            const topAngle = Math.atan2(
+                pts[1].y - pts[0].y + (pts[2].y - pts[3].y),
+                pts[1].x - pts[0].x + (pts[2].x - pts[3].x)
             )
-        } else if (rotationDeg > T.rotationWarnDeg) {
-            flag(
-                t,
-                'warning',
-                `${name} is slightly rotated. Line its UP arrow up with the top of the camera view.`
-            )
+            const rotationDeg = Math.abs((topAngle * 180) / Math.PI)
+            if (rotationDeg > T.rotationWarnDeg) {
+                issues.push({
+                    tagId: t.id,
+                    severity: 'warning',
+                    tip: true,
+                    message:
+                        'Tip: turn the Center tag so its UP arrow points toward the top of the video for tidy axes.',
+                })
+            }
         }
 
         const margin = T.edgeMarginFrac * Math.min(frame.width, frame.height)
@@ -190,34 +255,27 @@ export function assessPlacement(
                 `${name} is very close to the edge of the view. Move it a little toward the middle.`
             )
         }
-    }
 
-    const centerTag = target.tags.find(t => t.role === 'center')
-    const centerPts = centerTag ? geometry.get(centerTag.id) : undefined
-    if (centerTag && centerPts) {
-        const c = centroid(centerPts)
-        const offset = dist(c, { x: frame.width / 2, y: frame.height / 2 }) / frame.width
-        if (offset > T.maxCenterOffsetFrac) {
-            flag(
-                centerTag,
-                'warning',
-                `The Center tag should be near the middle of the view. Move it toward the middle.`
-            )
-        }
-
-        for (const t of target.tags) {
-            if (t.role !== 'corner') continue
-            const pts = geometry.get(t.id)
-            if (!pts) continue
-            const p = centroid(pts)
-            const wrongX = Math.sign(p.x - c.x) !== Math.sign(t.col)
-            const wrongY = Math.sign(p.y - c.y) !== Math.sign(t.row)
+        const guide = guides.find(g => g.id === t.id)
+        if (guide && guide.tagX !== null && guide.tagY !== null) {
+            const eps = T.centerGuideEpsilon
+            const wrongX =
+                Math.abs(t.guideX - 0.5) > eps &&
+                (guide.tagX / frame.width - 0.5) * (t.guideX - 0.5) < 0
+            const wrongY =
+                Math.abs(t.guideY - 0.5) > eps &&
+                (guide.tagY / frame.height - 0.5) * (t.guideY - 0.5) < 0
             if (wrongX || wrongY) {
                 flag(
                     t,
                     'blocking',
-                    `${shortLabel(t.label)} must be ${t.row < 0 ? 'above' : 'below'} and to the ${t.col < 0 ? 'left' : 'right'} of the Center tag as seen in the camera view.`
+                    `${name} belongs in the ${guideDescription(t)} box, but it is on the wrong side of the view. Move it into its dashed box.`
                 )
+            } else if (
+                dist({ x: guide.tagX, y: guide.tagY }, { x: guide.cx, y: guide.cy }) >
+                T.boxWarnFrac * frame.width
+            ) {
+                flag(t, 'warning', `${name} is far from its box. Move it into the dashed box.`)
             }
         }
     }
@@ -232,15 +290,23 @@ export function assessPlacement(
             issues.push({
                 tagId: null,
                 severity: 'warning',
-                message: `The tags only cover ${Math.round(spreadX * 100)}% of the view width and ${Math.round(spreadY * 100)}% of its height. Spread the corner tags toward the edges of the area the robot will drive in.`,
+                message: `The tags only cover ${Math.round(spreadX * 100)}% of the view width and ${Math.round(spreadY * 100)}% of its height. Move the corner tags out toward their boxes.`,
             })
         }
     }
 
+    for (const g of guides) {
+        const status = statuses.get(g.id)
+        if (status && g.state === 'outside') status.severity = worse(status.severity, 'warning')
+    }
+
     const allFound = target.tags.every(t => statuses.get(t.id)?.found === true)
+    issues.sort((a, b) => Number(a.severity === 'warning') - Number(b.severity === 'warning'))
+    issues.sort((a, b) => Number(a.tip === true) - Number(b.tip === true))
     return {
         tags: target.tags.map(t => statuses.get(t.id) as TagPlacementStatus),
         issues,
+        guides,
         allFound,
         canCalibrate: allFound && !issues.some(i => i.severity === 'blocking'),
     }

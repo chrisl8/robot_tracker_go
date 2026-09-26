@@ -64,14 +64,13 @@ export interface CalibrationTargetTag {
     id: number
     label: string
     role: CalibrationTagRole
-    col: number
-    row: number
+    /** Where the tag's guide box sits, as a fraction (0-1) of the video frame. */
+    guideX: number
+    guideY: number
 }
 
 export interface CalibrationTarget {
     tagSize: number
-    defaultWidth: number
-    defaultDepth: number
     tags: CalibrationTargetTag[]
 }
 
@@ -91,9 +90,15 @@ export interface CalibrationTagResidual {
     maxCm: number
 }
 
+export interface CalibrationCheck {
+    fromId: number
+    toId: number
+    fromLabel: string
+    toLabel: string
+    meters: number
+}
+
 export interface CalibrationComputeRequest {
-    width: number
-    depth: number
     tags: { id: number; corners: [number, number][] }[]
 }
 
@@ -101,8 +106,11 @@ export interface CalibrationComputeResponse {
     state: string
     rmsCm?: number
     maxCm?: number
+    qualityCm?: number
     rating?: CalibrationRating
+    worstTagId?: number
     perTag?: CalibrationTagResidual[]
+    checks?: CalibrationCheck[]
     message?: string
     error?: string
     filename?: string

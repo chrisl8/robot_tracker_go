@@ -164,6 +164,81 @@ describe('VISUALIZATION-001: Robot Footprint Display', () => {
 
         expect(mockCtx.arc).toHaveBeenCalled()
     })
+
+    describe('calibration clear view', () => {
+        const guide = {
+            id: 100,
+            label: 'Center',
+            cx: 320,
+            cy: 240,
+            sizePx: 100,
+            state: 'empty' as const,
+            tagX: null,
+            tagY: null,
+        }
+
+        async function setup() {
+            const { useCanvas } = await import('@/composables/useCanvas')
+            const { useRobotStore } = await import('@/stores/robotStore')
+            const { useUIStore } = await import('@/stores/uiStore')
+            const uiStore = useUIStore()
+            uiStore.showFootprints = true
+            uiStore.setCalibrationPlacement({
+                tags: [],
+                issues: [],
+                guides: [guide],
+                allFound: false,
+                canCalibrate: false,
+            })
+            uiStore.openCalibration()
+
+            const canvasRef = ref(mockCanvas as unknown as HTMLCanvasElement | null)
+            const { initialize, render } = useCanvas(canvasRef)
+            initialize()
+            return { render, uiStore, robotStore: useRobotStore() }
+        }
+
+        const track = {
+            id: 1,
+            bbox: [100, 100, 150, 150] as [number, number, number, number],
+            confidence: 0.95,
+            tag_id: 42,
+            state: 'confirmed' as const,
+            history: [],
+            pixel_radius: 30,
+        }
+
+        it('draws the guide boxes while placing tags', async () => {
+            const { render, uiStore } = await setup()
+            uiStore.setCalibrationStep('place')
+            mockCtx.arc.mockClear()
+            render()
+            // rounded corners of the guide box
+            expect(mockCtx.arc).toHaveBeenCalledTimes(4)
+            expect(mockCtx.fillText).toHaveBeenCalledWith(
+                'Center',
+                expect.any(Number),
+                expect.any(Number)
+            )
+        })
+
+        it('suppresses robot overlays on the place step and restores them after', async () => {
+            const { render, uiStore, robotStore } = await setup()
+            robotStore.setTracks([track])
+
+            uiStore.setCalibrationStep('place')
+            mockCtx.arc.mockClear()
+            render()
+            const guideOnlyArcs = mockCtx.arc.mock.calls.length
+
+            // Same render with the wizard on another step also draws the footprint
+            uiStore.setCalibrationStep('print')
+            mockCtx.arc.mockClear()
+            render()
+            expect(mockCtx.arc.mock.calls.length).toBeGreaterThan(0)
+            expect(guideOnlyArcs).toBe(4)
+        })
+    })
 })
 
 describe('VISUALIZATION-002: Calibration Tag Size Display', () => {
@@ -436,13 +511,23 @@ describe('VISUALIZATION-004: Coordinate System Consistency', () => {
         ])
         uiStore.setCalibrationTarget({
             tagSize: 0.15,
-            defaultWidth: 1.0,
-            defaultDepth: 0.6,
-            tags: [{ id: 100, label: 'Center', role: 'center', col: 0, row: 0 }],
+            tags: [{ id: 100, label: 'Center', role: 'center', guideX: 0.5, guideY: 0.5 }],
         })
         uiStore.setCalibrationPlacement({
             tags: [{ id: 100, label: 'Center', found: true, sizePx: 100, severity: 'warning' }],
             issues: [],
+            guides: [
+                {
+                    id: 100,
+                    label: 'Center',
+                    cx: 320,
+                    cy: 240,
+                    sizePx: 100,
+                    state: 'outside',
+                    tagX: 150,
+                    tagY: 150,
+                },
+            ],
             allFound: false,
             canCalibrate: false,
         })

@@ -42,22 +42,58 @@ test.describe('Robot Tracker UI Integration', () => {
         await page.locator('.calibration-badge').click()
         await expect(page.locator('.calibration-wizard')).toBeVisible({ timeout: 5000 })
 
-        await page.locator('.calibration-btn.primary:has-text("Next: Lay Out")').click()
+        await page.locator('.calibration-btn.primary:has-text("Next: Place Tags")').click()
         await expect(page.locator('.calibration-step.active h2')).toContainText(
-            'Step 2: Lay Out the Tags'
+            'Step 2: Place the Tags'
         )
-        await expect(page.locator('input[type="number"]')).toHaveCount(2)
-
-        await page.locator('.calibration-btn.primary:has-text("Next: Check Placement")').click()
-        await expect(page.locator('.calibration-step.active h2')).toContainText(
-            'Step 3: Adjust Placement'
-        )
+        // No measuring: there are no inputs, and the video is not dimmed by an overlay
+        await expect(page.locator('input[type="number"]')).toHaveCount(0)
+        await expect(page.locator('.calibration-overlay')).toHaveCount(0)
         await expect(page.locator('.detected-tag-item')).toHaveCount(5, { timeout: 5000 })
         await expect(page.locator('.calibration-btn.primary:has-text("Calibrate")')).toBeVisible()
 
         await page.locator('.calibration-btn.secondary:has-text("Back")').click()
         await expect(page.locator('.calibration-step.active h2')).toContainText(
-            'Step 2: Lay Out the Tags'
+            'Step 1: Print the Calibration Tags'
+        )
+        await expect(page.locator('.calibration-overlay')).toHaveCount(1)
+    })
+
+    test('should dock the placement panel in the right sidebar, off the video', async ({
+        page,
+    }) => {
+        await page.locator('.calibration-badge').click()
+        await page.locator('.calibration-btn.primary:has-text("Next: Place Tags")').click()
+        const panel = page.locator('.calibration-content')
+        await expect(panel).toBeVisible()
+
+        const viewport = page.viewportSize()
+        const box = await panel.boundingBox()
+        const video = await page.locator('#video').boundingBox()
+        expect(viewport).not.toBeNull()
+        expect(box).not.toBeNull()
+        if (viewport && box) {
+            expect(viewport.width).toBeGreaterThanOrEqual(1200)
+            expect(box.x + box.width).toBeGreaterThan(viewport.width - 30)
+            expect(box.width).toBeLessThan(300)
+            if (video) expect(box.x).toBeGreaterThanOrEqual(video.x + video.width - 1)
+        }
+    })
+
+    test('should calibrate from the demo target and show the result', async ({ page }) => {
+        await page.locator('.calibration-badge').click()
+        await page.locator('.calibration-btn.primary:has-text("Next: Place Tags")').click()
+        await expect(page.locator('.detected-tag-item')).toHaveCount(5, { timeout: 5000 })
+
+        const calibrate = page.locator('.calibration-btn.primary:has-text("Calibrate")')
+        await expect(calibrate).toBeEnabled({ timeout: 5000 })
+        await calibrate.click()
+
+        await expect(page.locator('.calibration-step.active h2')).toContainText('Step 3: Result', {
+            timeout: 5000,
+        })
+        await expect(page.locator('[data-testid="calibration-result"]')).toContainText(
+            'Calibration saved. Pick the tags up'
         )
     })
 })
