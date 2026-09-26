@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
+import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { Radio } from 'lucide-vue-next'
 
 const robotStore = useRobotStore()
+const fpsHealth = useFpsHealthStore()
 
 const fpsPct = computed(() => {
     const fps = robotStore.status.fps || 0
@@ -11,6 +13,8 @@ const fpsPct = computed(() => {
 })
 
 const fpsBarColor = computed(() => {
+    if (fpsHealth.level === 'critical') return 'var(--alert-red)'
+    if (fpsHealth.level === 'low') return 'var(--warning-amber)'
     const fps = robotStore.status.fps || 0
     if (fps > 20) return 'var(--success-green)'
     if (fps > 10) return 'var(--warning-amber)'
@@ -39,11 +43,11 @@ const fpsBarColor = computed(() => {
             <div class="comm-row-stacked">
                 <div class="comm-row">
                     <span class="comm-label">FPS</span>
-                    <span class="comm-value">{{
+                    <span class="comm-value" :class="fpsHealth.levelClass">{{
                         robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--'
                     }}</span>
                 </div>
-                <div class="fps-bar">
+                <div class="fps-bar" :class="fpsHealth.levelClass && fpsHealth.levelClass + '-bar'">
                     <div
                         class="fps-fill"
                         :style="{ width: fpsPct + '%', background: fpsBarColor }"

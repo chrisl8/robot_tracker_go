@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 
 defineProps<{
     isConnected: boolean
@@ -11,6 +12,7 @@ defineProps<{
 const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
+const fpsHealth = useFpsHealthStore()
 
 const calibrationBadge = computed(() => {
     if (uiStore.calibration.state !== 'calibrated') {
@@ -67,7 +69,7 @@ onUnmounted(() => {
         <div class="bar-divider"></div>
 
         <div class="bottom-bar-group">
-            <span class="bar-label"
+            <span class="bar-label" :class="fpsHealth.levelClass"
                 >FPS: {{ robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--' }}</span
             >
         </div>

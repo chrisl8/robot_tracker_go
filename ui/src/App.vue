@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import VideoOverlay from '@/components/VideoOverlay.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
@@ -14,9 +15,11 @@ import ActivityLog from '@/components/ActivityLog.vue'
 import CalibrationWizard from '@/components/CalibrationWizard.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import BottomBar from '@/components/BottomBar.vue'
+import FpsWarning from '@/components/FpsWarning.vue'
 
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
+const fpsHealth = useFpsHealthStore()
 
 const streamUrl = ref('/stream')
 const wasEverConnected = ref(false)
@@ -32,6 +35,9 @@ const { isConnected } = useWebSocket(wsUrl, {
         loadInitialData()
     },
 })
+
+// Frame-rate warnings are meaningless while (re)connecting: hold them off until connected.
+watch(isConnected, connected => fpsHealth.setConnection(connected), { immediate: true })
 
 async function loadInitialData(): Promise<void> {
     try {
@@ -103,6 +109,7 @@ onUnmounted(() => {
                 <div class="video-wrapper">
                     <img id="video" :src="streamUrl" alt="Video Stream" />
                     <VideoOverlay />
+                    <FpsWarning />
                 </div>
             </div>
 

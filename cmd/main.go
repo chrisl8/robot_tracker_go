@@ -99,6 +99,7 @@ type RobotSystem struct {
 	lastCommandTime     time.Time
 	trackingLostTimeout time.Duration
 	lastFrameTime       time.Time
+	lastStatusBroadcast time.Time
 	smoothedFPS         float64
 	startTime           time.Time
 	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
@@ -316,6 +317,18 @@ func (rs *RobotSystem) cameraDisplayName() string {
 		return camera.DisplayName(rs.cameraConfig.URL, rs.cameraConfig.CameraID)
 	}
 	return ""
+}
+
+// statusBroadcastDue reports whether a status update (FPS, Arduino state) should
+// go to the UI now. It is time-based rather than every N frames so the FPS
+// readout keeps refreshing about once a second even when the frame rate is
+// very low, which is exactly when the UI needs to warn about it.
+func (rs *RobotSystem) statusBroadcastDue() bool {
+	if time.Since(rs.lastStatusBroadcast) < time.Second {
+		return false
+	}
+	rs.lastStatusBroadcast = time.Now()
+	return true
 }
 
 func classesToMap(classes []string) map[string]bool {
@@ -954,7 +967,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	rs.webServer.UpdateStats(len(detectionResult.Tags), len(detectionResult.YOLODetections))
 
 	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
-	if rs.frameNum%30 == 0 {
+	if rs.statusBroadcastDue() {
 		rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
 		rs.webServer.BroadcastStatus(len(trackingResult.Tracks), rs.smoothedFPS, time.Since(rs.startTime).Seconds())
 	}
@@ -1579,7 +1592,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		rs.webServer.UpdateStats(len(demoTags), 0)
 
 		// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
-		if rs.frameNum%30 == 0 {
+		if rs.statusBroadcastDue() {
 			rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
 			rs.webServer.BroadcastStatus(len(demoTags), rs.smoothedFPS, time.Since(rs.startTime).Seconds())
 		}
