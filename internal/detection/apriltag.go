@@ -48,7 +48,11 @@ func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 	params.SetAprilTagQuadSigma(float32(config.QuadSigma))
 
 	// Relax quad-detection defaults for distant/angled tags
-	params.SetMinMarkerPerimeterRate(0.01)                // default 0.03; detect smaller tags
+	// 0.01 (a ~13 px perimeter) made the carpet texture spawn huge numbers of
+	// candidate quads: ~400 ms/frame versus ~19 ms at the default 0.03 on the
+	// same frames, with identical detections and corners. 0.03 still finds tags
+	// down to a ~10 px edge.
+	params.SetMinMarkerPerimeterRate(0.03)
 	params.SetPolygonalApproxAccuracyRate(0.08)            // default 0.03; tolerate perspective distortion
 	params.SetMinCornerDistanceRate(0.02)                  // default 0.05; tolerate compressed corners
 	params.SetAprilTagCriticalRad(30.0 * math.Pi / 180.0) // default 10°; accept steeper angles
