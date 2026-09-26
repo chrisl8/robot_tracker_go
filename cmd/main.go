@@ -920,6 +920,9 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
 
 				rs.computeTrackHeading(track, detectionResult.Tags)
+				utils.Debugf("TRACKPOS: robot=%d pos=(%.3f,%.3f) heading=%.1f° tagSeen=%v cmd=%s",
+					*track.TagID, worldPos.X, worldPos.Y, track.Heading*180/math.Pi,
+					rs.headingLostCount[*track.TagID] == 0, rs.robotCommands[*track.TagID])
 			}
 		}
 	}
