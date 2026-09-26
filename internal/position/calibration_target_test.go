@@ -4,9 +4,12 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // pinholeWorldToPixel builds the floor-to-pixel homography of a pinhole camera
@@ -340,5 +343,64 @@ func TestCalibrationFile_RoundTripAndResolutionMismatch(t *testing.T) {
 	est.SetFrameSize(1920, 1080)
 	if !est.ResolutionMismatch() {
 		t.Error("mismatch expected at a different resolution")
+	}
+}
+
+func TestSaveCalibration_BacksUpTheReplacedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "calibration_test.yaml")
+	base := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	mk := func(version int) *CalibrationConfig {
+		return &CalibrationConfig{Version: version, Camera: CameraInfo{Name: "Camera 0", Resolution: [2]int{1280, 720}}}
+	}
+	readVersion := func(p string) int {
+		t.Helper()
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("reading %s: %v", p, err)
+		}
+		var c CalibrationConfig
+		if err := yaml.Unmarshal(data, &c); err != nil {
+			t.Fatalf("parsing %s: %v", p, err)
+		}
+		return c.Version
+	}
+
+	// First save: nothing to back up.
+	if err := saveCalibrationAt(path, mk(1), base); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	if matches, _ := filepath.Glob(path + ".bak-*"); len(matches) != 0 {
+		t.Fatalf("first save should not create a backup, got %v", matches)
+	}
+
+	// Second save: the first version is preserved.
+	if err := saveCalibrationAt(path, mk(2), base.Add(time.Minute)); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	backup := path + ".bak-20260926-120100"
+	if got := readVersion(backup); got != 1 {
+		t.Errorf("backup holds version %d, want 1", got)
+	}
+	if got := readVersion(path); got != 2 {
+		t.Errorf("current file holds version %d, want 2", got)
+	}
+
+	// Many more saves: only the newest calibrationBackupsToKeep backups remain.
+	for i := 3; i <= 12; i++ {
+		if err := saveCalibrationAt(path, mk(i), base.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("save %d: %v", i, err)
+		}
+	}
+	matches, _ := filepath.Glob(path + ".bak-*")
+	if len(matches) != calibrationBackupsToKeep {
+		t.Fatalf("kept %d backups, want %d: %v", len(matches), calibrationBackupsToKeep, matches)
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Error("the oldest backup should have been pruned")
+	}
+	// The newest backup is the version just before the last save (11).
+	if got := readVersion(path + ".bak-20260926-121200"); got != 11 {
+		t.Errorf("newest backup holds version %d, want 11", got)
 	}
 }

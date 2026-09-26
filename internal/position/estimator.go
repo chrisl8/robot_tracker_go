@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -72,8 +73,22 @@ func NewCalibrationConfig(cameraName string, frameWidth, frameHeight int, fit *F
 	}
 }
 
-// SaveCalibration writes cfg as YAML to path, creating the directory.
+// calibrationBackupsToKeep is how many timestamped copies of a replaced
+// calibration file are retained next to it.
+const calibrationBackupsToKeep = 5
+
+const calibrationBackupTimeFormat = "20060102-150405"
+
+// SaveCalibration writes cfg as YAML to path, creating the directory. If a
+// calibration file already exists it is first copied to
+// "<path>.bak-<timestamp>" (the newest calibrationBackupsToKeep are kept), so
+// an overwrite, deliberate or not, never destroys the previous calibration.
+// A failed backup is logged but does not block saving the new calibration.
 func SaveCalibration(path string, cfg *CalibrationConfig) error {
+	return saveCalibrationAt(path, cfg, time.Now())
+}
+
+func saveCalibrationAt(path string, cfg *CalibrationConfig, now time.Time) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal calibration: %w", err)
@@ -81,10 +96,46 @@ func SaveCalibration(path string, cfg *CalibrationConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return fmt.Errorf("failed to create calibration directory: %w", err)
 	}
+	if err := backUpCalibration(path, now); err != nil {
+		utils.Logf("Warning: could not back up existing calibration %s: %v", path, err)
+	}
 	// #nosec G304
 	// #nosec G306
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write calibration file: %w", err)
+	}
+	return nil
+}
+
+// backUpCalibration copies an existing calibration file to a timestamped
+// backup and prunes the oldest backups. It does nothing if path does not exist.
+func backUpCalibration(path string, now time.Time) error {
+	// #nosec G304
+	existing, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading existing calibration: %w", err)
+	}
+
+	backup := fmt.Sprintf("%s.bak-%s", path, now.UTC().Format(calibrationBackupTimeFormat))
+	// #nosec G306
+	// #nosec G703 -- path is the calibration file name built by the app, not user input
+	if err := os.WriteFile(backup, existing, 0600); err != nil {
+		return fmt.Errorf("writing backup: %w", err)
+	}
+
+	old, err := filepath.Glob(path + ".bak-*")
+	if err != nil {
+		return fmt.Errorf("listing backups: %w", err)
+	}
+	sort.Strings(old) // timestamps sort chronologically
+	for len(old) > calibrationBackupsToKeep {
+		if err := os.Remove(old[0]); err != nil {
+			return fmt.Errorf("pruning old backup: %w", err)
+		}
+		old = old[1:]
 	}
 	return nil
 }
