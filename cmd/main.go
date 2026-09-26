@@ -834,10 +834,13 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 	detectTime := time.Since(frameStart)
 
+	nonRobotYOLO := nonRobotYOLODetections(detectionResult)
+	nonRobotYOLO = excludeYOLONearKnownRobots(nonRobotYOLO, rs.positionEst, rs.planner.GetAllRobotStates())
+
 	relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
 	minConfidence := rs.cfg.LocalPlanning.MinConfidence
 	rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
-		detectionResult.YOLODetections,
+		nonRobotYOLO,
 		rs.positionEst,
 		relevantClasses,
 		minConfidence,
@@ -846,7 +849,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	// Feed YOLO-detected obstacles into the A* global planner
 	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
 		var plannerObstacles []planning.Obstacle
-		for _, det := range detectionResult.YOLODetections {
+		for _, det := range nonRobotYOLO {
 			if det.Bbox == nil {
 				continue
 			}

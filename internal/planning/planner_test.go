@@ -1,6 +1,7 @@
 package planning
 
 import (
+	"sync"
 	"testing"
 )
 
@@ -349,6 +350,48 @@ func TestPlanner_SetPath(t *testing.T) {
 	if wp != customPath[1] {
 		t.Errorf("Second waypoint = %v, want %v", wp, customPath[1])
 	}
+}
+
+// TestPlanner_ConcurrentAccess mirrors production: the frame-processing loop
+// (AddRobot/AdvancePastWaypoints/GetPathsWithGoals every frame) races against
+// webserver request handlers (SetGoal/CompletePath on destination set/clear).
+// Run with `go test -race` to catch unsynchronized map access.
+func TestPlanner_ConcurrentAccess(t *testing.T) {
+	planner := NewPlanner(nil)
+	planner.AddRobot(1, [2]float64{0, 0}, 0.18)
+
+	const iterations = 200
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	// Simulates the main frame loop.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			planner.AddRobot(1, [2]float64{float64(i) * 0.01, 0}, 0.18)
+			planner.AdvancePastWaypoints(1, [2]float64{float64(i) * 0.01, 0}, 0.1)
+			planner.GetPathsWithGoals()
+			planner.GetAllRobotStates()
+		}
+	}()
+
+	// Simulates webserver destination-set requests.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			planner.SetGoal(1, [2]float64{float64(i%5) + 1, float64(i%3) + 1})
+		}
+	}()
+
+	// Simulates webserver destination-clear requests.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			planner.CompletePath(1)
+		}
+	}()
+
+	wg.Wait()
 }
 
 func TestPlanner_SetPath_OverwriteExisting(t *testing.T) {

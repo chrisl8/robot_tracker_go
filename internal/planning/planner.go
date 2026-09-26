@@ -2,6 +2,7 @@ package planning
 
 import (
 	"math"
+	"sync"
 
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
@@ -12,7 +13,12 @@ type PlannerConfig struct {
 	CollisionMargin        float64
 }
 
+// Planner is accessed concurrently by the frame-processing loop and by
+// webserver request handlers (destination set/clear). mu guards all fields
+// below, including everything reachable through coordinator, since
+// coordinator is private to this package and only ever touched from here.
 type Planner struct {
+	mu                sync.Mutex
 	globalPlanner     *AStar
 	localPlanner      *LocalPlanner
 	coordinator       *Coordinator
@@ -45,6 +51,15 @@ func NewPlanner(config *PlannerConfig) *Planner {
 }
 
 func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.planPathLocked(robotID, start, goal)
+}
+
+// planPathLocked is the unexported implementation of PlanPath. Callers must
+// already hold p.mu — it exists so other Planner methods can plan a path
+// without re-entering the lock.
+func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]float64, bool) {
 	// Expand obstacles by the robot's radius so the path keeps the full body clear.
 	// Add safety margin beyond the radius to account for YOLO bbox inaccuracy and chair legs.
 	margin := 0.15
@@ -69,6 +84,8 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 }
 
 func (p *Planner) ComputeVelocity(robotID int, goal [2]float64) ([2]float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	robot, exists := p.coordinator.GetRobotState(robotID)
 	if !exists {
 		return [2]float64{0, 0}, false
@@ -84,6 +101,8 @@ func (p *Planner) ComputeVelocityWithDynamicObstacles(
 	dynamicObstacles []*DynamicObstacle,
 	minConfidence float64,
 ) ([2]float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	robot, exists := p.coordinator.GetRobotState(robotID)
 	if !exists {
 		return [2]float64{0, 0}, false
@@ -94,25 +113,33 @@ func (p *Planner) ComputeVelocityWithDynamicObstacles(
 }
 
 func (p *Planner) AddObstacle(obstacle Obstacle) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.obstacles = append(p.obstacles, obstacle)
 	p.coordinator.SetObstacles(p.obstacles)
 }
 
 func (p *Planner) SetObstacles(obstacles []Obstacle) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.obstacles = obstacles
 	p.coordinator.SetObstacles(obstacles)
-	p.replanAllPaths()
+	p.replanAllPathsLocked()
 }
 
 func (p *Planner) SetDynamicObstacles(obstacles []Obstacle) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if obstaclesEqual(p.dynamicObstacles, obstacles) {
 		return
 	}
 	p.dynamicObstacles = obstacles
-	p.replanAllPaths()
+	p.replanAllPathsLocked()
 }
 
 func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	robot := RobotState{
 		Position: position,
 		Velocity: Velocity{0, 0},
@@ -125,7 +152,7 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 	if _, hasPath := p.paths[id]; !hasPath {
 		if goal, hasGoal := p.coordinator.GetGoal(id); hasGoal {
 			utils.Debugf("AddRobot: robot %d has goal (%.2f,%.2f) but no path, planning...",id, goal[0], goal[1])
-			path, success := p.PlanPath(id, position, goal)
+			path, success := p.planPathLocked(id, position, goal)
 			utils.Debugf("AddRobot: PlanPath success=%v pathLen=%d",success, len(path))
 			if success {
 				p.paths[id] = path
@@ -136,6 +163,8 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 }
 
 func (p *Planner) SetGoal(robotID int, goal [2]float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	utils.Debugf("SetGoal: robotID=%d goal=(%.2f,%.2f)",robotID, goal[0], goal[1])
 	p.coordinator.SetGoal(robotID, goal)
 
@@ -143,7 +172,7 @@ func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 	utils.Debugf("SetGoal: robot exists=%v",exists)
 	if exists {
 		utils.Debugf("SetGoal: robot position=(%.2f,%.2f), planning path...",robot.Position[0], robot.Position[1])
-		path, success := p.PlanPath(robotID, robot.Position, goal)
+		path, success := p.planPathLocked(robotID, robot.Position, goal)
 		utils.Debugf("SetGoal: PlanPath success=%v pathLen=%d",success, len(path))
 		if success {
 			p.paths[robotID] = path
@@ -155,28 +184,44 @@ func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 }
 
 func (p *Planner) ComputeAllCommands() map[int][2]float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.coordinator.ComputeCommands()
 }
 
 func (p *Planner) ResolveConflicts(commands map[int][2]float64) map[int][2]float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.coordinator.ResolveConflicts(commands)
 }
 
 func (p *Planner) UpdateRobotState(robotID int, position [2]float64, velocity [2]float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	positions := map[int][2]float64{robotID: position}
 	velocities := map[int][2]float64{robotID: velocity}
 	p.coordinator.UpdateRobots(positions, velocities)
 }
 
 func (p *Planner) GetRobotState(robotID int) (RobotState, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.coordinator.GetRobotState(robotID)
 }
 
 func (p *Planner) GetAllRobotStates() map[int]RobotState {
-	return p.coordinator.robots
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	states := make(map[int]RobotState, len(p.coordinator.robots))
+	for id, state := range p.coordinator.robots {
+		states[id] = state
+	}
+	return states
 }
 
 func (p *Planner) CheckCollision(robot RobotState) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	collisions := p.collisionDetector.CheckAllCollisions(robot, p.obstacles)
 	return len(collisions) > 0
 }
@@ -189,7 +234,8 @@ func (p *Planner) expandObstacles(obstacles []Obstacle, margin float64) []Obstac
 	return expanded
 }
 
-func (p *Planner) replanAllPaths() {
+// replanAllPathsLocked requires the caller to already hold p.mu.
+func (p *Planner) replanAllPathsLocked() {
 	for robotID := range p.paths {
 		robot, exists := p.coordinator.GetRobotState(robotID)
 		if !exists {
@@ -199,7 +245,7 @@ func (p *Planner) replanAllPaths() {
 		if !hasGoal {
 			continue
 		}
-		path, success := p.PlanPath(robotID, robot.Position, goal)
+		path, success := p.planPathLocked(robotID, robot.Position, goal)
 		if success {
 			p.paths[robotID] = path
 			p.currentWaypoint[robotID] = 0
@@ -208,6 +254,8 @@ func (p *Planner) replanAllPaths() {
 }
 
 func (p *Planner) RemoveObstacle(name string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	newObstacles := make([]Obstacle, 0, len(p.obstacles)-1)
 	for _, obs := range p.obstacles {
 		if obs.Name != name {
@@ -216,26 +264,34 @@ func (p *Planner) RemoveObstacle(name string) {
 	}
 	p.obstacles = newObstacles
 	p.coordinator.SetObstacles(p.obstacles)
-	p.replanAllPaths()
+	p.replanAllPathsLocked()
 }
 
 func (p *Planner) ClearObstacles() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.obstacles = make([]Obstacle, 0)
 	p.coordinator.SetObstacles(p.obstacles)
-	p.replanAllPaths()
+	p.replanAllPathsLocked()
 }
 
 func (p *Planner) ClearAll() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.obstacles = make([]Obstacle, 0)
 	p.coordinator.ClearAll()
 }
 
 func (p *Planner) GetObstacles() []Obstacle {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.obstacles
 }
 
 // GetClearance returns the minimum distance from the robot's edge to any obstacle surface.
 func (p *Planner) GetClearance(robotID int) float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	robot, exists := p.coordinator.GetRobotState(robotID)
 	if !exists {
 		return 1e10
@@ -262,6 +318,8 @@ func (p *Planner) GetPathCost(path [][2]float64) float64 {
 }
 
 func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	path, hasPath := p.paths[robotID]
 	if !hasPath {
 		return [2]float64{0, 0}, false
@@ -274,6 +332,8 @@ func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
 }
 
 func (p *Planner) AdvanceWaypoint(robotID int) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.currentWaypoint[robotID]++
 	path, hasPath := p.paths[robotID]
 	if !hasPath {
@@ -291,6 +351,8 @@ func (p *Planner) AdvanceWaypoint(robotID int) bool {
 // AdvancePastWaypoints skips past any waypoints the robot has reached or overshot.
 // It returns true if there are still waypoints remaining, false if the path is complete.
 func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold float64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	path, hasPath := p.paths[robotID]
 	if !hasPath {
 		return false
@@ -358,10 +420,18 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 }
 
 func (p *Planner) GetPaths() map[int][][2]float64 {
-	return p.paths
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	paths := make(map[int][][2]float64, len(p.paths))
+	for id, path := range p.paths {
+		paths[id] = path
+	}
+	return paths
 }
 
 func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	utils.Debugf("GetPathsWithGoals: %d goals, %d existing paths",len(p.coordinator.goals), len(p.paths))
 	for robotID, goal := range p.coordinator.goals {
 		if _, hasPath := p.paths[robotID]; !hasPath {
@@ -371,7 +441,7 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 				startPos = robot.Position
 			}
 			utils.Debugf("GetPathsWithGoals: planning for robot %d, start=(%.2f,%.2f) goal=(%.2f,%.2f)",robotID, startPos[0], startPos[1], goal[0], goal[1])
-			path, success := p.PlanPath(robotID, startPos, goal)
+			path, success := p.planPathLocked(robotID, startPos, goal)
 			utils.Debugf("GetPathsWithGoals: PlanPath success=%v pathLen=%d",success, len(path))
 			if success {
 				p.paths[robotID] = path
@@ -392,10 +462,14 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 }
 
 func (p *Planner) GetGoal(robotID int) ([2]float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.coordinator.GetGoal(robotID)
 }
 
 func (p *Planner) CompletePath(robotID int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	delete(p.paths, robotID)
 	delete(p.currentWaypoint, robotID)
 	p.coordinator.ClearGoal(robotID)
@@ -404,12 +478,16 @@ func (p *Planner) CompletePath(robotID int) {
 // ClearPathOnly removes the current path without clearing the goal,
 // allowing replanning to the same destination.
 func (p *Planner) ClearPathOnly(robotID int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	delete(p.paths, robotID)
 	delete(p.currentWaypoint, robotID)
 }
 
 // SetPath stores a pre-computed path for a robot and resets the waypoint index.
 func (p *Planner) SetPath(robotID int, path [][2]float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.paths[robotID] = path
 	p.currentWaypoint[robotID] = 0
 }

@@ -457,7 +457,7 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 	s.destinationMutex.Unlock()
 
 	if s.OnDestinationSet != nil {
-		go s.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)})
+		s.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)})
 	}
 
 	s.BroadcastOverlay(OverlayMessage{
@@ -492,7 +492,7 @@ func (s *WebServer) handleDestinationClear(c *gin.Context) {
 	s.ClearDestination(req.RobotID)
 
 	if s.OnDestinationClear != nil {
-		go s.OnDestinationClear(req.RobotID)
+		s.OnDestinationClear(req.RobotID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "robot_id": req.RobotID})
