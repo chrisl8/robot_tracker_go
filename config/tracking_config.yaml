@@ -142,7 +142,7 @@ robots:
     diameter: 0.30 # meters foot-to-foot (for obstacle avoidance)
     speed: 0.15 # m/s (max forward speed)
     turn_rate: 1.0 # rad/s (max turn speed)
-    heading_offset_degrees: 0 # adjust if arrow doesn't point forward (try 90, -90, 180)
+    heading_offset_degrees: 180 # Vorpal walks opposite to its tag's up direction (measured); adjust if arrow doesn't point forward (try 90, -90, 180)
     center_offset_x: 0.0 # meters forward from tag center to robot center (for parallax correction)
     center_offset_y: 0.0 # meters left from tag center to robot center (for parallax correction)
 
