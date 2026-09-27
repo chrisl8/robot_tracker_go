@@ -13,7 +13,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
 
 ## 🔴 Critical — safety / correctness bugs likely active right now
 
-1. **Releasing the last held movement key never stops the robot.**
+1. **[FIXED] Releasing the last held movement key never stops the robot.**
    `ui/src/components/ControlPanel.vue:43-60` — the keyboard watcher is an
    `if/else if` chain over `w/s/a/d/x` with no final `else`. When all keys are
    released, nothing matches, so `sendCommand('S')` is never sent. Because

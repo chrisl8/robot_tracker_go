@@ -54,6 +54,8 @@ watch(
             sendCommand('R')
         } else if (keys.x) {
             sendCommand('S')
+        } else {
+            sendCommand('S')
         }
     },
     { deep: true }
