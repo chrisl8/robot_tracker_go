@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -100,6 +101,10 @@ type RobotSystem struct {
 	trackingLostTimeout time.Duration
 	lastFrameTime       time.Time
 	lastStatusBroadcast time.Time
+	lastFrameNanos      atomic.Int64
+	watchdogOnce        sync.Once
+	watchdogStopOnce    sync.Once
+	watchdogStop        chan struct{}
 	smoothedFPS         float64
 	startTime           time.Time
 	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
@@ -789,11 +794,51 @@ func (rs *RobotSystem) StartCamera() error {
 	}
 	rs.cameraRunning = true
 	utils.Logf("Camera started: %s", rs.cam.GetName())
+	if !rs.demoMode {
+		rs.startFrameWatchdog()
+	}
 	return nil
+}
+
+// frameStallThreshold is how long without a processed frame counts as a
+// stalled camera worth telling the UI about.
+const frameStallThreshold = 2 * time.Second
+
+// startFrameWatchdog broadcasts status once a second while no frames are being
+// processed. The normal status update rides on the frame loop, so without this
+// a dead camera would leave the UI silently showing the last good FPS.
+func (rs *RobotSystem) startFrameWatchdog() {
+	rs.watchdogOnce.Do(func() {
+		rs.watchdogStop = make(chan struct{})
+		stop := rs.watchdogStop
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					last := rs.startTime
+					if n := rs.lastFrameNanos.Load(); n != 0 {
+						last = time.Unix(0, n)
+					}
+					if age := time.Since(last); age > frameStallThreshold && rs.webServer != nil {
+						rs.webServer.BroadcastCameraStalled(time.Since(rs.startTime).Seconds(), age.Seconds())
+					}
+				}
+			}
+		}()
+	})
 }
 
 func (rs *RobotSystem) Stop() {
 	utils.Logf("Stopping system...")
+	rs.watchdogStopOnce.Do(func() {
+		if rs.watchdogStop != nil {
+			close(rs.watchdogStop)
+		}
+	})
 	rs.cameraRunning = false
 	if rs.cam != nil {
 		rs.cam.Stop()
@@ -838,6 +883,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	rs.frameNum++
 	frameStart := time.Now()
+	rs.lastFrameNanos.Store(frameStart.UnixNano())
 	timestamp := float64(frameStart.UnixNano()) / 1e9
 
 	// Compute smoothed FPS via exponential moving average
@@ -1730,13 +1776,21 @@ func main() {
 		} else {
 			utils.Logf("Starting real camera capture...")
 			frameNum := 0
+			frameFailures := 0
 			for rs.cameraRunning {
 				startTime := time.Now()
 				frame, err := rs.cam.GetFrame()
 				if err != nil {
-					utils.Logf("Failed to get frame: %v", err)
+					frameFailures++
+					if frameFailures == 1 || frameFailures%50 == 0 {
+						utils.Logf("Failed to get frame (%d in a row): %v", frameFailures, err)
+					}
 					time.Sleep(100 * time.Millisecond)
 					continue
+				}
+				if frameFailures > 0 {
+					utils.Logf("Camera frames resumed after %d failed reads", frameFailures)
+					frameFailures = 0
 				}
 				if frame == nil || len(frame.Data) == 0 {
 					utils.Logf("Empty frame received")

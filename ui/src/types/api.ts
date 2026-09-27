@@ -42,6 +42,10 @@ export interface RobotStatus {
     arduinoState: 'Connected' | 'Disconnected' | 'Searching' | 'Error'
     hostMemoryMB?: number
     uptimeSec?: number
+    // True when no camera frame has been processed for > 2 s (fps is then 0).
+    cameraStalled?: boolean
+    // Seconds since the last frame; present when cameraStalled.
+    frameAgeSec?: number
 }
 
 // Calibration types

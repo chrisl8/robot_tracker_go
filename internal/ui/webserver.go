@@ -150,6 +150,10 @@ type StatusMessage struct {
 	ArduinoState string  `json:"arduinoState"`
 	HostMemoryMB float64 `json:"hostMemoryMB,omitempty"`
 	UptimeSec    float64 `json:"uptimeSec,omitempty"`
+	// CameraStalled is true when no video frame has been processed for a couple
+	// of seconds; FPS is then 0 and FrameAgeSec says for how long.
+	CameraStalled bool    `json:"cameraStalled,omitempty"`
+	FrameAgeSec   float64 `json:"frameAgeSec,omitempty"`
 }
 
 type CommandMessage struct {
@@ -899,6 +903,17 @@ func (s *WebServer) SetArduinoConnected(connected bool) {
 }
 
 func (s *WebServer) BroadcastStatus(trackCount int, fps float64, uptimeSec float64) {
+	s.broadcastStatus(trackCount, fps, uptimeSec, 0, false)
+}
+
+// BroadcastCameraStalled tells the UI that no frames are arriving. Status is
+// normally sent from the frame loop, which is silent exactly when the camera
+// has stalled, so a separate watchdog calls this instead.
+func (s *WebServer) BroadcastCameraStalled(uptimeSec, frameAgeSec float64) {
+	s.broadcastStatus(0, 0, uptimeSec, frameAgeSec, true)
+}
+
+func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec float64, stalled bool) {
 	s.arduinoMutex.RLock()
 	connected := s.arduinoConnected
 	s.arduinoMutex.RUnlock()
@@ -927,6 +942,9 @@ func (s *WebServer) BroadcastStatus(trackCount int, fps float64, uptimeSec float
 			ArduinoState: state,
 			HostMemoryMB: hostMemMB,
 			UptimeSec:    uptimeSec,
+
+			CameraStalled: stalled,
+			FrameAgeSec:   frameAgeSec,
 		},
 	})
 }

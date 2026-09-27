@@ -44,7 +44,11 @@ const fpsBarColor = computed(() => {
                 <div class="comm-row">
                     <span class="comm-label">FPS</span>
                     <span class="comm-value" :class="fpsHealth.levelClass">{{
-                        robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--'
+                        fpsHealth.stalled
+                            ? 'NO VIDEO'
+                            : robotStore.status.fps
+                              ? robotStore.status.fps.toFixed(1)
+                              : '--'
                     }}</span>
                 </div>
                 <div class="fps-bar" :class="fpsHealth.levelClass && fpsHealth.levelClass + '-bar'">

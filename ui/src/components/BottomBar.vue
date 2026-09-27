@@ -69,9 +69,11 @@ onUnmounted(() => {
         <div class="bar-divider"></div>
 
         <div class="bottom-bar-group">
-            <span class="bar-label" :class="fpsHealth.levelClass"
-                >FPS: {{ robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--' }}</span
-            >
+            <span class="bar-label" :class="fpsHealth.levelClass">{{
+                fpsHealth.stalled
+                    ? 'NO VIDEO'
+                    : `FPS: ${robotStore.status.fps ? robotStore.status.fps.toFixed(1) : '--'}`
+            }}</span>
         </div>
 
         <div class="bottom-bar-spacer"></div>

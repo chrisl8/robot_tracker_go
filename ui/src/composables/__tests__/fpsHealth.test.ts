@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+    CAMERA_STALLED_WARN_AFTER_MS,
+    FPS_CRITICAL_WARN_AFTER_MS,
+    STATUS_SILENCE_MS,
     FPS_CRITICAL_BELOW,
     FPS_CRITICAL_RECOVER_AT,
     FPS_LOW_BELOW,
@@ -17,6 +20,13 @@ describe('thresholds', () => {
         expect(FPS_LOW_RECOVER_AT).toBeGreaterThan(FPS_LOW_BELOW)
         expect(FPS_CRITICAL_RECOVER_AT).toBeGreaterThan(FPS_CRITICAL_BELOW)
         expect(FPS_CRITICAL_BELOW).toBeLessThan(FPS_LOW_BELOW)
+    })
+})
+
+describe('stall timing constants', () => {
+    it('warn about a stalled camera sooner than a slow one, and detect silence after the stall warning', () => {
+        expect(CAMERA_STALLED_WARN_AFTER_MS).toBeLessThan(FPS_CRITICAL_WARN_AFTER_MS)
+        expect(STATUS_SILENCE_MS).toBeGreaterThan(CAMERA_STALLED_WARN_AFTER_MS)
     })
 })
 

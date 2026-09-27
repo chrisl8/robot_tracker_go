@@ -19,6 +19,13 @@ export const FPS_STARTUP_GRACE_SEC = 15
 // Critical must persist this long (wall clock) before the warning banner shows.
 export const FPS_CRITICAL_WARN_AFTER_MS = 4000
 
+// A stalled camera is unambiguous, so it warns sooner than a merely slow one.
+export const CAMERA_STALLED_WARN_AFTER_MS = 2000
+
+// With the websocket up but no status message for this long, assume the video
+// pipeline (or the whole process) is hung, or the backend predates the watchdog.
+export const STATUS_SILENCE_MS = 5000
+
 export function isUsableFps(fps: number | null | undefined): fps is number {
     return typeof fps === 'number' && Number.isFinite(fps) && fps > 0
 }

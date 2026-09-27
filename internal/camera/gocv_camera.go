@@ -6,8 +6,29 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 
 	"gocv.io/x/gocv"
+
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
+)
+
+// frameSource is the part of gocv.VideoCapture the capture loop uses, so
+// recovery can be tested without hardware.
+type frameSource interface {
+	Read(m *gocv.Mat) bool
+	Close() error
+	IsOpened() bool
+}
+
+// Defaults for recovering from a stalled stream: reads are retried every
+// retryDelay, and after reopenAfter consecutive failures (~2 s) the device is
+// closed and reopened with backoff.
+const (
+	defaultReopenAfter = 40
+	defaultRetryDelay  = 50 * time.Millisecond
+	defaultBackoffMin  = time.Second
+	defaultBackoffMax  = 10 * time.Second
 )
 
 // cameraPermissionHint returns macOS-specific guidance when a camera fails to open.
@@ -23,7 +44,8 @@ func cameraPermissionHint() string {
 
 type GoCVCamera struct {
 	cap      *gocv.VideoCapture
-	device   *gocv.VideoCapture
+	device   frameSource // guarded by mu once the capture loop runs
+	open     func() (frameSource, error)
 	width    int
 	height   int
 	fps      int
@@ -31,6 +53,11 @@ type GoCVCamera struct {
 	cameraID int
 	url      string
 	isFile   bool
+
+	reopenAfter int
+	retryDelay  time.Duration
+	backoffMin  time.Duration
+	backoffMax  time.Duration
 
 	mu          sync.Mutex
 	latestFrame *Frame
@@ -54,16 +81,10 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 		fps = DefaultFPS
 	}
 
-	cap, err := gocv.VideoCaptureDevice(config.CameraID)
-	if err != nil || cap == nil || !cap.IsOpened() {
-		hint := cameraPermissionHint()
-		return nil, fmt.Errorf("failed to open camera %d: %w%s", config.CameraID, &CameraError{Message: "camera not available"}, hint)
+	cap, err := openUSBCapture(config.CameraID, width, height, fps)
+	if err != nil {
+		return nil, err
 	}
-
-	cap.Set(gocv.VideoCaptureFrameWidth, float64(width))
-	cap.Set(gocv.VideoCaptureFrameHeight, float64(height))
-	cap.Set(gocv.VideoCaptureFPS, float64(fps))
-	cap.Set(gocv.VideoCaptureBufferSize, 1)
 
 	actualWidth := int(cap.Get(gocv.VideoCaptureFrameWidth))
 	actualHeight := int(cap.Get(gocv.VideoCaptureFrameHeight))
@@ -77,10 +98,39 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 		cameraID: config.CameraID,
 		isFile:   false,
 		stopCh:   make(chan struct{}),
+		open: func() (frameSource, error) {
+			c, err := openUSBCapture(config.CameraID, width, height, fps)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		},
 	}
+	cam.setRecoveryDefaults()
 	cam.wg.Add(1)
 	go cam.captureLoop()
 	return cam, nil
+}
+
+func openUSBCapture(cameraID, width, height, fps int) (*gocv.VideoCapture, error) {
+	cap, err := gocv.VideoCaptureDevice(cameraID)
+	if err != nil || cap == nil || !cap.IsOpened() {
+		hint := cameraPermissionHint()
+		return nil, fmt.Errorf("failed to open camera %d: %w%s", cameraID, &CameraError{Message: "camera not available"}, hint)
+	}
+
+	cap.Set(gocv.VideoCaptureFrameWidth, float64(width))
+	cap.Set(gocv.VideoCaptureFrameHeight, float64(height))
+	cap.Set(gocv.VideoCaptureFPS, float64(fps))
+	cap.Set(gocv.VideoCaptureBufferSize, 1)
+	return cap, nil
+}
+
+func (c *GoCVCamera) setRecoveryDefaults() {
+	c.reopenAfter = defaultReopenAfter
+	c.retryDelay = defaultRetryDelay
+	c.backoffMin = defaultBackoffMin
+	c.backoffMax = defaultBackoffMax
 }
 
 func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
@@ -94,13 +144,10 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 		fps = DefaultFPS
 	}
 
-	cap, err := gocv.VideoCaptureFile(url)
-	if err != nil || cap == nil || !cap.IsOpened() {
-		return nil, fmt.Errorf("failed to open video file: %s: %w", url, &CameraError{Message: "file not accessible"})
+	cap, err := openStreamCapture(url)
+	if err != nil {
+		return nil, err
 	}
-
-	// Minimize frame buffering to reduce video lag from network streams
-	cap.Set(gocv.VideoCaptureBufferSize, 1)
 
 	actualWidth := int(cap.Get(gocv.VideoCaptureFrameWidth))
 	actualHeight := int(cap.Get(gocv.VideoCaptureFrameHeight))
@@ -114,10 +161,29 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 		url:     url,
 		isFile:  false,
 		stopCh:  make(chan struct{}),
+		open: func() (frameSource, error) {
+			c, err := openStreamCapture(url)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		},
 	}
+	cam.setRecoveryDefaults()
 	cam.wg.Add(1)
 	go cam.captureLoop()
 	return cam, nil
+}
+
+func openStreamCapture(url string) (*gocv.VideoCapture, error) {
+	cap, err := gocv.VideoCaptureFile(url)
+	if err != nil || cap == nil || !cap.IsOpened() {
+		return nil, fmt.Errorf("failed to open video file: %s: %w", url, &CameraError{Message: "file not accessible"})
+	}
+
+	// Minimize frame buffering to reduce video lag from network streams
+	cap.Set(gocv.VideoCaptureBufferSize, 1)
+	return cap, nil
 }
 
 func (c *GoCVCamera) captureLoop() {
@@ -125,6 +191,7 @@ func (c *GoCVCamera) captureLoop() {
 	img := gocv.NewMat()
 	defer func() { _ = img.Close() }()
 
+	failures := 0
 	for {
 		select {
 		case <-c.stopCh:
@@ -132,21 +199,29 @@ func (c *GoCVCamera) captureLoop() {
 		default:
 		}
 
-		if !c.device.Read(&img) {
-			select {
-			case <-c.stopCh:
-				return
-			default:
+		dev := c.currentDevice()
+		if dev == nil || !dev.Read(&img) || img.Empty() {
+			failures++
+			if failures >= 5 {
 				c.mu.Lock()
 				c.frameErr = &CameraError{Message: "failed to read frame from camera"}
 				c.mu.Unlock()
-				return
 			}
-		}
-
-		if img.Empty() {
+			if c.open != nil && failures >= c.reopenAfter {
+				if !c.reopenDevice() {
+					return
+				}
+				failures = 0
+				continue
+			}
+			select {
+			case <-c.stopCh:
+				return
+			case <-time.After(c.retryDelay):
+			}
 			continue
 		}
+		failures = 0
 
 		frame := &Frame{
 			Data:     img.ToBytes(),
@@ -162,6 +237,60 @@ func (c *GoCVCamera) captureLoop() {
 	}
 }
 
+func (c *GoCVCamera) currentDevice() frameSource {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.device
+}
+
+// reopenDevice closes the stalled device and reopens it, retrying with
+// backoff until it succeeds. It returns false if the camera was stopped
+// meanwhile.
+func (c *GoCVCamera) reopenDevice() bool {
+	utils.Logf("Camera stopped delivering frames; reopening it...")
+
+	c.mu.Lock()
+	old := c.device
+	c.device = nil
+	c.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+
+	backoff := c.backoffMin
+	for attempt := 1; ; attempt++ {
+		select {
+		case <-c.stopCh:
+			return false
+		default:
+		}
+
+		dev, err := c.open()
+		if err == nil {
+			c.mu.Lock()
+			c.device = dev
+			c.mu.Unlock()
+			utils.Logf("Camera reopened after %d attempt(s)", attempt)
+			return true
+		}
+		if attempt == 1 || attempt%10 == 0 {
+			utils.Logf("Camera reopen attempt %d failed: %v", attempt, err)
+		}
+
+		select {
+		case <-c.stopCh:
+			return false
+		case <-time.After(backoff):
+		}
+		if backoff < c.backoffMax {
+			backoff *= 2
+			if backoff > c.backoffMax {
+				backoff = c.backoffMax
+			}
+		}
+	}
+}
+
 func (c *GoCVCamera) Start() error {
 	c.running = true
 	return nil
@@ -172,8 +301,12 @@ func (c *GoCVCamera) Stop() {
 	if c.stopCh != nil {
 		close(c.stopCh)
 	}
-	if c.device != nil && c.device.IsOpened() {
-		_ = c.device.Close()
+	c.mu.Lock()
+	dev := c.device
+	c.device = nil
+	c.mu.Unlock()
+	if dev != nil && dev.IsOpened() {
+		_ = dev.Close()
 	}
 	if c.cap != nil && c.cap.IsOpened() {
 		_ = c.cap.Close()
@@ -251,8 +384,8 @@ func (c *GoCVCamera) GetName() string {
 }
 
 func (c *GoCVCamera) IsConnected() bool {
-	if c.device != nil {
-		return c.device.IsOpened()
+	if dev := c.currentDevice(); dev != nil {
+		return dev.IsOpened()
 	}
 	if c.cap != nil {
 		return c.cap.IsOpened()

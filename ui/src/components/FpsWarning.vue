@@ -9,22 +9,35 @@ const fpsHealth = useFpsHealthStore()
 const robotStore = useRobotStore()
 
 const autonomous = computed(() => robotStore.controlMode === 'autonomous')
+const stalled = computed(() => fpsHealth.kind === 'stalled')
 </script>
 
 <template>
     <div v-if="fpsHealth.bannerVisible" class="fps-warning" :class="{ autonomous }" role="alert">
         <TriangleAlert class="fps-warning-icon" :size="18" />
         <div class="fps-warning-body">
-            <div class="fps-warning-title">
-                Frame rate is {{ formatFps(fpsHealth.fps) }} fps. Below about 5 fps autonomous
-                driving is unreliable.
-            </div>
-            <div v-if="autonomous" class="fps-warning-emphasis">
-                Autonomous mode is active; expect overshoot.
-            </div>
-            <div class="fps-warning-hint">
-                Check CPU load, the camera, and the FRAME TIMING lines in the log.
-            </div>
+            <template v-if="stalled">
+                <div class="fps-warning-title">
+                    No video frames for {{ fpsHealth.stalledSec }} s. The camera stream has stalled;
+                    the service is trying to reopen it. If this does not recover, restart the
+                    service.
+                </div>
+                <div v-if="autonomous" class="fps-warning-emphasis">
+                    Autonomous mode is active; the robot is driving without video.
+                </div>
+            </template>
+            <template v-else>
+                <div class="fps-warning-title">
+                    Frame rate is {{ formatFps(fpsHealth.fps) }} fps. Below about 5 fps autonomous
+                    driving is unreliable.
+                </div>
+                <div v-if="autonomous" class="fps-warning-emphasis">
+                    Autonomous mode is active; expect overshoot.
+                </div>
+                <div class="fps-warning-hint">
+                    Check CPU load, the camera, and the FRAME TIMING lines in the log.
+                </div>
+            </template>
         </div>
         <button
             class="fps-warning-close"
