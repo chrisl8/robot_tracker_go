@@ -69,7 +69,15 @@ type WebServer struct {
 	destinationMutex sync.RWMutex
 	destination      DestinationMessage
 
-	OnObstaclesChanged    func([]planning.Obstacle)
+	OnObstaclesChanged func([]planning.Obstacle)
+
+	// Foreground (temporary obstacle) detector controls, set by the app.
+	OnForegroundEnabled   func(bool)
+	OnForegroundApply     func(bool)
+	OnForegroundReset     func()
+	OnForegroundAbsorb    func(x, y int)
+	ForegroundDebugJPEG   func() []byte
+	ForegroundState       func() ForegroundState
 	OnDestinationSet      func(int, [2]float64)
 	OnDestinationClear    func(int)
 	OnCalibrationComplete func(string)
@@ -84,17 +92,46 @@ type WebServer struct {
 }
 
 type OverlayMessage struct {
-	Type        string                    `json:"type"`
-	BBox        *BBoxMessage              `json:"bbox,omitempty"`
-	Track       *TrackMessage             `json:"track,omitempty"`
-	Tracks      *TracksMessage            `json:"tracks,omitempty"`
-	Path        *PathMessage              `json:"path,omitempty"`
-	Paths       *PathsMessage             `json:"paths,omitempty"`
-	Status      *StatusMessage            `json:"status,omitempty"`
-	Command     *CommandMessage           `json:"command,omitempty"`
-	Calibration *CalibrationStatusMessage `json:"calibration,omitempty"`
-	Obstacles   *ObstaclesMessage         `json:"obstacles,omitempty"`
-	Destination *DestinationMessage       `json:"destination,omitempty"`
+	Type          string                    `json:"type"`
+	BBox          *BBoxMessage              `json:"bbox,omitempty"`
+	Track         *TrackMessage             `json:"track,omitempty"`
+	Tracks        *TracksMessage            `json:"tracks,omitempty"`
+	Path          *PathMessage              `json:"path,omitempty"`
+	Paths         *PathsMessage             `json:"paths,omitempty"`
+	Status        *StatusMessage            `json:"status,omitempty"`
+	Command       *CommandMessage           `json:"command,omitempty"`
+	Calibration   *CalibrationStatusMessage `json:"calibration,omitempty"`
+	Obstacles     *ObstaclesMessage         `json:"obstacles,omitempty"`
+	Destination   *DestinationMessage       `json:"destination,omitempty"`
+	TempObstacles *TempObstaclesMessage     `json:"temp_obstacles,omitempty"`
+}
+
+// TempObstacleResponse is one temporary (detected, not user-marked) obstacle.
+type TempObstacleResponse struct {
+	ID               string     `json:"id"`
+	PixelTopLeft     [2]int     `json:"pixel_top_left"`
+	PixelBottomRight [2]int     `json:"pixel_bottom_right"`
+	WorldTopLeft     [2]float64 `json:"world_top_left"`
+	WorldBottomRight [2]float64 `json:"world_bottom_right"`
+}
+
+// TempObstaclesMessage carries the current temporary obstacles and the
+// detector's state to the UI.
+type TempObstaclesMessage struct {
+	Obstacles []TempObstacleResponse `json:"obstacles"`
+	Applied   bool                   `json:"applied"`
+	Warming   bool                   `json:"warming"`
+	Guarded   bool                   `json:"guarded"`
+	Enabled   bool                   `json:"enabled"`
+}
+
+// ForegroundState is the detector's state as returned by GET /api/foreground/state.
+type ForegroundState struct {
+	Enabled bool `json:"enabled"`
+	Applied bool `json:"applied"`
+	Warming bool `json:"warming"`
+	Guarded bool `json:"guarded"`
+	Count   int  `json:"count"`
 }
 
 type TracksMessage struct {
@@ -243,6 +280,12 @@ func (s *WebServer) setupRoutes() {
 	s.engine.GET("/api/calibration/detected-tags", s.handleCalibrationDetectedTags)
 	s.engine.POST("/api/calibration/compute", s.handleCalibrationCompute)
 	s.engine.POST("/api/calibration/cancel", s.handleCalibrationCancel)
+	s.engine.GET("/api/foreground/state", s.handleForegroundState)
+	s.engine.POST("/api/foreground/enabled", s.handleForegroundEnabled)
+	s.engine.POST("/api/foreground/apply", s.handleForegroundApply)
+	s.engine.POST("/api/foreground/reset", s.handleForegroundReset)
+	s.engine.POST("/api/foreground/absorb", s.handleForegroundAbsorb)
+	s.engine.GET("/api/foreground/debug.jpg", s.handleForegroundDebug)
 	s.engine.POST("/api/mode", s.handleSetMode)
 	s.engine.POST("/api/emergency-stop", s.handleEmergencyStop)
 	s.engine.POST("/api/clear-emergency-stop", s.handleClearEmergencyStop)
@@ -316,6 +359,88 @@ func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
 		_ = client.WriteJSON(msg)
 	}
 	s.clientMutex.RUnlock()
+}
+
+// BroadcastTempObstacles sends the temporary obstacles and detector state to
+// every connected UI.
+func (s *WebServer) BroadcastTempObstacles(msg TempObstaclesMessage) {
+	if msg.Obstacles == nil {
+		msg.Obstacles = []TempObstacleResponse{}
+	}
+	s.BroadcastOverlay(OverlayMessage{Type: "temp_obstacles", TempObstacles: &msg})
+}
+
+func (s *WebServer) handleForegroundState(c *gin.Context) {
+	state := ForegroundState{}
+	if s.ForegroundState != nil {
+		state = s.ForegroundState()
+	}
+	c.JSON(http.StatusOK, state)
+}
+
+func (s *WebServer) handleForegroundEnabled(c *gin.Context) {
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"enabled\": true|false}"})
+		return
+	}
+	if s.OnForegroundEnabled != nil {
+		s.OnForegroundEnabled(*req.Enabled)
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "enabled": *req.Enabled})
+}
+
+func (s *WebServer) handleForegroundApply(c *gin.Context) {
+	var req struct {
+		Apply *bool `json:"apply"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Apply == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"apply\": true|false}"})
+		return
+	}
+	if s.OnForegroundApply != nil {
+		s.OnForegroundApply(*req.Apply)
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "apply": *req.Apply})
+}
+
+func (s *WebServer) handleForegroundReset(c *gin.Context) {
+	if s.OnForegroundReset != nil {
+		s.OnForegroundReset()
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (s *WebServer) handleForegroundAbsorb(c *gin.Context) {
+	var req struct {
+		X *float64 `json:"x"`
+		Y *float64 `json:"y"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.X == nil || req.Y == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"x\": number, \"y\": number}"})
+		return
+	}
+	if s.OnForegroundAbsorb != nil {
+		s.OnForegroundAbsorb(int(*req.X), int(*req.Y))
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// handleForegroundDebug serves the detector's debug view. Asking for it makes
+// the detector render it for the next couple of seconds.
+func (s *WebServer) handleForegroundDebug(c *gin.Context) {
+	var jpeg []byte
+	if s.ForegroundDebugJPEG != nil {
+		jpeg = s.ForegroundDebugJPEG()
+	}
+	if len(jpeg) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "image/jpeg", jpeg)
 }
 
 func (s *WebServer) BroadcastObstacles() {

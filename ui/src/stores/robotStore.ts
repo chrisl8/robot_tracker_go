@@ -11,6 +11,7 @@ import type {
 import { canvasToNaturalShared } from '@/composables/useCanvas'
 import { useUIStore } from './uiStore'
 import { useObstacleStore } from './obstacleStore'
+import { useTempObstacleStore } from './tempObstacleStore'
 
 export const useRobotStore = defineStore('robot', () => {
     // State
@@ -58,6 +59,7 @@ export const useRobotStore = defineStore('robot', () => {
     function handleWebSocketMessage(data: WebSocketMessage): void {
         const uiStore = useUIStore()
         const obstacleStore = useObstacleStore()
+        const tempObstacleStore = useTempObstacleStore()
         switch (data.type) {
             case 'track':
                 updateTrack(data.track)
@@ -76,6 +78,11 @@ export const useRobotStore = defineStore('robot', () => {
             case 'obstacles':
                 if (data.obstacles && Array.isArray(data.obstacles.obstacles)) {
                     obstacleStore.setObstacles(data.obstacles.obstacles || [])
+                }
+                break
+            case 'temp_obstacles':
+                if (data.temp_obstacles) {
+                    tempObstacleStore.setFromMessage(data.temp_obstacles)
                 }
                 break
             case 'calibration':

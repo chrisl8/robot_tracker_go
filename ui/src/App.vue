@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
+import { useTempObstacleStore } from '@/stores/tempObstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import VideoOverlay from '@/components/VideoOverlay.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
+import TempObstaclesPanel from '@/components/TempObstaclesPanel.vue'
 import TrackList from '@/components/TrackList.vue'
 import SystemStatus from '@/components/SystemStatus.vue'
 import ObstaclePanel from '@/components/ObstaclePanel.vue'
@@ -16,8 +18,11 @@ import CalibrationWizard from '@/components/CalibrationWizard.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import BottomBar from '@/components/BottomBar.vue'
 import FpsWarning from '@/components/FpsWarning.vue'
+import ForegroundPreview from '@/components/ForegroundPreview.vue'
+import AbsorbPopover from '@/components/AbsorbPopover.vue'
 
 const obstacleStore = useObstacleStore()
+const tempObstacleStore = useTempObstacleStore()
 const uiStore = useUIStore()
 const fpsHealth = useFpsHealthStore()
 
@@ -45,6 +50,9 @@ async function loadInitialData(): Promise<void> {
         const obstaclesResponse = await fetch('/api/obstacles')
         const obstaclesData = await obstaclesResponse.json()
         obstacleStore.setObstacles(obstaclesData.obstacles || [])
+
+        // Load temporary-obstacle detector state
+        await tempObstacleStore.loadState()
 
         // Load calibration status
         const calibrationResponse = await fetch('/api/calibration/status')
@@ -110,12 +118,15 @@ onUnmounted(() => {
                     <img id="video" :src="streamUrl" alt="Video Stream" />
                     <VideoOverlay />
                     <FpsWarning />
+                    <ForegroundPreview />
+                    <AbsorbPopover />
                 </div>
             </div>
 
             <aside class="panel-right">
                 <TelemetryPanel />
                 <ControlPanel />
+                <TempObstaclesPanel />
                 <CommStatus />
                 <ObstaclePanel v-if="uiStore.panels.obstacleOpen" />
             </aside>

@@ -107,6 +107,7 @@ type RobotSystem struct {
 	watchdogStopOnce    sync.Once
 	watchdogStop        chan struct{}
 	perf                perfWindow
+	fg                  *foregroundGlue
 	lastCPUSeconds      float64
 	lastCPUAt           time.Time
 	lastOffenderLog     time.Time
@@ -329,6 +330,44 @@ func (rs *RobotSystem) cameraDisplayName() string {
 	return ""
 }
 
+// feedYOLOObstacles is the legacy obstacle source: YOLO detections that are not
+// a robot become obstacles for the planner. It is used only when the foreground
+// detector is not running, and goes away with YOLO.
+func (rs *RobotSystem) feedYOLOObstacles(detectionResult *detection.DetectionResult) {
+	nonRobotYOLO := nonRobotYOLODetections(detectionResult)
+	nonRobotYOLO = excludeYOLONearKnownRobots(nonRobotYOLO, rs.positionEst, rs.planner.GetAllRobotStates())
+
+	relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
+	minConfidence := rs.cfg.LocalPlanning.MinConfidence
+	rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
+		nonRobotYOLO,
+		rs.positionEst,
+		relevantClasses,
+		minConfidence,
+	)
+
+	// Feed YOLO-detected obstacles into the A* global planner
+	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
+		var plannerObstacles []planning.Obstacle
+		for _, det := range nonRobotYOLO {
+			if det.Bbox == nil {
+				continue
+			}
+			tl := rs.positionEst.PixelToWorld(det.Bbox.X1, det.Bbox.Y1)
+			br := rs.positionEst.PixelToWorld(det.Bbox.X2, det.Bbox.Y2)
+			// Normalize so TopLeft has smaller coords and BottomRight has larger
+			minX, maxX := math.Min(tl.X, br.X), math.Max(tl.X, br.X)
+			minY, maxY := math.Min(tl.Y, br.Y), math.Max(tl.Y, br.Y)
+			plannerObstacles = append(plannerObstacles, planning.Obstacle{
+				Name:             det.ClassName,
+				WorldTopLeft:     [2]float64{minX, minY},
+				WorldBottomRight: [2]float64{maxX, maxY},
+			})
+		}
+		rs.planner.SetDynamicObstacles(plannerObstacles)
+	}
+}
+
 // statusBroadcastDue reports whether a status update (FPS, Arduino state) should
 // go to the UI now. It is time-based rather than every N frames so the FPS
 // readout keeps refreshing about once a second even when the frame rate is
@@ -545,6 +584,10 @@ func (rs *RobotSystem) Initialize() error {
 			}
 			rs.webServer.SetPositionEstimator(rs.positionEst)
 			utils.Logf("Calibration reloaded: IsCalibrated=%v", rs.positionEst.IsCalibrated())
+			if rs.fg != nil {
+				// The floor mapping changed: relearn the background and forget obstacles.
+				rs.fg.requestReset()
+			}
 		}
 	}
 
@@ -622,6 +665,8 @@ func (rs *RobotSystem) Initialize() error {
 		utils.Debugf("PATH VIS: WARNING - PositionEstimator NOT set! IsCalibrated()=%v",
 			rs.positionEst != nil && rs.positionEst.IsCalibrated())
 	}
+	rs.initForeground()
+
 	rs.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
 
@@ -833,6 +878,9 @@ func (rs *RobotSystem) logPerf() {
 	}
 	rs.lastCPUSeconds, rs.lastCPUAt = cpu, now
 
+	if rs.fg != nil && rs.fg.enabled.Load() {
+		line += rs.fg.perfSummary()
+	}
 	if load, ok := systemLoadAverage(); ok {
 		line += fmt.Sprintf(" load1=%.2f", load)
 	}
@@ -972,37 +1020,11 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
 	detectTime := time.Since(frameStart)
 
-	nonRobotYOLO := nonRobotYOLODetections(detectionResult)
-	nonRobotYOLO = excludeYOLONearKnownRobots(nonRobotYOLO, rs.positionEst, rs.planner.GetAllRobotStates())
+	rs.processForeground(frameData, width, height, frameStart, detectionResult)
 
-	relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
-	minConfidence := rs.cfg.LocalPlanning.MinConfidence
-	rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
-		nonRobotYOLO,
-		rs.positionEst,
-		relevantClasses,
-		minConfidence,
-	)
-
-	// Feed YOLO-detected obstacles into the A* global planner
-	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
-		var plannerObstacles []planning.Obstacle
-		for _, det := range nonRobotYOLO {
-			if det.Bbox == nil {
-				continue
-			}
-			tl := rs.positionEst.PixelToWorld(det.Bbox.X1, det.Bbox.Y1)
-			br := rs.positionEst.PixelToWorld(det.Bbox.X2, det.Bbox.Y2)
-			// Normalize so TopLeft has smaller coords and BottomRight has larger
-			minX, maxX := math.Min(tl.X, br.X), math.Max(tl.X, br.X)
-			minY, maxY := math.Min(tl.Y, br.Y), math.Max(tl.Y, br.Y)
-			plannerObstacles = append(plannerObstacles, planning.Obstacle{
-				Name:             det.ClassName,
-				WorldTopLeft:     [2]float64{minX, minY},
-				WorldBottomRight: [2]float64{maxX, maxY},
-			})
-		}
-		rs.planner.SetDynamicObstacles(plannerObstacles)
+	// Legacy YOLO obstacle feed: only when the foreground detector is not in charge.
+	if rs.fg == nil {
+		rs.feedYOLOObstacles(detectionResult)
 	}
 
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)

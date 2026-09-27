@@ -146,3 +146,54 @@ func TestEffectiveMaxFPS(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveForeground(t *testing.T) {
+	off, on := false, true
+
+	t.Run("defaults: detection on, shadow mode", func(t *testing.T) {
+		got := (&Config{}).EffectiveForeground()
+		if !got.Enabled || got.ApplyToPlanner {
+			t.Errorf("enabled=%v apply=%v, want detection on and planner steering off", got.Enabled, got.ApplyToPlanner)
+		}
+		if got.Scale != 0.5 || got.Threshold != 22 || got.AppearMs != 400 || got.VanishMs != 1500 ||
+			got.MaxBlobs != 8 || got.AbsorbAfterSec != 0 {
+			t.Errorf("unexpected defaults: %+v", got)
+		}
+	})
+	t.Run("nil config", func(t *testing.T) {
+		if got := (*Config)(nil).EffectiveForeground(); !got.Enabled || got.TauSec != 60 {
+			t.Errorf("nil config should give defaults, got %+v", got)
+		}
+	})
+	t.Run("explicit values win, including switching off", func(t *testing.T) {
+		cfg := &Config{Foreground: ForegroundConfig{
+			Enabled: &off, ApplyToPlanner: &on, Threshold: 30, AppearMs: 250, AbsorbAfterSec: 600,
+		}}
+		got := cfg.EffectiveForeground()
+		if got.Enabled || !got.ApplyToPlanner || got.Threshold != 30 || got.AppearMs != 250 || got.AbsorbAfterSec != 600 {
+			t.Errorf("explicit values not honoured: %+v", got)
+		}
+		if got.Scale != 0.5 {
+			t.Errorf("unset fields should still default, Scale=%v", got.Scale)
+		}
+	})
+}
+
+// TestShippedConfigLoads guards the repository's own config file: it must parse,
+// enable the foreground detector, and have YOLO switched off.
+func TestShippedConfigLoads(t *testing.T) {
+	cfg, err := Load("../../config/tracking_config.yaml")
+	if err != nil {
+		t.Fatalf("shipped config does not load: %v", err)
+	}
+	fg := cfg.EffectiveForeground()
+	if !fg.Enabled || fg.Scale <= 0 || fg.AppearMs <= 0 {
+		t.Errorf("shipped foreground settings look wrong: %+v", fg)
+	}
+	if cfg.YOLO.ModelPath != "" {
+		t.Errorf("YOLO should be off in the shipped config, model = %q", cfg.YOLO.ModelPath)
+	}
+	if got := cfg.EffectiveMaxFPS(); got < 1 {
+		t.Errorf("max fps = %d", got)
+	}
+}

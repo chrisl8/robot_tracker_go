@@ -131,6 +131,7 @@ export type WebSocketMessage =
     | DestinationMessage
     | DestinationClearMessage
     | PathsMessage
+    | TempObstaclesMessage
 
 export interface TrackMessage {
     type: 'track'
@@ -160,6 +161,40 @@ export interface PathsNestedResponse {
 export interface PathsMessage {
     type: 'paths'
     paths: PathsNestedResponse
+}
+
+// Temporary obstacles found by the foreground (background-subtraction) detector
+export interface TempObstacle {
+    id: string
+    pixel_top_left: [number, number]
+    pixel_bottom_right: [number, number]
+    world_top_left: [number, number]
+    world_bottom_right: [number, number]
+}
+
+export interface TempObstaclesPayload {
+    obstacles: TempObstacle[]
+    // The planner is steering around them
+    applied: boolean
+    // The background is still being learned
+    warming: boolean
+    // A lighting event: obstacles are being held
+    guarded: boolean
+    // The detector is on
+    enabled: boolean
+}
+
+export interface TempObstaclesMessage {
+    type: 'temp_obstacles'
+    temp_obstacles: TempObstaclesPayload
+}
+
+export interface ForegroundState {
+    enabled: boolean
+    applied: boolean
+    warming: boolean
+    guarded: boolean
+    count: number
 }
 
 export interface ObstaclesMessage {

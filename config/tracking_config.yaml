@@ -51,9 +51,34 @@ april_tags:
   min_tag_size: 0.02 # Minimum tag size relative to image dimension
   max_hamming_distance: 2
 
-# YOLOv8 Detection Settings
+# Temporary-obstacle detection (background subtraction). Finds anything in the
+# arena that is not the empty floor, a robot, or a marked static obstacle. Costs
+# ~1.5 ms per frame and needs no model. Objects stay obstacles until they are
+# removed (see absorb_after_sec) or you press "Reset background"/"Absorb" in the UI.
+foreground:
+  enabled: true
+  apply_to_planner: false # false = "shadow mode": detect and show obstacles in the UI
+                          # but do not steer around them. Set true (or use the UI
+                          # toggle) once the detections look right.
+  scale: 0.5              # working resolution relative to the camera frame
+  threshold: 22           # gray-level change (0-255) that counts as an object
+  dark_factor: 1.4        # darkening must change dark_factor x threshold (shadows)
+  min_size_m: 0.05        # ignore anything smaller than this on the floor
+  appear_ms: 400          # must persist this long before it becomes an obstacle
+  vanish_ms: 1500         # stays an obstacle this long after it disappears
+  tau_sec: 60             # background learning time constant (lighting drift)
+  warmup_sec: 3           # seconds of clear floor to learn from at start
+  robot_margin_m: 0.06    # extra masked margin around each robot
+  static_margin_px: 6     # extra masked margin around marked static obstacles
+  max_blobs: 8            # at most this many temporary obstacles
+  pad_m: 0.02             # padding added to each obstacle for the planner
+  guard_fraction: 0.25    # if more than this share of the frame changes at once,
+                          # treat it as a lighting event and hold the last obstacles
+  absorb_after_sec: 0     # 0 = a stationary object stays an obstacle until removed
+
+# YOLOv8 Detection Settings (legacy; superseded by the foreground detector above)
 yolo:
-  model: "assets/yolov8n.onnx"
+  model: "" # empty = YOLO off. The model file is not needed any more.
   input_size: 640
   conf_thres: 0.25 # Lowered to detect smaller objects
   iou_thres: 0.45 # NMS threshold

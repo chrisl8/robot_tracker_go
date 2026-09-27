@@ -23,6 +23,96 @@ type Config struct {
 	Cameras       []CameraConfig      `yaml:"cameras"`
 	Controller    ControllerConfig    `yaml:"controller"`
 	Processing    ProcessingConfig    `yaml:"processing"`
+	Foreground    ForegroundConfig    `yaml:"foreground"`
+}
+
+// ForegroundConfig configures the background-subtraction detector that finds
+// temporary obstacles (anything in the arena that is not the empty floor, a
+// robot, or a marked static obstacle). Zero values fall back to the defaults in
+// EffectiveForeground.
+type ForegroundConfig struct {
+	Enabled        *bool   `yaml:"enabled"` // nil = on
+	ApplyToPlanner *bool   `yaml:"apply_to_planner"`
+	Scale          float64 `yaml:"scale"`
+	Threshold      float64 `yaml:"threshold"`
+	DarkFactor     float64 `yaml:"dark_factor"`
+	MinSizeM       float64 `yaml:"min_size_m"`
+	AppearMs       int     `yaml:"appear_ms"`
+	VanishMs       int     `yaml:"vanish_ms"`
+	TauSec         float64 `yaml:"tau_sec"`
+	WarmupSec      float64 `yaml:"warmup_sec"`
+	RobotMarginM   float64 `yaml:"robot_margin_m"`
+	StaticMarginPx int     `yaml:"static_margin_px"`
+	MaxBlobs       int     `yaml:"max_blobs"`
+	AbsorbAfterSec float64 `yaml:"absorb_after_sec"`
+	GuardFraction  float64 `yaml:"guard_fraction"`
+	PadM           float64 `yaml:"pad_m"`
+}
+
+// ForegroundSettings is ForegroundConfig with every default applied.
+type ForegroundSettings struct {
+	Enabled        bool
+	ApplyToPlanner bool
+	Scale          float64
+	Threshold      float64
+	DarkFactor     float64
+	MinSizeM       float64
+	AppearMs       int
+	VanishMs       int
+	TauSec         float64
+	WarmupSec      float64
+	RobotMarginM   float64
+	StaticMarginPx int
+	MaxBlobs       int
+	AbsorbAfterSec float64
+	GuardFraction  float64
+	PadM           float64
+}
+
+// EffectiveForeground returns the foreground settings with defaults filled in.
+// Detection is on by default; steering the planner around detected obstacles is
+// off by default (shadow mode) until it is turned on in config or the UI.
+func (c *Config) EffectiveForeground() ForegroundSettings {
+	var f ForegroundConfig
+	if c != nil {
+		f = c.Foreground
+	}
+	orF := func(v, def float64) float64 {
+		if v > 0 {
+			return v
+		}
+		return def
+	}
+	orI := func(v, def int) int {
+		if v > 0 {
+			return v
+		}
+		return def
+	}
+	s := ForegroundSettings{
+		Enabled:        true,
+		Scale:          orF(f.Scale, 0.5),
+		Threshold:      orF(f.Threshold, 22),
+		DarkFactor:     orF(f.DarkFactor, 1.4),
+		MinSizeM:       orF(f.MinSizeM, 0.05),
+		AppearMs:       orI(f.AppearMs, 400),
+		VanishMs:       orI(f.VanishMs, 1500),
+		TauSec:         orF(f.TauSec, 60),
+		WarmupSec:      orF(f.WarmupSec, 3),
+		RobotMarginM:   orF(f.RobotMarginM, 0.06),
+		StaticMarginPx: orI(f.StaticMarginPx, 6),
+		MaxBlobs:       orI(f.MaxBlobs, 8),
+		AbsorbAfterSec: f.AbsorbAfterSec, // 0 = never (objects stay obstacles)
+		GuardFraction:  orF(f.GuardFraction, 0.25),
+		PadM:           orF(f.PadM, 0.02),
+	}
+	if f.Enabled != nil {
+		s.Enabled = *f.Enabled
+	}
+	if f.ApplyToPlanner != nil {
+		s.ApplyToPlanner = *f.ApplyToPlanner
+	}
+	return s
 }
 
 // DefaultMaxFPS is the frame-processing cap used when processing.max_fps is

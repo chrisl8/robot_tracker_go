@@ -347,6 +347,9 @@ func RunDemoYOLOMode(rs *RobotSystem) {
 		}
 
 		rs.webServer.UpdateStats(len(demoTags), len(fakeYOLO))
+		if frameNum%15 == 0 {
+			rs.broadcastDemoTempObstacles()
+		}
 
 		detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
 		for _, tag := range demoTags {
@@ -378,4 +381,24 @@ func demoCalibrationTagInfos(width, height int) []ui.DetectedTagInfo {
 		infos = append(infos, info)
 	}
 	return infos
+}
+
+// broadcastDemoTempObstacles shows the demo obstacles as temporary obstacles in
+// the UI, so the overlay and controls can be exercised without a camera. Demo
+// frames are 640x480 and the demo has no real floor mapping, so world
+// coordinates are just pixels / 100.
+func (rs *RobotSystem) broadcastDemoTempObstacles() {
+	msgs := make([]ui.TempObstacleResponse, 0, len(demoObstacles))
+	for i, obs := range demoObstacles {
+		x0, y0 := obs.X-obs.Width/2, obs.Y-obs.Height/2
+		x1, y1 := obs.X+obs.Width/2, obs.Y+obs.Height/2
+		msgs = append(msgs, ui.TempObstacleResponse{
+			ID:               fmt.Sprintf("temp_%d", i+1),
+			PixelTopLeft:     [2]int{x0, y0},
+			PixelBottomRight: [2]int{x1, y1},
+			WorldTopLeft:     [2]float64{float64(x0) / 100, float64(y0) / 100},
+			WorldBottomRight: [2]float64{float64(x1) / 100, float64(y1) / 100},
+		})
+	}
+	rs.webServer.BroadcastTempObstacles(ui.TempObstaclesMessage{Obstacles: msgs, Enabled: true})
 }

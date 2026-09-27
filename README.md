@@ -115,6 +115,28 @@ reserved: robots must not use them).
 its resolution changes (the calibration records its resolution, and the UI badge says "Recalibrate"
 if the camera is now delivering a different one).
 
+### Temporary obstacles
+
+The tracker notices anything that appears in the arena and is not the empty floor, a robot,
+or an obstacle you marked static, and can plan around it. It works by comparing each frame with
+an adaptive picture of the empty floor (background subtraction): no model, any kind of object,
+about 1.5 ms per frame.
+
+- **Detected obstacles** are drawn as translucent boxes over the video. The detector needs a few
+  seconds of clear floor at start-up ("Learning background"). Robots are ignored using their tags.
+- **Shadow mode first.** By default (`foreground.apply_to_planner: false`) obstacles are shown but the
+  planner does not steer around them. Turn on **Steer around them** in the *Temporary obstacles* panel
+  (or set it in `config/tracking_config.yaml`) once the detections look right.
+- An object that stays put **remains an obstacle until you remove it** (nothing silently absorbs it).
+  If something permanent was left in view, click it and choose **Absorb** (treat as floor), or press
+  **Reset background** with the floor clear. **Show mask** displays what the detector sees.
+- Slow lighting drift is followed automatically. A sudden change that lights up a large part of the
+  picture is treated as a lighting event: the last obstacles are held and the background is relearned.
+- While the calibration wizard is open, detection pauses (the tags on the floor would look like
+  objects) and the background relearns afterwards.
+- Tuning knobs are in the `foreground:` section of `config/tracking_config.yaml` (threshold, minimum
+  size, how long an object must persist to count, and so on).
+
 ### YOLO Model
 
 A pre-trained YOLOv8n ONNX model is included at `assets/yolov8n.onnx`. No export step is needed.

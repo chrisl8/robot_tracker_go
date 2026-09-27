@@ -59,6 +59,22 @@ test.describe('Robot Tracker UI Integration', () => {
         await expect(page.locator('.calibration-overlay')).toHaveCount(1)
     })
 
+    test('should show the temporary obstacle controls', async ({ page }) => {
+        const group = page.locator('.panel-right .panel:has-text("Temporary obstacles")')
+        await expect(group).toBeVisible()
+        await expect(page.locator('[data-testid="temp-detection"]')).toBeVisible()
+        await expect(page.locator('[data-testid="temp-steer"]')).toBeVisible()
+        await expect(page.locator('[data-testid="temp-reset"]')).toBeVisible()
+        await expect(page.locator('[data-testid="temp-mask"]')).toBeVisible()
+    })
+
+    test('should toggle the detector mask preview', async ({ page }) => {
+        await page.locator('[data-testid="temp-mask"]').click()
+        await expect(page.locator('[data-testid="mask-preview"]')).toBeVisible()
+        await page.locator('[data-testid="temp-mask"]').click()
+        await expect(page.locator('[data-testid="mask-preview"]')).toHaveCount(0)
+    })
+
     test('should dock the placement panel in the right sidebar, off the video', async ({
         page,
     }) => {
@@ -112,6 +128,15 @@ test.describe('API Endpoints', () => {
         const data = await response.json()
         expect(data.target.tags).toHaveLength(5)
         expect(data.target.tagSize).toBeGreaterThan(0)
+    })
+
+    test('should return the foreground detector state', async ({ request }) => {
+        const response = await request.get('http://localhost:9086/api/foreground/state')
+        expect(response.status()).toBe(200)
+        const data = await response.json()
+        for (const key of ['enabled', 'applied', 'warming', 'guarded', 'count']) {
+            expect(data).toHaveProperty(key)
+        }
     })
 
     test('should return obstacles', async ({ request }) => {

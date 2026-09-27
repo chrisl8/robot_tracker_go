@@ -240,16 +240,18 @@ func TestConfigLoadingIntegration(t *testing.T) {
 		t.Error("AprilTag family not configured")
 	}
 
-	if cfg.YOLO.ModelPath == "" {
-		t.Error("YOLO model path not configured")
+	// Temporary obstacles come from the foreground detector, which is on by
+	// default; YOLO is intentionally off (empty model path).
+	if !cfg.EffectiveForeground().Enabled {
+		t.Error("foreground obstacle detection should be enabled in the shipped config")
 	}
 
 	if cfg.Tracking.TrackThresh == 0 {
 		t.Error("Tracking threshold not configured")
 	}
 
-	t.Logf("Config: %d robots, AprilTag family=%s, YOLO model=%s, track_thresh=%.2f",
-		len(cfg.Robots), cfg.AprilTags.Family, cfg.YOLO.ModelPath, cfg.Tracking.TrackThresh)
+	t.Logf("Config: %d robots, AprilTag family=%s, foreground=%v, track_thresh=%.2f",
+		len(cfg.Robots), cfg.AprilTags.Family, cfg.EffectiveForeground().Enabled, cfg.Tracking.TrackThresh)
 }
 
 func TestDetectionWithRealImage(t *testing.T) {

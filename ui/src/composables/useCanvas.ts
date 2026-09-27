@@ -1,11 +1,18 @@
 import { ref, computed, onMounted, onUnmounted, watch, type Ref } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
+import { useTempObstacleStore } from '@/stores/tempObstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { getTrackColor } from '@/types/robot'
 import type { Track } from '@/types/api'
 import { getVideoDimensions } from '@/utils/coordinates'
 import { createRateLimiter } from '@/utils/rateLimiter'
+import {
+    hitTestTempObstacle,
+    tempObstacleCanvasRect,
+    tempObstacleLabel,
+    tempObstacleStatusChip,
+} from '@/utils/tempObstacles'
 
 export interface CanvasPoint {
     x: number
@@ -19,6 +26,14 @@ const THEME = {
     footprintStroke: '#00d9ff',
     footprintSelectedFill: 'rgba(224, 230, 237, 0.25)',
     footprintSelectedStroke: '#e0e6ed',
+
+    // Temporary obstacles (foreground detector)
+    tempFill: 'rgba(255, 145, 0, 0.28)',
+    tempStroke: '#ff9100',
+    tempIdleFill: 'rgba(255, 145, 0, 0.08)',
+    tempIdleStroke: 'rgba(255, 145, 0, 0.7)',
+    tempChipBg: 'rgba(10, 14, 20, 0.85)',
+    tempChipText: '#ffab00',
 
     // Destination cursor
     destValidFill: 'rgba(0, 230, 118, 0.3)',
@@ -87,6 +102,7 @@ export function canvasToNaturalShared(canvasX: number, canvasY: number): { x: nu
 export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const robotStore = useRobotStore()
     const obstacleStore = useObstacleStore()
+    const tempObstacleStore = useTempObstacleStore()
     const uiStore = useUIStore()
     // A robot is selected but the click landed on empty video and did nothing: say why, sparingly.
     const canShowSelectionHint = createRateLimiter(8000)
@@ -338,6 +354,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         // Obstacles are now drawn by the backend on the video frame
         renderDestinationMarker()
         renderFootprints()
+        renderTempObstacles()
         renderDestinationCursor()
         renderPaths()
         renderDrawingBox()
@@ -464,6 +481,59 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                 ? THEME.footprintSelectedStroke
                 : THEME.footprintStroke
             ctx.value.stroke()
+        }
+    }
+
+    function renderTempObstacles(): void {
+        if (!ctx.value || !tempObstacleStore.enabled) return
+        if (videoScale.value.x === 0 || videoScale.value.y === 0) return
+
+        const c = ctx.value
+        const applied = tempObstacleStore.applied
+
+        for (const obs of tempObstacleStore.obstacles) {
+            const r = tempObstacleCanvasRect(obs, naturalToCanvas)
+
+            c.save()
+            c.fillStyle = applied ? THEME.tempFill : THEME.tempIdleFill
+            c.fillRect(r.x, r.y, r.w, r.h)
+
+            if (!applied) {
+                // Hatch the box to show the planner is ignoring it
+                c.beginPath()
+                c.rect(r.x, r.y, r.w, r.h)
+                c.clip()
+                c.strokeStyle = THEME.tempIdleStroke
+                c.lineWidth = 1
+                c.beginPath()
+                for (let d = -r.h; d < r.w; d += 8) {
+                    c.moveTo(r.x + d, r.y + r.h)
+                    c.lineTo(r.x + d + r.h, r.y)
+                }
+                c.stroke()
+            }
+            c.restore()
+
+            c.save()
+            c.setLineDash([6, 4])
+            c.lineWidth = 2
+            c.strokeStyle = applied ? THEME.tempStroke : THEME.tempIdleStroke
+            c.strokeRect(r.x, r.y, r.w, r.h)
+            c.restore()
+
+            c.font = THEME.fontLabel
+            c.fillStyle = THEME.tempStroke
+            c.fillText(tempObstacleLabel(applied), r.x + 3, Math.max(12, r.y - 4))
+        }
+
+        const chip = tempObstacleStatusChip(tempObstacleStore)
+        if (chip) {
+            c.font = THEME.fontLabel
+            const width = c.measureText(chip).width + 16
+            c.fillStyle = THEME.tempChipBg
+            c.fillRect(8, 8, width, 22)
+            c.fillStyle = THEME.tempChipText
+            c.fillText(chip, 16, 23)
         }
     }
 
@@ -1085,6 +1155,21 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                     point.y <= scaled2.y
                 ) {
                     robotStore.selectTrack(track.id)
+                    return
+                }
+            }
+
+            // A click on a temporary obstacle offers to absorb it (treat as floor).
+            if (tempObstacleStore.enabled) {
+                const natural = canvasToNatural(point.x, point.y)
+                const hit = hitTestTempObstacle(tempObstacleStore.obstacles, natural.x, natural.y)
+                if (hit) {
+                    tempObstacleStore.promptAbsorb({
+                        x: natural.x,
+                        y: natural.y,
+                        canvasX: point.x,
+                        canvasY: point.y,
+                    })
                     return
                 }
             }
