@@ -101,6 +101,9 @@ func Hungarian(costMatrix [][]float64) *Assignment {
 	}
 
 	assignment := make([]int, n)
+	for i := range assignment {
+		assignment[i] = -1
+	}
 	for j := 1; j <= size; j++ {
 		if p[j] != 0 && p[j] <= n && j <= m {
 			assignment[p[j]-1] = j - 1
@@ -109,7 +112,7 @@ func Hungarian(costMatrix [][]float64) *Assignment {
 
 	costValue := 0.0
 	for i := 0; i < n; i++ {
-		if assignment[i] < m {
+		if assignment[i] >= 0 && assignment[i] < m {
 			costValue += costMatrix[i][assignment[i]]
 		}
 	}

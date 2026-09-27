@@ -30,7 +30,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    stationary to every other robot's avoidance math — this undermines the premise of
    the local planner. No robot velocity is computed anywhere in `main.go`.
 
-3. **Hungarian-algorithm unmatched rows silently default to "matched to track 0."**
+3. **[FIXED] Hungarian-algorithm unmatched rows silently default to "matched to track 0."**
    `internal/tracking/hungarian.go:103-108` — when there are more detections than
    tracks, some assignment rows are never written and Go's zero-value (`0`) is
    indistinguishable from a real match to track index 0. Downstream in

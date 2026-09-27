@@ -154,7 +154,7 @@ func (t *ByteTrack) matchTracks(detections []Detection) (matchedDetections []int
 	}
 
 	for i, j := range assignment.RowToCol {
-		if i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < 0.5 {
+		if j >= 0 && i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < 0.5 {
 			matchedDetectionsResult = append(matchedDetectionsResult, i)
 			matchedTrackIDsResult = append(matchedTrackIDsResult, trackIDs[j])
 			delete(unmatchedDetectionsMap, i)
@@ -199,7 +199,7 @@ func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, u
 	}
 
 	for i, j := range assignment.RowToCol {
-		if i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < 0.5 {
+		if j >= 0 && i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < 0.5 {
 			matched = append(matched, i)
 			matchedTrackIDs = append(matchedTrackIDs, trackIDs[j])
 			delete(unmatchedDetectionsMap, i)

@@ -55,6 +55,34 @@ func TestHungarian_Nonsquare(t *testing.T) {
 	}
 }
 
+func TestHungarian_UnmatchedRowsAreMarkedNegative(t *testing.T) {
+	// More rows (detections) than columns (tracks): rows that cannot be
+	// matched to any column must come back as -1, not the zero-value 0,
+	// which would be indistinguishable from a real match to column 0.
+	costMatrix := [][]float64{
+		{10.0},
+		{1.0},
+		{10.0},
+	}
+	result := Hungarian(costMatrix)
+
+	if len(result.RowToCol) != 3 {
+		t.Fatalf("3x1 matrix should return assignment of length 3, got %d", len(result.RowToCol))
+	}
+	if result.RowToCol[1] != 0 {
+		t.Errorf("row 1 should be matched to column 0, got %d", result.RowToCol[1])
+	}
+	if result.RowToCol[0] != -1 {
+		t.Errorf("unmatched row 0 should be -1, got %d", result.RowToCol[0])
+	}
+	if result.RowToCol[2] != -1 {
+		t.Errorf("unmatched row 2 should be -1, got %d", result.RowToCol[2])
+	}
+	if result.Cost != 1.0 {
+		t.Errorf("Cost should only include the real match (1.0), got %f", result.Cost)
+	}
+}
+
 func TestHungarian_IdentityCost(t *testing.T) {
 	costMatrix := [][]float64{
 		{0.0, 100.0, 100.0},
