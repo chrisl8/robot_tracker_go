@@ -63,7 +63,14 @@ func (p *LocalPlanner) applyVelocityObstacles(robot RobotState, desiredVel [2]fl
 	timeHorizon := p.config.TimeHorizon
 	safetyMargin := p.config.SafetyMargin
 
-	avoidanceVel := desiredVel
+	// Collect every obstacle we're currently penetrating and every velocity
+	// obstacle (VO) triggered by a predicted future collision. We must
+	// account for all of them together — reacting to only the
+	// last-processed obstacle can leave the chosen velocity still inside an
+	// earlier obstacle's danger zone.
+	var penetrating []RobotState
+	var vos [][][2]float64
+	needsVOAvoidance := false
 
 	for _, obs := range obstacles {
 		if obs.Diameter <= 0 {
@@ -78,7 +85,7 @@ func (p *LocalPlanner) applyVelocityObstacles(robot RobotState, desiredVel [2]fl
 		dist := math.Sqrt(dx*dx + dy*dy)
 
 		if dist < combinedRadius {
-			avoidanceVel = p.computeCollisionAvoidance(robot, desiredVel, obs, combinedRadius, timeHorizon)
+			penetrating = append(penetrating, obs)
 			continue
 		}
 
@@ -91,10 +98,26 @@ func (p *LocalPlanner) applyVelocityObstacles(robot RobotState, desiredVel [2]fl
 		}
 
 		vo := p.computeVO(robot.Position, combinedRadius, obs.Position, [2]float64{obs.Velocity.VX, obs.Velocity.VY}, timeHorizon)
+		vos = append(vos, vo)
 
 		if p.velocityInVO(desiredVel, vo) {
-			avoidanceVel = p.computeBestAvoidanceVelocity(robot, desiredVel, obstacles, vo)
+			needsVOAvoidance = true
 		}
+	}
+
+	avoidanceVel := desiredVel
+
+	if len(penetrating) > 0 {
+		// Already inside one or more safety margins: escape combines every
+		// penetrating obstacle's push-away direction, weighted by how deep
+		// the penetration is, rather than only the last one seen.
+		avoidanceVel = p.computeCombinedCollisionAvoidance(robot, penetrating, robotRadius, safetyMargin)
+	} else if needsVOAvoidance {
+		// Not yet penetrating anything, but the desired velocity would enter
+		// a predicted collision cone. Pick a candidate velocity that clears
+		// every obstacle's VO simultaneously, not just the one that
+		// triggered avoidance.
+		avoidanceVel = p.computeBestAvoidanceVelocity(robot, desiredVel, obstacles, vos)
 	}
 
 	velMag := math.Sqrt(avoidanceVel[0]*avoidanceVel[0] + avoidanceVel[1]*avoidanceVel[1])
@@ -143,27 +166,41 @@ func (p *LocalPlanner) velocityInVO(vel [2]float64, vo [][2]float64) bool {
 	return cross1 >= 0 && cross2 <= 0
 }
 
-func (p *LocalPlanner) computeBestAvoidanceVelocity(robot RobotState, desiredVel [2]float64, obstacles []RobotState, vo [][2]float64) [2]float64 {
-	bestVel := desiredVel
+func (p *LocalPlanner) computeBestAvoidanceVelocity(robot RobotState, desiredVel [2]float64, obstacles []RobotState, vos [][][2]float64) [2]float64 {
+	bestVel := [2]float64{0, 0}
 	bestScore := -1.0
+	found := false
 
 	candidateVels := p.generateCandidateVelocities(desiredVel)
 
 	for _, cand := range candidateVels {
-		if !p.velocityInVO(cand, vo) {
-			score := p.evaluateVelocity(cand, desiredVel, obstacles)
-			if score > bestScore {
-				bestScore = score
-				bestVel = cand
-			}
+		if p.velocityInAnyVO(cand, vos) {
+			continue
+		}
+		score := p.evaluateVelocity(cand, desiredVel, obstacles)
+		if score > bestScore {
+			bestScore = score
+			bestVel = cand
+			found = true
 		}
 	}
 
-	if bestScore < 0 {
+	if !found {
 		bestVel = [2]float64{0, 0}
 	}
 
 	return bestVel
+}
+
+// velocityInAnyVO reports whether vel falls inside any of the given velocity
+// obstacles.
+func (p *LocalPlanner) velocityInAnyVO(vel [2]float64, vos [][][2]float64) bool {
+	for _, vo := range vos {
+		if p.velocityInVO(vel, vo) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *LocalPlanner) generateCandidateVelocities(desired [2]float64) [][2]float64 {
@@ -198,19 +235,52 @@ func (p *LocalPlanner) evaluateVelocity(vel [2]float64, desired [2]float64, obst
 	return alignment*0.7 + (speed/p.config.MaxVelocity)*0.3
 }
 
-func (p *LocalPlanner) computeCollisionAvoidance(robot RobotState, desiredVel [2]float64, obs RobotState, combinedRadius, timeHorizon float64) [2]float64 {
-	dx := obs.Position[0] - robot.Position[0]
-	dy := obs.Position[1] - robot.Position[1]
-	dist := math.Sqrt(dx*dx + dy*dy)
+// computeCombinedCollisionAvoidance produces a single escape velocity that
+// accounts for every obstacle whose safety margin the robot is currently
+// inside, weighted by how deep each penetration is. This avoids the bug
+// where handling obstacles one at a time in a loop lets the last obstacle
+// processed silently override an escape direction that was safe for an
+// earlier, still-penetrated obstacle.
+func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, obstacles []RobotState, robotRadius, safetyMargin float64) [2]float64 {
+	var sumX, sumY float64
 
-	if dist < 0.01 {
+	for _, obs := range obstacles {
+		obsRadius := obs.Diameter / 2
+		combinedRadius := robotRadius + obsRadius + safetyMargin
+
+		dx := obs.Position[0] - robot.Position[0]
+		dy := obs.Position[1] - robot.Position[1]
+		dist := math.Sqrt(dx*dx + dy*dy)
+
+		if dist < 0.01 {
+			// Coincident positions: push away in an arbitrary but
+			// consistent direction rather than dividing by ~zero.
+			dist = 0.01
+			dx, dy = 0.01, 0
+		}
+
+		penetration := combinedRadius - dist
+		if penetration < 0 {
+			penetration = 0
+		}
+
+		// Weight the escape contribution by penetration depth (plus a
+		// small floor so even a barely-penetrating obstacle still counts)
+		// so the deepest intrusion dominates the combined direction.
+		weight := penetration + 0.01
+		sumX += (-dx / dist) * weight
+		sumY += (-dy / dist) * weight
+	}
+
+	mag := math.Sqrt(sumX*sumX + sumY*sumY)
+	if mag < 1e-9 {
 		return [2]float64{0, 0}
 	}
 
-	avoidX := -dx / dist * p.config.MaxVelocity * 0.8
-	avoidY := -dy / dist * p.config.MaxVelocity * 0.8
-
-	return [2]float64{avoidX, avoidY}
+	return [2]float64{
+		(sumX / mag) * p.config.MaxVelocity * 0.8,
+		(sumY / mag) * p.config.MaxVelocity * 0.8,
+	}
 }
 
 func (p *LocalPlanner) IsCollisionFree(robot RobotState, velocity [2]float64, obstacles []RobotState, duration float64) bool {

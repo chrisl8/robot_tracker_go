@@ -38,7 +38,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    (ID-switch risk) instead of correctly creating a new track. Not covered by
    `hungarian_test.go` (only tests square matrices with all-real assignments).
 
-4. **Multi-obstacle avoidance: last obstacle processed wins, not the most dangerous.**
+4. **[FIXED] Multi-obstacle avoidance: last obstacle processed wins, not the most dangerous.**
    `internal/planning/local.go:61-98` (`applyVelocityObstacles`) — `avoidanceVel` is
    overwritten each loop iteration rather than combined/intersected. With 2+ nearby
    robots/obstacles, the final escape velocity can still be inside an earlier
