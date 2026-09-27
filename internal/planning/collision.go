@@ -8,6 +8,30 @@ type Obstacle struct {
 	WorldBottomRight  [2]float64
 	PixelsTopLeft     [2]int
 	PixelsBottomRight [2]int
+	// Quad is the obstacle's exact footprint, four world-metre corners in a
+	// consistent winding order (see Quad). WorldTopLeft/WorldBottomRight
+	// remain a cached axis-aligned envelope (still used for cheap jitter
+	// comparisons); Quad is what collision/clearance checks and A*
+	// rasterization use, so a rotated obstacle is not inflated to its
+	// bounding box. NewRectObstacle fills both consistently; a bare struct
+	// literal with only WorldTopLeft/WorldBottomRight set gets a zero-value
+	// Quad, which callers must not do directly outside this package's own
+	// tests — construct obstacles through NewRectObstacle instead.
+	Quad Quad
+}
+
+// NewRectObstacle builds an axis-aligned rectangular obstacle: the ordinary
+// case for a user-marked static obstacle or a legacy (non-oriented) detection.
+// It keeps the legacy WorldTopLeft/WorldBottomRight fields and derives the
+// matching (degenerate rectangular) Quad from them, so every Obstacle in the
+// system is guaranteed to have both consistently populated.
+func NewRectObstacle(name string, worldTopLeft, worldBottomRight [2]float64) Obstacle {
+	return Obstacle{
+		Name:             name,
+		WorldTopLeft:     worldTopLeft,
+		WorldBottomRight: worldBottomRight,
+		Quad:             RectQuad(worldTopLeft, worldBottomRight),
+	}
 }
 
 type RobotState struct {

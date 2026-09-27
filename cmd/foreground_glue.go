@@ -283,11 +283,8 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 	for _, t := range tracked {
 		box := t.Box.Expand(g.settings.PadM)
 		name := fmt.Sprintf("temp_%d", t.ID)
-		obstacles = append(obstacles, planning.Obstacle{
-			Name:             name,
-			WorldTopLeft:     [2]float64{box.MinX, box.MinY},
-			WorldBottomRight: [2]float64{box.MaxX, box.MaxY},
-		})
+		obstacles = append(obstacles, planning.NewRectObstacle(
+			name, [2]float64{box.MinX, box.MinY}, [2]float64{box.MaxX, box.MaxY}))
 		var tl, br [2]int
 		if est != nil {
 			tl, br = worldBoxToPixels(est, box)

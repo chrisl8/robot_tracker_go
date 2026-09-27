@@ -1137,13 +1137,9 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 
 	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
 
-	newObs := planning.Obstacle{
-		Name:              fmt.Sprintf("obstacle_%d", len(s.obstacles)+1),
-		PixelsTopLeft:     req.PixelTopLeft,
-		PixelsBottomRight: req.PixelBottomRight,
-		WorldTopLeft:      worldTL,
-		WorldBottomRight:  worldBR,
-	}
+	newObs := planning.NewRectObstacle(fmt.Sprintf("obstacle_%d", len(s.obstacles)+1), worldTL, worldBR)
+	newObs.PixelsTopLeft = req.PixelTopLeft
+	newObs.PixelsBottomRight = req.PixelBottomRight
 
 	if req.Name != "" {
 		newObs.Name = req.Name
@@ -1206,13 +1202,10 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 
 	for i, obs := range s.obstacles {
 		if obs.Name == id {
-			s.obstacles[i] = planning.Obstacle{
-				Name:              id,
-				PixelsTopLeft:     req.PixelTopLeft,
-				PixelsBottomRight: req.PixelBottomRight,
-				WorldTopLeft:      worldTL,
-				WorldBottomRight:  worldBR,
-			}
+			updated := planning.NewRectObstacle(id, worldTL, worldBR)
+			updated.PixelsTopLeft = req.PixelTopLeft
+			updated.PixelsBottomRight = req.PixelBottomRight
+			s.obstacles[i] = updated
 			break
 		}
 	}

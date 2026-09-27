@@ -36,7 +36,7 @@ import (
 type ControlMode int
 
 const (
-	ControlModeIdle       ControlMode = iota
+	ControlModeIdle ControlMode = iota
 	ControlModeManual
 	ControlModeAutonomous
 )
@@ -71,31 +71,31 @@ func ParseControlMode(s string) ControlMode {
 const demoCameraName = "demo"
 
 type RobotSystem struct {
-	demoMode          bool
-	cfg               *config.Config
-	cam               camera.Camera
-	detectionPipe     *detection.DetectionPipeline
-	tracker           tracking.Tracker
-	planner           *planning.Planner
-	positionEst       *position.PositionEstimator
-	arduino           *controller.ArduinoController
-	commandQueue      *controller.CommandQueue
-	pathExecutor      *controller.PathExecutor
-	webServer         *ui.WebServer
-	cameraRunning     bool
-	frameNum          int
-	DynamicObstacles  []*planning.DynamicObstacle
-	StaticObstacles   []planning.Obstacle
-	CurrentRobotID    int
-	CurrentGoal       [2]float64
-	waypointThreshold float64
-	controlMode       ControlMode
-	emergencyStopped  bool
-	controlMu         sync.RWMutex
-	lastHeading        map[int]float64
-	headingDelta       map[int]float64
-	smoothedHeading    map[int]float64
-	headingRejectCount map[int]int
+	demoMode            bool
+	cfg                 *config.Config
+	cam                 camera.Camera
+	detectionPipe       *detection.DetectionPipeline
+	tracker             tracking.Tracker
+	planner             *planning.Planner
+	positionEst         *position.PositionEstimator
+	arduino             *controller.ArduinoController
+	commandQueue        *controller.CommandQueue
+	pathExecutor        *controller.PathExecutor
+	webServer           *ui.WebServer
+	cameraRunning       bool
+	frameNum            int
+	DynamicObstacles    []*planning.DynamicObstacle
+	StaticObstacles     []planning.Obstacle
+	CurrentRobotID      int
+	CurrentGoal         [2]float64
+	waypointThreshold   float64
+	controlMode         ControlMode
+	emergencyStopped    bool
+	controlMu           sync.RWMutex
+	lastHeading         map[int]float64
+	headingDelta        map[int]float64
+	smoothedHeading     map[int]float64
+	headingRejectCount  map[int]int
 	headingLostCount    map[int]int
 	robotCommands       map[int]string // tag_id -> current motion state
 	lastCommandTime     time.Time
@@ -119,10 +119,10 @@ type RobotSystem struct {
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
 	return &RobotSystem{
-		cfg:           cfg,
-		cameraRunning: false,
-		frameNum:      0,
-		CurrentGoal:   [2]float64{0, 0},
+		cfg:                cfg,
+		cameraRunning:      false,
+		frameNum:           0,
+		CurrentGoal:        [2]float64{0, 0},
 		lastHeading:        make(map[int]float64),
 		headingDelta:       make(map[int]float64),
 		smoothedHeading:    make(map[int]float64),
@@ -358,11 +358,8 @@ func (rs *RobotSystem) feedYOLOObstacles(detectionResult *detection.DetectionRes
 			// Normalize so TopLeft has smaller coords and BottomRight has larger
 			minX, maxX := math.Min(tl.X, br.X), math.Max(tl.X, br.X)
 			minY, maxY := math.Min(tl.Y, br.Y), math.Max(tl.Y, br.Y)
-			plannerObstacles = append(plannerObstacles, planning.Obstacle{
-				Name:             det.ClassName,
-				WorldTopLeft:     [2]float64{minX, minY},
-				WorldBottomRight: [2]float64{maxX, maxY},
-			})
+			plannerObstacles = append(plannerObstacles, planning.NewRectObstacle(
+				det.ClassName, [2]float64{minX, minY}, [2]float64{maxX, maxY}))
 		}
 		rs.planner.SetDynamicObstacles(plannerObstacles)
 	}
@@ -766,13 +763,10 @@ func (rs *RobotSystem) loadStaticObstacles() {
 			name = n
 		}
 
-		rs.StaticObstacles = append(rs.StaticObstacles, planning.Obstacle{
-			Name:              name,
-			WorldTopLeft:      worldTL,
-			WorldBottomRight:  worldBR,
-			PixelsTopLeft:     pixelsTL,
-			PixelsBottomRight: pixelsBR,
-		})
+		staticObs := planning.NewRectObstacle(name, worldTL, worldBR)
+		staticObs.PixelsTopLeft = pixelsTL
+		staticObs.PixelsBottomRight = pixelsBR
+		rs.StaticObstacles = append(rs.StaticObstacles, staticObs)
 	}
 
 	if len(rs.StaticObstacles) > 0 {
