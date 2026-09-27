@@ -370,3 +370,84 @@ func TestForegroundModel_RejectsWrongSizedFrames(t *testing.T) {
 		t.Error("a frame of the wrong size should be rejected")
 	}
 }
+
+func TestForegroundModel_SnapshotBeforeWarmIsNotOK(t *testing.T) {
+	m := testModel(nil)
+	if _, ok := m.snapshot(); ok {
+		t.Error("a model that hasn't warmed up yet has nothing worth saving")
+	}
+}
+
+func TestForegroundModel_SnapshotRestoreRoundTrips(t *testing.T) {
+	m := testModel(nil)
+	s := newScene(21, 120)
+	warmUp(t, m, s, nil)
+	m.step(s.frame(), tw, th, tdt, nil, nil) // give gain a non-default value to round-trip too
+
+	snap, ok := m.snapshot()
+	if !ok {
+		t.Fatal("expected a warm model to have a snapshot")
+	}
+
+	restored := testModel(nil)
+	if !restored.restore(snap) {
+		t.Fatal("restore of a valid snapshot should succeed")
+	}
+	if !restored.warm {
+		t.Error("a restored model should be warm immediately, skipping warm-up")
+	}
+	if restored.gain != m.gain {
+		t.Errorf("gain = %v, want %v", restored.gain, m.gain)
+	}
+	for i := range m.bg {
+		if restored.bg[i] != m.bg[i] || restored.known[i] != m.known[i] {
+			t.Fatalf("pixel %d: bg/known did not round-trip (%v/%v vs %v/%v)",
+				i, restored.bg[i], restored.known[i], m.bg[i], m.known[i])
+		}
+	}
+}
+
+func TestForegroundModel_RestoredModelBehavesLikeALiveWarmModel(t *testing.T) {
+	live := testModel(nil)
+	s := newScene(31, 120)
+	warmUp(t, live, s, nil)
+
+	snap, ok := live.snapshot()
+	if !ok {
+		t.Fatal("expected a snapshot")
+	}
+	restored := testModel(nil)
+	if !restored.restore(snap) {
+		t.Fatal("restore should succeed")
+	}
+
+	s.addRect(40, 30, 60, 50, 60)
+	frame := s.frame()
+	liveMask, _ := live.step(frame, tw, th, tdt, nil, nil)
+	restoredMask, restoredStep := restored.step(frame, tw, th, tdt, nil, nil)
+	if restoredStep.Warming {
+		t.Fatal("a restored model must not re-warm")
+	}
+	if countFG(liveMask) == 0 {
+		t.Fatal("test setup: the live model should see the new object")
+	}
+	if liveMask == nil || restoredMask == nil || len(liveMask) != len(restoredMask) {
+		t.Fatalf("expected two comparable masks, got %d and %d", len(liveMask), len(restoredMask))
+	}
+	for i := range liveMask {
+		if liveMask[i] != restoredMask[i] {
+			t.Fatalf("pixel %d: live=%v restored=%v, want the same detection", i, liveMask[i], restoredMask[i])
+		}
+	}
+}
+
+func TestForegroundModel_RestoreRejectsMismatchedSize(t *testing.T) {
+	m := testModel(nil)
+	bad := modelState{W: tw, H: th, Bg: make([]float32, tw*th-1), Known: make([]bool, tw*th)}
+	if m.restore(bad) {
+		t.Error("restore should reject a snapshot whose slices don't match its own W*H")
+	}
+	if m.bg != nil {
+		t.Error("a rejected restore must not touch the model")
+	}
+}

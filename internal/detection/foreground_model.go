@@ -34,6 +34,16 @@ type foregroundModel struct {
 	gain        float64
 }
 
+// modelState is the subset of a warm foregroundModel that is worth persisting
+// across a restart: everything else (prevRaw, lastGray, warmCount, fgSecs) is
+// either purely transient or safe to lose (see snapshot/restore).
+type modelState struct {
+	W, H  int
+	Bg    []float32
+	Known []bool
+	Gain  float64
+}
+
 type modelStep struct {
 	Warming  bool
 	Guarded  bool
@@ -87,6 +97,49 @@ func (m *foregroundModel) reset() {
 	m.warmElapsed, m.warmFrames, m.warm = 0, 0, false
 	m.guardSecs = 0
 	m.gain = 1
+}
+
+// snapshot returns the model's persistable state, or ok == false if the model
+// is not warm yet (nothing worth saving).
+func (m *foregroundModel) snapshot() (s modelState, ok bool) {
+	if !m.warm {
+		return modelState{}, false
+	}
+	s = modelState{W: m.w, H: m.h, Gain: m.gain}
+	s.Bg = append([]float32(nil), m.bg...)
+	s.Known = append([]bool(nil), m.known...)
+	return s, true
+}
+
+// restore replaces the model's state with a previously-saved snapshot,
+// marking it warm immediately (skipping warm-up). It is the mirror image of
+// alloc, deliberately not sharing its implementation: alloc always ends by
+// calling reset, which is exactly what must not happen to restored state.
+// It returns false (leaving the model untouched) if s is not a usable size.
+func (m *foregroundModel) restore(s modelState) bool {
+	if s.W <= 0 || s.H <= 0 || len(s.Bg) != s.W*s.H || len(s.Known) != s.W*s.H {
+		return false
+	}
+	n := s.W * s.H
+	m.w, m.h = s.W, s.H
+	m.bg = append([]float32(nil), s.Bg...)
+	m.known = append([]bool(nil), s.Known...)
+	m.gain = s.Gain
+	if m.gain == 0 {
+		m.gain = 1
+	}
+	m.warmCount = make([]uint16, n)
+	m.prevRaw = make([]bool, n)
+	m.lastGray = make([]uint8, n)
+	m.fg = make([]uint8, n)
+	m.fgSecs = nil
+	if m.p.AbsorbAfterSec > 0 {
+		m.fgSecs = make([]float32, n)
+	}
+	m.warmElapsed, m.warmFrames = 0, 0
+	m.warm = true
+	m.guardSecs = 0
+	return true
 }
 
 // step advances the model by one frame. gray is w*h working-resolution pixels;
