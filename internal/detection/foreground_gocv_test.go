@@ -4,6 +4,7 @@ package detection
 
 import (
 	"image"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -95,9 +96,13 @@ func TestForegroundDetector_ReportsAPlacedObjectAtFullResolutionCoordinates(t *t
 	if len(res.Blobs) != 1 {
 		t.Fatalf("got %d blobs, want 1 (%v)", len(res.Blobs), res.Blobs)
 	}
-	got := res.Blobs[0]
+	got := res.Blobs[0].AABB
 	if !got.Overlaps(obj) || got.Dx() < 55 || got.Dx() > 75 || got.Dy() < 55 || got.Dy() > 75 {
 		t.Errorf("blob %v does not match the object %v", got, obj)
+	}
+	corners := res.Blobs[0].Corners
+	if corners == ([4]image.Point{}) {
+		t.Error("blob Corners should always be populated, even as an AABB fallback")
 	}
 
 	h.object = nil
@@ -204,5 +209,94 @@ func TestForegroundDetector_Timing(t *testing.T) {
 	t.Logf("foreground detection at 1280x720: %.2f ms/frame", float64(per.Microseconds())/1000)
 	if per > 2*time.Second {
 		t.Errorf("%v per frame is far beyond the budget", per)
+	}
+}
+
+// paintRotatedRect paints a rectangle of half-length l and half-width w,
+// centred at (cx, cy) and rotated by angleDeg degrees, into a BGR frame.
+func paintRotatedRect(f []byte, frameW, frameH int, cx, cy, l, w, angleDeg float64, level byte) {
+	rad := angleDeg * math.Pi / 180
+	c, s := math.Cos(rad), math.Sin(rad)
+	for y := 0; y < frameH; y++ {
+		for x := 0; x < frameW; x++ {
+			dx, dy := float64(x)-cx, float64(y)-cy
+			// Rotate the point into the rectangle's own frame.
+			lx := dx*c + dy*s
+			ly := -dx*s + dy*c
+			if math.Abs(lx) <= l && math.Abs(ly) <= w {
+				i := (y*frameW + x) * 3
+				f[i], f[i+1], f[i+2] = level, level, level
+			}
+		}
+	}
+}
+
+// quadArea returns the area of a quadrilateral given in order (shoelace).
+func quadArea(pts [4]image.Point) float64 {
+	sum := 0.0
+	for i := 0; i < 4; i++ {
+		a, b := pts[i], pts[(i+1)%4]
+		sum += float64(a.X*b.Y - b.X*a.Y)
+	}
+	return math.Abs(sum) / 2
+}
+
+// TestForegroundDetector_ExtractsATightOrientedBoxForARotatedObject is the
+// point of phase 5: the old bounding-box-only extraction inflates a diagonal
+// elongated object hugely (up to ~6x its true area at 45 degrees, matching
+// what was observed live). The oriented box (via gocv.MinAreaRect on the
+// blob's own pixels) should stay close to the object's true area regardless
+// of angle, while the AABB blows up exactly as expected.
+func TestForegroundDetector_ExtractsATightOrientedBoxForARotatedObject(t *testing.T) {
+	h := newHarness(t, 640, 360)
+	h.warm()
+
+	const halfLen, halfWidth = 80.0, 8.0 // a 160x16 px stick: 10:1 aspect
+	trueArea := (2 * halfLen) * (2 * halfWidth)
+
+	tests := []struct {
+		name       string
+		angleDeg   float64
+		maxOBBArea float64 // generous slack for blur/morphology rounding
+	}{
+		{"axis aligned", 0, trueArea * 1.6},
+		{"45 degrees (worst case for an AABB)", 45, trueArea * 1.6},
+		{"30 degrees", 30, trueArea * 1.6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h.d.Reset()
+			for i := 0; i < 60; i++ {
+				if !h.step(ForegroundMasks{}).Warming {
+					break
+				}
+			}
+			cx, cy := 320.0, 180.0
+			frame := bgrFrame(h.rng, h.w, h.h, 120)
+			paintRotatedRect(frame, h.w, h.h, cx, cy, halfLen, halfWidth, tt.angleDeg, 200)
+			var res ForegroundResult
+			for i := 0; i < 3; i++ {
+				h.now = h.now.Add(70 * time.Millisecond)
+				res = h.d.Process(frame, h.w, h.h, h.now, ForegroundMasks{})
+			}
+			if len(res.Blobs) != 1 {
+				t.Fatalf("got %d blobs, want 1", len(res.Blobs))
+			}
+			blob := res.Blobs[0]
+
+			aabbArea := float64(blob.AABB.Dx() * blob.AABB.Dy())
+			obbArea := quadArea(blob.Corners)
+			t.Logf("angle=%.0f true=%.0f aabb=%.0f (%.2fx) obb=%.0f (%.2fx)",
+				tt.angleDeg, trueArea, aabbArea, aabbArea/trueArea, obbArea, obbArea/trueArea)
+
+			if obbArea > tt.maxOBBArea {
+				t.Errorf("oriented box area %.0f px, want <= %.0f (%.2fx true area)",
+					obbArea, tt.maxOBBArea, tt.maxOBBArea/trueArea)
+			}
+			if tt.angleDeg == 45 && obbArea >= aabbArea {
+				t.Errorf("at 45 degrees the oriented box (%.0f) should be much tighter than the AABB (%.0f)",
+					obbArea, aabbArea)
+			}
+		})
 	}
 }

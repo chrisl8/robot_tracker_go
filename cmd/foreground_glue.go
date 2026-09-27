@@ -217,9 +217,13 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 	case res.Guarded:
 		// Lighting event: hold the last obstacles rather than flooding the planner.
 	default:
+		// TODO(phase 6): also project b.Corners (the tight oriented box) to
+		// world coordinates and thread it through the temporal filter and
+		// into planning.Obstacle.Quad; for now only the AABB drives tracking
+		// and every obstacle stays a (degenerate) rectangle.
 		boxes := make([]detection.WorldBox, 0, len(res.Blobs))
 		for _, b := range res.Blobs {
-			boxes = append(boxes, detection.BlobToWorld(b, toWorld))
+			boxes = append(boxes, detection.BlobToWorld(b.AABB, toWorld))
 		}
 		g.published = g.filter.Update(now, boxes)
 	}

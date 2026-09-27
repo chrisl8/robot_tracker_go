@@ -62,10 +62,34 @@ type ForegroundMasks struct {
 	Suspended bool
 }
 
+// DetectedBlob is one candidate obstacle, in full-resolution frame pixels.
+// Corners is its tight oriented bounding box (via gocv.MinAreaRect on the
+// blob's own member pixels), in detector order (not guaranteed clockwise or
+// counter-clockwise — callers that need a specific winding, such as building
+// a planning.Quad, must normalize it). When an oriented fit was not possible
+// (e.g. too few pixels), Corners falls back to AABB's own four corners, so it
+// is always populated and always a valid (possibly degenerate) quadrilateral.
+type DetectedBlob struct {
+	AABB    image.Rectangle
+	Corners [4]image.Point
+}
+
+// AABBCorners returns r's four corners in the same order MinAreaRect uses
+// (starting at the bottom-left, clockwise), the fallback DetectedBlob.Corners
+// value when an oriented fit is unavailable.
+func AABBCorners(r image.Rectangle) [4]image.Point {
+	return [4]image.Point{
+		{X: r.Min.X, Y: r.Max.Y},
+		{X: r.Min.X, Y: r.Min.Y},
+		{X: r.Max.X, Y: r.Min.Y},
+		{X: r.Max.X, Y: r.Max.Y},
+	}
+}
+
 // ForegroundResult is one frame's detection outcome.
 type ForegroundResult struct {
 	// Blobs are candidate obstacles in full-resolution frame pixels.
-	Blobs []image.Rectangle
+	Blobs []DetectedBlob
 	// Warming is true while the background is still being learned.
 	Warming bool
 	// Guarded is true when the frame looked like a lighting event (too much

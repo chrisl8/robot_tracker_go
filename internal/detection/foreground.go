@@ -255,9 +255,13 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// extractBlobs cleans the mask with morphology and returns the bounding boxes
-// of the connected regions, in full-resolution pixels.
-func (d *ForegroundDetector) extractBlobs(fg []uint8, width, height int) []image.Rectangle {
+// extractBlobs cleans the mask with morphology, and for each connected region
+// above the minimum size returns both its bounding box and a tight oriented
+// box (gocv.MinAreaRect over the blob's own member pixels), in full-resolution
+// pixels. The oriented fit is scoped to each blob's own small bounding
+// rectangle from the label mat (bounded by object size, not frame size, and
+// blob count is already capped), not a full-frame scan.
+func (d *ForegroundDetector) extractBlobs(fg []uint8, width, height int) []DetectedBlob {
 	buf, err := d.fgMat.DataPtrUint8()
 	if err != nil || len(buf) != len(fg) {
 		return nil
@@ -274,8 +278,11 @@ func (d *ForegroundDetector) extractBlobs(fg []uint8, width, height int) []image
 	n := gocv.ConnectedComponentsWithStats(d.closed, &d.labels, &d.stats, &d.centroids)
 	invX := float64(width) / float64(d.sw)
 	invY := float64(height) / float64(d.sh)
+	scale := func(p image.Point) image.Point {
+		return image.Pt(int(float64(p.X)*invX), int(float64(p.Y)*invY))
+	}
 
-	blobs := make([]image.Rectangle, 0, n)
+	blobs := make([]DetectedBlob, 0, n)
 	for i := 1; i < n; i++ {
 		area := int(d.stats.GetIntAt(i, int(gocv.CC_STAT_AREA)))
 		if area < d.params.MinBlobPx {
@@ -285,11 +292,55 @@ func (d *ForegroundDetector) extractBlobs(fg []uint8, width, height int) []image
 		top := int(d.stats.GetIntAt(i, int(gocv.CC_STAT_TOP)))
 		w := int(d.stats.GetIntAt(i, int(gocv.CC_STAT_WIDTH)))
 		h := int(d.stats.GetIntAt(i, int(gocv.CC_STAT_HEIGHT)))
-		blobs = append(blobs, image.Rect(
+		aabb := image.Rect(
 			int(float64(left)*invX), int(float64(top)*invY),
-			int(float64(left+w)*invX), int(float64(top+h)*invY)))
+			int(float64(left+w)*invX), int(float64(top+h)*invY))
+
+		corners := AABBCorners(aabb)
+		if obb, ok := d.minAreaRectForLabel(int32(i), left, top, w, h); ok {
+			for j, p := range obb {
+				corners[j] = scale(p)
+			}
+		}
+		blobs = append(blobs, DetectedBlob{AABB: aabb, Corners: corners})
 	}
 	return blobs
+}
+
+// minAreaRectForLabel fits an oriented bounding box to the working-resolution
+// pixels of connected-component label id within its own bounding rectangle
+// (left, top, w, h), in working-resolution (pre-scale) coordinates. It reads
+// only that small region of d.labels, not the whole frame.
+func (d *ForegroundDetector) minAreaRectForLabel(id int32, left, top, w, h int) ([4]image.Point, bool) {
+	const maxPoints = 4096 // a generous cap; MinAreaRect only needs the shape, not every pixel
+	pts := make([]image.Point, 0, minInt(w*h, maxPoints))
+	stride := 1
+	if w*h > maxPoints {
+		stride = w*h/maxPoints + 1
+	}
+	n := 0
+	for y := top; y < top+h; y++ {
+		for x := left; x < left+w; x++ {
+			if d.labels.GetIntAt(y, x) != id {
+				continue
+			}
+			n++
+			if stride == 1 || n%stride == 0 {
+				pts = append(pts, image.Pt(x, y))
+			}
+		}
+	}
+	if len(pts) < 3 {
+		return [4]image.Point{}, false
+	}
+
+	pv := gocv.NewPointVectorFromPoints(pts)
+	defer pv.Close()
+	rect := gocv.MinAreaRect(pv)
+	if len(rect.Points) != 4 {
+		return [4]image.Point{}, false
+	}
+	return [4]image.Point(rect.Points), true
 }
 
 // renderDebug draws the debug image when someone asked for it recently.
