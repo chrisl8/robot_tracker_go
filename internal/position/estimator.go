@@ -146,8 +146,13 @@ type CameraInfo struct {
 }
 
 type PositionEstimator struct {
+	// mu guards homography, intrinsics, calibratedRes, and frameRes. Those
+	// are mutated by LoadCalibration/SetFrameSize (e.g. from an HTTP handler
+	// goroutine when an operator recalibrates live) while PixelToWorld/
+	// WorldToPixel/IsCalibrated read them every frame from the
+	// frame-processing goroutine.
+	mu             sync.Mutex
 	homography     *Homography
-	resMu          sync.Mutex
 	calibratedRes  [2]int
 	frameRes       [2]int
 	intrinsics     *CameraIntrinsics
@@ -200,6 +205,9 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		return fmt.Errorf("failed to parse calibration file: %w", err)
 	}
 
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if intrinsicsData, ok := calibration["intrinsics"].(map[string]interface{}); ok {
 		e.intrinsics = &CameraIntrinsics{}
 
@@ -223,21 +231,24 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		}
 	}
 
-	e.resMu.Lock()
 	e.calibratedRes = [2]int{}
 	if camera, ok := calibration["camera"].(map[string]interface{}); ok {
 		if res, ok := camera["resolution"].([]interface{}); ok && len(res) >= 2 {
 			e.calibratedRes = [2]int{int(utils.ToFloat64(res[0])), int(utils.ToFloat64(res[1]))}
 		}
 	}
-	e.resMu.Unlock()
+
+	// Build the new homography on a fresh instance rather than mutating
+	// e.homography in place, so a concurrent reader always sees either the
+	// fully-old or fully-new homography, never a partially-updated one.
+	newHomography := NewHomography()
 
 	if homographyData, ok := calibration["homography"].([]interface{}); ok && len(homographyData) >= 3 {
 		row0, _ := homographyData[0].([]interface{})
 		row1, _ := homographyData[1].([]interface{})
 		row2, _ := homographyData[2].([]interface{})
 		if len(row0) >= 3 && len(row1) >= 3 && len(row2) >= 3 {
-			e.homography.SetFromValues(
+			newHomography.SetFromValues(
 				utils.ToFloat64(row0[0]), utils.ToFloat64(row0[1]), utils.ToFloat64(row0[2]),
 				utils.ToFloat64(row1[0]), utils.ToFloat64(row1[1]), utils.ToFloat64(row1[2]),
 				utils.ToFloat64(row2[0]), utils.ToFloat64(row2[1]), utils.ToFloat64(row2[2]),
@@ -245,15 +256,17 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		}
 	}
 
-	if !e.homography.IsValid() || !e.homography.HasTransformation() {
+	if !newHomography.IsValid() || !newHomography.HasTransformation() {
 		utils.Logf("WARNING: Invalid or identity homography in calibration file")
 		utils.Logf("Using fallback: identity transformation (pixel=world for testing)")
-		e.homography.SetIdentity()
+		newHomography.SetIdentity()
 	}
 
 	if scale, ok := calibration["world_scale"].(float64); ok {
-		e.homography.SetPixelsPerMeter(scale)
+		newHomography.SetPixelsPerMeter(scale)
 	}
+
+	e.homography = newHomography
 
 	utils.Logf("Loaded calibration from %s", path)
 	return nil
@@ -262,16 +275,16 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 // SetFrameSize records the live camera frame size so a calibration made at a
 // different resolution can be flagged.
 func (e *PositionEstimator) SetFrameSize(width, height int) {
-	e.resMu.Lock()
+	e.mu.Lock()
 	e.frameRes = [2]int{width, height}
-	e.resMu.Unlock()
+	e.mu.Unlock()
 }
 
 // CalibratedResolution returns the resolution stored in the loaded
 // calibration file, if any.
 func (e *PositionEstimator) CalibratedResolution() (width, height int, ok bool) {
-	e.resMu.Lock()
-	defer e.resMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.calibratedRes[0], e.calibratedRes[1], e.calibratedRes[0] > 0 && e.calibratedRes[1] > 0
 }
 
@@ -279,8 +292,8 @@ func (e *PositionEstimator) CalibratedResolution() (width, height int, ok bool) 
 // different resolution than the camera is currently delivering. Pixel
 // coordinates only map to the floor correctly at the calibrated resolution.
 func (e *PositionEstimator) ResolutionMismatch() bool {
-	e.resMu.Lock()
-	defer e.resMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.calibratedRes[0] == 0 || e.frameRes[0] == 0 {
 		return false
 	}
@@ -359,24 +372,38 @@ func (e *PositionEstimator) LoadObstacles(path string) error {
 }
 
 func (e *PositionEstimator) PixelToWorld(pixelX, pixelY int) *Point2D {
-	if !e.homography.IsValid() {
+	h := e.currentHomography()
+	if !h.IsValid() {
 		return &Point2D{float64(pixelX), float64(pixelY)}
 	}
-	return e.homography.PixelToWorld(Point2D{float64(pixelX), float64(pixelY)})
+	return h.PixelToWorld(Point2D{float64(pixelX), float64(pixelY)})
 }
 
 func (e *PositionEstimator) PixelToWorldFloat(pixelX, pixelY float64) *Point2D {
-	if !e.homography.IsValid() {
+	h := e.currentHomography()
+	if !h.IsValid() {
 		return &Point2D{pixelX, pixelY}
 	}
-	return e.homography.PixelToWorld(Point2D{pixelX, pixelY})
+	return h.PixelToWorld(Point2D{pixelX, pixelY})
 }
 
 func (e *PositionEstimator) WorldToPixel(world Point2D) (int, int) {
-	if !e.homography.IsValid() {
+	h := e.currentHomography()
+	if !h.IsValid() {
 		return int(world.X), int(world.Y)
 	}
-	return e.homography.WorldToPixel(world)
+	return h.WorldToPixel(world)
+}
+
+// currentHomography returns the homography in effect at the time of the
+// call. LoadCalibration swaps e.homography to a freshly-built instance
+// rather than mutating the existing one in place, so a locked pointer read
+// here is enough to make concurrent recalibration and lookups safe: callers
+// always see a fully-formed old or new homography, never a half-updated one.
+func (e *PositionEstimator) currentHomography() *Homography {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.homography
 }
 
 func (e *PositionEstimator) UpdatePosition(trackID int, x, y float64) {
@@ -441,11 +468,11 @@ func (e *PositionEstimator) SaveObstacles(path string, obstacles []Obstacle) err
 }
 
 func (e *PositionEstimator) GetHomography() *Homography {
-	return e.homography
+	return e.currentHomography()
 }
 
 func (e *PositionEstimator) IsCalibrated() bool {
-	return e.homography.IsValid()
+	return e.currentHomography().IsValid()
 }
 
 type PositionResult struct {

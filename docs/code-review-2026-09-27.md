@@ -45,7 +45,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    obstacle's collision cone. This is a real avoidance failure, not just an
    inefficiency.
 
-5. **Data race on calibration reload while tracking is running.**
+5. **[FIXED] Data race on calibration reload while tracking is running.**
    `internal/position/estimator.go` — `LoadCalibration` mutates `homography`/
    `intrinsics` fields with no lock, while `PixelToWorld`/`WorldToPixel` read them
    every frame from the processing goroutine with no lock either (only
