@@ -11,6 +11,13 @@ func NewForegroundDetector(ForegroundParams) *ForegroundDetector { return &Foreg
 
 func (d *ForegroundDetector) IsAvailable() bool { return false }
 
+// EnablePersistence is a no-op: there is no background to persist without
+// OpenCV.
+func (d *ForegroundDetector) EnablePersistence(string, time.Duration) {}
+
+// SaveNow is a no-op without OpenCV.
+func (d *ForegroundDetector) SaveNow() {}
+
 func (d *ForegroundDetector) Reset() {}
 
 func (d *ForegroundDetector) Absorb(int, int) {}
