@@ -33,7 +33,7 @@ type WebServer struct {
 	addr          string
 	engine        *gin.Engine
 	stream        *mjpegStream
-	clients       map[*websocket.Conn]bool
+	clients       map[*websocket.Conn]*sync.Mutex
 	clientMutex   sync.RWMutex
 	isRunning     bool
 	stopChan      chan struct{}
@@ -232,7 +232,7 @@ func NewWebServer(addr string) *WebServer {
 		addr:      addr,
 		engine:    engine,
 		stream:    newMJPEGStream(),
-		clients:   make(map[*websocket.Conn]bool),
+		clients:   make(map[*websocket.Conn]*sync.Mutex),
 		stopChan:  make(chan struct{}),
 		isRunning: false,
 	}
@@ -315,7 +315,7 @@ func (s *WebServer) handleWebSocket(c *gin.Context) {
 	}
 
 	s.clientMutex.Lock()
-	s.clients[conn] = true
+	s.clients[conn] = &sync.Mutex{}
 	s.clientMutex.Unlock()
 
 	go s.wsReader(conn)
@@ -346,19 +346,27 @@ func (s *WebServer) broadcastCommand(cmd string) {
 		Type:    "command",
 		Command: &CommandMessage{Action: cmd},
 	}
-	s.clientMutex.RLock()
-	for client := range s.clients {
-		_ = client.WriteJSON(msg)
-	}
-	s.clientMutex.RUnlock()
+	s.BroadcastOverlay(msg)
 }
 
+// BroadcastOverlay sends msg to every connected client. gorilla/websocket
+// panics if two goroutines write to the same connection at once (this project
+// broadcasts from the frame loop, HTTP handlers, and a watchdog timer, all
+// concurrently), so each connection's writes are serialized with its own
+// mutex while the client list itself is only read-locked.
 func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
 	s.clientMutex.RLock()
-	for client := range s.clients {
-		_ = client.WriteJSON(msg)
+	clients := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
+	for conn, mu := range s.clients {
+		clients[conn] = mu
 	}
 	s.clientMutex.RUnlock()
+
+	for conn, mu := range clients {
+		mu.Lock()
+		_ = conn.WriteJSON(msg)
+		mu.Unlock()
+	}
 }
 
 // BroadcastTempObstacles sends the temporary obstacles and detector state to
