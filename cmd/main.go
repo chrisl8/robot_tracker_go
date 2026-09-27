@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -105,6 +106,10 @@ type RobotSystem struct {
 	watchdogOnce        sync.Once
 	watchdogStopOnce    sync.Once
 	watchdogStop        chan struct{}
+	perf                perfWindow
+	lastCPUSeconds      float64
+	lastCPUAt           time.Time
+	lastOffenderLog     time.Time
 	smoothedFPS         float64
 	startTime           time.Time
 	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
@@ -800,6 +805,46 @@ func (rs *RobotSystem) StartCamera() error {
 	return nil
 }
 
+const (
+	// perfLogEveryTicks is how many watchdog ticks (seconds) between PERF lines.
+	perfLogEveryTicks = 5
+	// lowFPSForOffenders is the frame rate under which a PERF line also names
+	// the busiest other processes.
+	lowFPSForOffenders = 8.0
+	offenderLogEvery   = 30 * time.Second
+)
+
+// logPerf writes one PERF line: frame rate and timings over the last window,
+// this process's CPU use, machine load, memory, and control state. When the
+// frame rate is low it also names the busiest other processes (rate-limited),
+// so a slowdown caused by something else on the machine identifies itself.
+func (rs *RobotSystem) logPerf() {
+	s := rs.perf.TakeSummary(time.Now())
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	line := s.Line() + fmt.Sprintf(" mem=%.0fMB mode=%s", float64(mem.Alloc)/1024/1024, rs.GetControlMode())
+
+	now := time.Now()
+	cpu := processCPUSeconds()
+	if wall := now.Sub(rs.lastCPUAt).Seconds(); wall > 0 && rs.lastCPUSeconds > 0 {
+		line += fmt.Sprintf(" proc_cpu=%.1fcores", (cpu-rs.lastCPUSeconds)/wall)
+	}
+	rs.lastCPUSeconds, rs.lastCPUAt = cpu, now
+
+	if load, ok := systemLoadAverage(); ok {
+		line += fmt.Sprintf(" load1=%.2f", load)
+	}
+	if s.FPS < lowFPSForOffenders && time.Since(rs.lastOffenderLog) > offenderLogEvery {
+		if top := topCPUProcesses(4); len(top) > 0 {
+			line += " LOW_FPS busiest_processes=" + strings.Join(top, ",")
+			rs.lastOffenderLog = now
+		}
+	}
+	utils.Log(line)
+}
+
 // frameStallThreshold is how long without a processed frame counts as a
 // stalled camera worth telling the UI about.
 const frameStallThreshold = 2 * time.Second
@@ -811,14 +856,22 @@ func (rs *RobotSystem) startFrameWatchdog() {
 	rs.watchdogOnce.Do(func() {
 		rs.watchdogStop = make(chan struct{})
 		stop := rs.watchdogStop
+		rs.perf.TakeSummary(time.Now()) // start the first window now
+		rs.lastCPUAt = time.Now()
+		rs.lastCPUSeconds = processCPUSeconds()
 		go func() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
+			ticks := 0
 			for {
 				select {
 				case <-stop:
 					return
 				case <-ticker.C:
+					ticks++
+					if ticks%perfLogEveryTicks == 0 {
+						rs.logPerf()
+					}
 					last := rs.startTime
 					if n := rs.lastFrameNanos.Load(); n != 0 {
 						last = time.Unix(0, n)
@@ -1036,6 +1089,9 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		}
 		rs.webServer.BroadcastPaths()
 	}
+
+	frameTotal := time.Since(frameStart)
+	rs.perf.Record(frameTotal, detectTime, frameTotal-detectTime)
 
 	if rs.frameNum%30 == 0 {
 		hasConfirmedRobot := false
@@ -1782,6 +1838,7 @@ func main() {
 				frame, err := rs.cam.GetFrame()
 				if err != nil {
 					frameFailures++
+					rs.perf.RecordCameraFailure()
 					if frameFailures == 1 || frameFailures%50 == 0 {
 						utils.Logf("Failed to get frame (%d in a row): %v", frameFailures, err)
 					}
