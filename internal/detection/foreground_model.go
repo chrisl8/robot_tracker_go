@@ -19,13 +19,16 @@ type foregroundModel struct {
 	p    ForegroundParams
 	w, h int
 
-	bg        []float32
-	known     []bool
-	warmCount []uint16
-	prevRaw   []bool
-	lastGray  []uint8
-	fgSecs    []float32 // only when AbsorbAfterSec > 0
-	fg        []uint8   // output mask, 0 or 255
+	bg             []float32
+	bgB, bgG, bgR  []float32 // background colour (BGR), for shadow suppression; see isShadowColor
+	known          []bool
+	warmCount      []uint16
+	prevRaw        []bool
+	lastGray       []uint8
+	lastColor      []uint8 // last frame's BGR, valid only when lastColorValid
+	lastColorValid bool
+	fgSecs         []float32 // only when AbsorbAfterSec > 0
+	fg             []uint8   // output mask, 0 or 255
 
 	warmElapsed float64
 	warmFrames  int
@@ -70,10 +73,14 @@ func (m *foregroundModel) alloc(w, h int) {
 	n := w * h
 	m.w, m.h = w, h
 	m.bg = make([]float32, n)
+	m.bgB = make([]float32, n)
+	m.bgG = make([]float32, n)
+	m.bgR = make([]float32, n)
 	m.known = make([]bool, n)
 	m.warmCount = make([]uint16, n)
 	m.prevRaw = make([]bool, n)
 	m.lastGray = make([]uint8, n)
+	m.lastColor = make([]uint8, n*3)
 	m.fg = make([]uint8, n)
 	m.fgSecs = nil
 	if m.p.AbsorbAfterSec > 0 {
@@ -86,6 +93,9 @@ func (m *foregroundModel) alloc(w, h int) {
 func (m *foregroundModel) reset() {
 	for i := range m.bg {
 		m.bg[i] = 0
+		m.bgB[i] = 0
+		m.bgG[i] = 0
+		m.bgR[i] = 0
 		m.known[i] = false
 		m.warmCount[i] = 0
 		m.prevRaw[i] = false
@@ -97,6 +107,7 @@ func (m *foregroundModel) reset() {
 	m.warmElapsed, m.warmFrames, m.warm = 0, 0, false
 	m.guardSecs = 0
 	m.gain = 1
+	m.lastColorValid = false
 }
 
 // snapshot returns the model's persistable state, or ok == false if the model
@@ -131,33 +142,54 @@ func (m *foregroundModel) restore(s modelState) bool {
 	m.warmCount = make([]uint16, n)
 	m.prevRaw = make([]bool, n)
 	m.lastGray = make([]uint8, n)
+	m.lastColor = make([]uint8, n*3)
+	m.lastColorValid = false
 	m.fg = make([]uint8, n)
 	m.fgSecs = nil
 	if m.p.AbsorbAfterSec > 0 {
 		m.fgSecs = make([]float32, n)
 	}
+	// bgB/bgG/bgR (colour, for shadow suppression) are not part of a
+	// snapshot yet, so they start zeroed here — isShadowColor's bDotB guard
+	// means the shadow gate simply stays inactive until they ramp back up
+	// through ordinary background adaptation, rather than misfiring on
+	// stale/absent colour data.
+	m.bgB = make([]float32, n)
+	m.bgG = make([]float32, n)
+	m.bgR = make([]float32, n)
 	m.warmElapsed, m.warmFrames = 0, 0
 	m.warm = true
 	m.guardSecs = 0
 	return true
 }
 
-// step advances the model by one frame. gray is w*h working-resolution pixels;
-// robotMask and staticMask (nil or w*h, nonzero = covered) exclude areas.
-// The returned mask (owned by the model, valid until the next call) is 255
-// where a pixel counts as foreground outside the masks.
-func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, staticMask []uint8) ([]uint8, modelStep) {
+// step advances the model by one frame. gray is w*h working-resolution
+// pixels; robotMask and staticMask (nil or w*h, nonzero = covered) exclude
+// areas. color, if not nil, is the same pixels' BGR colour (w*h*3, packed
+// BGRBGR...) at the same exposure gain as gray — supplying it enables shadow
+// suppression (see isShadowColor); nil (or a mismatched length, treated the
+// same as nil) leaves darkening classified exactly as before it existed. The
+// returned mask (owned by the model, valid until the next call) is 255 where
+// a pixel counts as foreground outside the masks.
+func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, staticMask []uint8, color []uint8) ([]uint8, modelStep) {
 	if len(gray) != w*h {
 		return nil, modelStep{}
+	}
+	if len(color) != w*h*3 {
+		color = nil
 	}
 	if m.w != w || m.h != h || m.bg == nil {
 		m.alloc(w, h)
 	}
 	dt = math.Min(math.Max(dt, 0), maxDt)
 	copy(m.lastGray, gray)
+	m.lastColorValid = color != nil
+	if color != nil {
+		copy(m.lastColor, color)
+	}
 
 	if !m.warm {
-		return m.warmStep(gray, dt, robotMask)
+		return m.warmStep(gray, dt, robotMask, color)
 	}
 
 	gain := m.estimateGain(gray, robotMask)
@@ -170,6 +202,9 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 	fdt := float32(dt)
 	border := m.p.BorderPx
 	g := float32(gain)
+	shadowAlphaMin := float32(m.p.ShadowAlphaMin)
+	shadowAlphaMax := float32(m.p.ShadowAlphaMax)
+	shadowChromaMax := float32(m.p.ShadowChromaMax)
 
 	fgCount := 0
 	for y := 0; y < h; y++ {
@@ -180,11 +215,20 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 			robot := robotMask != nil && robotMask[i] != 0
 
 			cur := float32(gray[i]) * g
+			var curB, curG, curR float32
+			if color != nil {
+				curB = float32(color[i*3]) * g
+				curG = float32(color[i*3+1]) * g
+				curR = float32(color[i*3+2]) * g
+			}
 			if !m.known[i] {
 				// Unknown (covered at warm-up): learn as soon as it is uncovered.
 				if !robot {
 					m.bg[i] = cur
 					m.known[i] = true
+					if color != nil {
+						m.bgB[i], m.bgG[i], m.bgR[i] = curB, curG, curR
+					}
 				}
 				m.fg[i] = 0
 				m.prevRaw[i] = false
@@ -193,6 +237,13 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 
 			d := cur - m.bg[i]
 			raw := d > thrUp || d < -thrDown
+			if raw && d < 0 && color != nil &&
+				isShadowColor(curB, curG, curR, m.bgB[i], m.bgG[i], m.bgR[i], shadowAlphaMin, shadowAlphaMax, shadowChromaMax) {
+				// Darker, but still just the background colour scaled down: a
+				// cast shadow, not a real change. Leave it classified as
+				// background rather than foreground.
+				raw = false
+			}
 			if inBorderY || x < border || x >= w-border {
 				raw = false
 			}
@@ -211,6 +262,11 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 				// Never learn a robot into the background.
 			case !raw:
 				m.bg[i] += alpha * d
+				if color != nil {
+					m.bgB[i] += alpha * (curB - m.bgB[i])
+					m.bgG[i] += alpha * (curG - m.bgG[i])
+					m.bgR[i] += alpha * (curR - m.bgR[i])
+				}
 				if m.fgSecs != nil {
 					m.fgSecs[i] = 0
 				}
@@ -218,6 +274,9 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 				m.fgSecs[i] += fdt
 				if m.fgSecs[i] > absorb {
 					m.bg[i] = cur
+					if color != nil {
+						m.bgB[i], m.bgG[i], m.bgR[i] = curB, curG, curR
+					}
 					m.fgSecs[i] = 0
 				}
 			}
@@ -241,7 +300,7 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 	return m.fg, st
 }
 
-func (m *foregroundModel) warmStep(gray []uint8, dt float64, robotMask []uint8) ([]uint8, modelStep) {
+func (m *foregroundModel) warmStep(gray []uint8, dt float64, robotMask []uint8, color []uint8) ([]uint8, modelStep) {
 	for i, v := range gray {
 		if robotMask != nil && robotMask[i] != 0 {
 			continue
@@ -252,6 +311,11 @@ func (m *foregroundModel) warmStep(gray []uint8, dt float64, robotMask []uint8) 
 			m.warmCount[i] = c
 		}
 		m.bg[i] += (float32(v) - m.bg[i]) / float32(c)
+		if color != nil {
+			m.bgB[i] += (float32(color[i*3]) - m.bgB[i]) / float32(c)
+			m.bgG[i] += (float32(color[i*3+1]) - m.bgG[i]) / float32(c)
+			m.bgR[i] += (float32(color[i*3+2]) - m.bgR[i]) / float32(c)
+		}
 		m.known[i] = true
 	}
 	m.warmElapsed += dt
@@ -289,6 +353,37 @@ func (m *foregroundModel) estimateGain(gray []uint8, robotMask []uint8) float64 
 	return math.Min(math.Max(sumBg/sumCur, minGain), maxGain)
 }
 
+// isShadowColor reports whether current colour (curB, curG, curR) — a pixel
+// that has already darkened enough to look like foreground — is explained by
+// the background colour (bgB, bgG, bgR) scaled down by some factor, rather
+// than a real colour change. This is the standard background-subtraction
+// shadow test (Horprasert et al.): a cast shadow scales a pixel's colour down
+// roughly uniformly (same direction, lower magnitude); a real object usually
+// changes the colour direction too. Working in raw BGR (rather than HSV hue)
+// matters on a low-saturation floor, where hue is numerically unstable near
+// the achromatic axis and would be noisy exactly where this needs to work.
+//
+// scale is the least-squares best fit of curr ~= scale*bg (the projection of
+// curr onto bg); it must land in [scaleMin, scaleMax] — darker, but not
+// implausibly darker for a shadow. chroma is the leftover colour error after
+// removing that scale, normalised by the background colour's own magnitude;
+// it must be at most chromaMaxFrac. A near-black background (bg's squared
+// magnitude below 1) never counts as a shadow: the scale factor is
+// meaningless there, and the plain brightness threshold governs instead.
+func isShadowColor(curB, curG, curR, bgB, bgG, bgR, scaleMin, scaleMax, chromaMaxFrac float32) bool {
+	bDotB := bgB*bgB + bgG*bgG + bgR*bgR
+	if bDotB < 1 {
+		return false
+	}
+	scale := (curB*bgB + curG*bgG + curR*bgR) / bDotB
+	if scale < scaleMin || scale > scaleMax {
+		return false
+	}
+	rb, rg, rr := curB-scale*bgB, curG-scale*bgG, curR-scale*bgR
+	chroma2 := rb*rb + rg*rg + rr*rr
+	return chroma2 <= chromaMaxFrac*chromaMaxFrac*bDotB
+}
+
 // absorbAt folds the connected foreground region containing working-resolution
 // pixel (x, y) into the background (the operator declares it part of the floor).
 // It reports how many pixels were absorbed.
@@ -305,6 +400,11 @@ func (m *foregroundModel) absorbAt(x, y int) int {
 		i := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 		m.bg[i] = float32(m.lastGray[i]) * g
+		if m.lastColorValid {
+			m.bgB[i] = float32(m.lastColor[i*3]) * g
+			m.bgG[i] = float32(m.lastColor[i*3+1]) * g
+			m.bgR[i] = float32(m.lastColor[i*3+2]) * g
+		}
 		m.prevRaw[i] = false
 		m.fg[i] = 0
 		count++

@@ -245,7 +245,9 @@ func (d *ForegroundDetector) Process(frame []byte, width, height int, now time.T
 	}
 	d.lastNow = now
 
-	fg, st := d.model.step(pixels, d.sw, d.sh, dt, d.robotMask, d.staticMask)
+	// TODO(shadow-suppression phase 2): pass the resized frame's colour here
+	// instead of nil, to enable isShadowColor.
+	fg, st := d.model.step(pixels, d.sw, d.sh, dt, d.robotMask, d.staticMask, nil)
 	if !st.Warming {
 		d.maybePersist(now)
 	}

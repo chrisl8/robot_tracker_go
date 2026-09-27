@@ -29,21 +29,35 @@ type ForegroundParams struct {
 	// AbsorbAfterSec folds an unchanged foreground pixel into the background
 	// after this long; 0 means never (objects stay obstacles until removed).
 	AbsorbAfterSec float64
+	// Shadow suppression: a darkened pixel whose colour is still (within
+	// these bounds) just the background colour scaled down is a cast shadow,
+	// not an object, and is not flagged as foreground. ShadowAlphaMin/Max
+	// bound the plausible scale factor (0-1, how much darker); ShadowChromaMax
+	// bounds the leftover colour error (as a fraction of the background
+	// colour's magnitude) after removing that scale. See isShadowColor. Any
+	// of these left at zero (the zero value) disables the gate, since 0 is
+	// not a usable bound for either.
+	ShadowAlphaMin  float64
+	ShadowAlphaMax  float64
+	ShadowChromaMax float64
 }
 
 // DefaultForegroundParams returns the tuned defaults.
 func DefaultForegroundParams() ForegroundParams {
 	return ForegroundParams{
-		Scale:          0.5,
-		Threshold:      22,
-		DarkFactor:     1.4,
-		TauSec:         60,
-		WarmupSec:      3,
-		GuardFraction:  0.25,
-		GuardMaxSec:    10,
-		MinBlobPx:      60,
-		BorderPx:       4,
-		AbsorbAfterSec: 0,
+		Scale:           0.5,
+		Threshold:       22,
+		DarkFactor:      1.4,
+		TauSec:          60,
+		WarmupSec:       3,
+		GuardFraction:   0.25,
+		GuardMaxSec:     10,
+		MinBlobPx:       60,
+		BorderPx:        4,
+		AbsorbAfterSec:  0,
+		ShadowAlphaMin:  0.35,
+		ShadowAlphaMax:  0.98,
+		ShadowChromaMax: 0.12,
 	}
 }
 
