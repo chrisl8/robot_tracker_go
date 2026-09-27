@@ -197,7 +197,7 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 
 	calibrated := est != nil && est.IsCalibrated()
 	if !g.enabled.Load() || !calibrated {
-		rs.publishTempObstacles(now, nil, false, false, g.enabled.Load())
+		rs.publishTempObstacles(now, nil, false, false, g.enabled.Load(), 0)
 		return
 	}
 
@@ -208,7 +208,7 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 		g.wasSuspend = true
 		g.published = nil
 		g.filter.Reset()
-		rs.publishTempObstacles(now, nil, false, false, true)
+		rs.publishTempObstacles(now, nil, false, false, true, 0)
 		return
 	}
 	if g.wasSuspend {
@@ -239,7 +239,7 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 		}
 		g.published = g.filter.Update(now, dets)
 	}
-	rs.publishTempObstacles(now, g.published, res.Warming, res.Guarded, true)
+	rs.publishTempObstacles(now, g.published, res.Warming, res.Guarded, true, res.ShadowSuppressed)
 }
 
 // buildForegroundMasks returns the discs and boxes the detector must ignore:
@@ -290,7 +290,7 @@ func (rs *RobotSystem) buildForegroundMasks(now time.Time, result *detection.Det
 // current temporary obstacles. The planner call is made every frame because it
 // is cheap when nothing changed; the UI message is sent on change and as a
 // heartbeat.
-func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.TrackedBox, warming, guarded, enabled bool) {
+func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.TrackedBox, warming, guarded, enabled bool, shadowSuppressed int) {
 	g := rs.fg
 	est := rs.positionEst
 
@@ -342,7 +342,7 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 	}
 
 	g.stateMu.Lock()
-	g.state = ui.ForegroundState{Warming: warming, Guarded: guarded, Count: len(msgs)}
+	g.state = ui.ForegroundState{Warming: warming, Guarded: guarded, Count: len(msgs), ShadowSuppressed: shadowSuppressed}
 	g.stateMu.Unlock()
 
 	if rs.webServer != nil && (sig != g.lastSig || now.Sub(g.lastSent) >= tempObstacleHeartbeat) {
@@ -407,5 +407,9 @@ func (g *foregroundGlue) perfSummary() string {
 	if st.Guarded {
 		flags += " guarded"
 	}
-	return fmt.Sprintf(" fg=%d%s", st.Count, flags)
+	shadow := ""
+	if st.ShadowSuppressed > 0 {
+		shadow = fmt.Sprintf(" shadow=%d", st.ShadowSuppressed)
+	}
+	return fmt.Sprintf(" fg=%d%s%s", st.Count, flags, shadow)
 }

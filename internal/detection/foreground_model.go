@@ -54,6 +54,11 @@ type modelStep struct {
 	Gain     float64
 	// Rewarmed is true on the frame the guard gave up and restarted learning.
 	Rewarmed bool
+	// ShadowSuppressed is how many pixels this frame darkened enough to look
+	// like foreground but were reclassified as a cast shadow by
+	// isShadowColor — purely diagnostic (see foregroundGlue.perfSummary),
+	// not used by any detection logic itself.
+	ShadowSuppressed int
 }
 
 const (
@@ -207,6 +212,7 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 	shadowChromaMax := float32(m.p.ShadowChromaMax)
 
 	fgCount := 0
+	shadowCount := 0
 	for y := 0; y < h; y++ {
 		inBorderY := y < border || y >= h-border
 		row := y * w
@@ -243,6 +249,7 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 				// cast shadow, not a real change. Leave it classified as
 				// background rather than foreground.
 				raw = false
+				shadowCount++
 			}
 			if inBorderY || x < border || x >= w-border {
 				raw = false
@@ -283,7 +290,7 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 		}
 	}
 
-	st := modelStep{Gain: gain, Fraction: float64(fgCount) / float64(w*h)}
+	st := modelStep{Gain: gain, Fraction: float64(fgCount) / float64(w*h), ShadowSuppressed: shadowCount}
 	if st.Fraction > m.p.GuardFraction {
 		st.Guarded = true
 		m.guardSecs += dt

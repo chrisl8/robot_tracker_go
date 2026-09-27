@@ -55,9 +55,9 @@ func DefaultForegroundParams() ForegroundParams {
 		MinBlobPx:       60,
 		BorderPx:        4,
 		AbsorbAfterSec:  0,
-		ShadowAlphaMin:  0.35,
+		ShadowAlphaMin:  0.15,
 		ShadowAlphaMax:  0.98,
-		ShadowChromaMax: 0.12,
+		ShadowChromaMax: 0.20,
 	}
 }
 
@@ -113,4 +113,8 @@ type ForegroundResult struct {
 	Fraction float64
 	// Gain is the exposure normalisation applied to the frame.
 	Gain float64
+	// ShadowSuppressed is how many pixels this frame were reclassified from
+	// would-be foreground to background by the colour-based shadow test
+	// (isShadowColor) — diagnostic only, see foregroundGlue.perfSummary.
+	ShadowSuppressed int
 }

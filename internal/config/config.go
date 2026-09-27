@@ -124,9 +124,9 @@ func (c *Config) EffectiveForeground() ForegroundSettings {
 		PersistBackground:  true,
 		PersistIntervalSec: orF(f.PersistIntervalSec, 30),
 		// Defaults must match detection.DefaultForegroundParams.
-		ShadowAlphaMin:  orF(f.ShadowAlphaMin, 0.35),
+		ShadowAlphaMin:  orF(f.ShadowAlphaMin, 0.15),
 		ShadowAlphaMax:  orF(f.ShadowAlphaMax, 0.98),
-		ShadowChromaMax: orF(f.ShadowChromaMax, 0.12),
+		ShadowChromaMax: orF(f.ShadowChromaMax, 0.20),
 	}
 	if f.Enabled != nil {
 		s.Enabled = *f.Enabled

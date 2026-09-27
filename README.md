@@ -141,6 +141,12 @@ about 1.5 ms per frame.
   working resolution is ignored, not misapplied. **Reset background** also discards the saved file,
   not just the live state, so it can't come back on the next restart. Controlled by
   `persist_background`/`persist_interval_sec` in `config/tracking_config.yaml`.
+- **Cast shadows are filtered by color, not just brightness.** A pixel that darkened enough to look
+  like an object but whose color is still just the background color scaled down (a robot's or
+  furniture's shadow, not a real change) stays classified as background. This works even on a
+  neutral (low-saturation) floor, where a simpler hue-based check would be unreliable. Tuned with
+  `shadow_alpha_min`/`shadow_alpha_max` (how much darker a shadow plausibly gets) and
+  `shadow_chroma_max` (how much color drift is still called a shadow) alongside `dark_factor`.
 - Slow lighting drift is followed automatically. A sudden change that lights up a large part of the
   picture is treated as a lighting event: the last obstacles are held and the background is relearned.
 - While the calibration wizard is open, detection pauses (the tags on the floor would look like

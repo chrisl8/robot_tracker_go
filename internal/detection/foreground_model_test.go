@@ -584,12 +584,16 @@ func TestForegroundModel_ShadowSuppressedOnNeutralCarpet(t *testing.T) {
 	s.setRect(100, 40, 130, 70, 5, 5, 5)
 
 	var mask []uint8
+	var st modelStep
 	for i := 0; i < 3; i++ {
 		gray, color := s.frames()
-		mask, _ = m.step(gray, tw, th, tdt, nil, nil, color)
+		mask, st = m.step(gray, tw, th, tdt, nil, nil, color)
 	}
 	if len(mask) != tw*th {
 		t.Fatalf("expected a %d-pixel mask, got %d", tw*th, len(mask))
+	}
+	if st.ShadowSuppressed == 0 {
+		t.Error("ShadowSuppressed should report the shadow pixels it reclassified, got 0")
 	}
 
 	shadowTotal := 0

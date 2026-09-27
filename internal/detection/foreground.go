@@ -276,7 +276,7 @@ func (d *ForegroundDetector) Process(frame []byte, width, height int, now time.T
 	if !st.Warming {
 		d.maybePersist(now)
 	}
-	res := ForegroundResult{Warming: st.Warming, Guarded: st.Guarded, Fraction: st.Fraction, Gain: st.Gain}
+	res := ForegroundResult{Warming: st.Warming, Guarded: st.Guarded, Fraction: st.Fraction, Gain: st.Gain, ShadowSuppressed: st.ShadowSuppressed}
 	if fg == nil || st.Warming || st.Guarded {
 		d.renderDebug(pixels, fg, now)
 		return res

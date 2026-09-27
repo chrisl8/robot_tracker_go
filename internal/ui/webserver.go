@@ -138,6 +138,10 @@ type ForegroundState struct {
 	Warming bool `json:"warming"`
 	Guarded bool `json:"guarded"`
 	Count   int  `json:"count"`
+	// ShadowSuppressed is how many pixels the last frame were reclassified
+	// from would-be foreground to background as a cast shadow — diagnostic,
+	// for correlating a flagged obstacle with heavy shadow activity nearby.
+	ShadowSuppressed int `json:"shadow_suppressed"`
 }
 
 type TracksMessage struct {

@@ -162,7 +162,7 @@ func TestEffectiveForeground(t *testing.T) {
 		if !got.PersistBackground || got.PersistIntervalSec != 30 {
 			t.Errorf("background persistence should default to on with a 30s interval, got %+v", got)
 		}
-		if got.ShadowAlphaMin != 0.35 || got.ShadowAlphaMax != 0.98 || got.ShadowChromaMax != 0.12 {
+		if got.ShadowAlphaMin != 0.15 || got.ShadowAlphaMax != 0.98 || got.ShadowChromaMax != 0.20 {
 			t.Errorf("unexpected shadow-suppression defaults: %+v", got)
 		}
 	})
