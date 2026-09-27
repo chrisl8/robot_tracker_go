@@ -23,7 +23,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    `S`), so it's a one-line regression, not a design gap — but it's a physical robot
    that won't stop. Fix: add `else { sendCommand('S') }`.
 
-2. **Robot velocity fed into the planner is hardcoded to zero.**
+2. **[FIXED] Robot velocity fed into the planner is hardcoded to zero.**
    `cmd/main.go:1371-1372` — `UpdateRobotState(robotID, pos, [2]float64{0, 0})`.
    The entire velocity-obstacle collision-avoidance system (`internal/planning/local.go`)
    computes time-to-collision from this value. A fast-approaching robot looks

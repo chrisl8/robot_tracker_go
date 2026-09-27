@@ -115,6 +115,8 @@ type RobotSystem struct {
 	startTime           time.Time
 	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
 	lastReplanTime      map[int]time.Time    // robotID -> last proximity replan time
+	lastRobotWorldPos   map[int][2]float64   // robotID -> last world position, for velocity estimation
+	lastRobotPosTime    map[int]float64      // robotID -> track timestamp of lastRobotWorldPos
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
@@ -130,6 +132,8 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 		headingLostCount:   make(map[int]int),
 		robotCommands:      make(map[int]string),
 		lastReplanTime:     make(map[int]time.Time),
+		lastRobotWorldPos:  make(map[int][2]float64),
+		lastRobotPosTime:   make(map[int]float64),
 		startTime:          time.Now(),
 	}
 }
@@ -1261,6 +1265,33 @@ func (rs *RobotSystem) applyHeadingSmoothing(track *tracking.Track, tagID int) {
 	rs.smoothedHeading[tagID] = track.Heading
 }
 
+// estimateRobotVelocity computes a robot's world-frame velocity (m/s) from the
+// change in its tracked world position since the last call, using the track's
+// own timestamp so the estimate isn't skewed by processing jitter. It caches
+// the position/timestamp for next time. A too-small or non-positive dt (first
+// sighting, duplicate frame, clock oddity) yields zero rather than a spike.
+func (rs *RobotSystem) estimateRobotVelocity(robotID int, worldPos [2]float64, timestamp float64) [2]float64 {
+	prevPos, hadPrev := rs.lastRobotWorldPos[robotID]
+	prevTime, hadTime := rs.lastRobotPosTime[robotID]
+
+	rs.lastRobotWorldPos[robotID] = worldPos
+	rs.lastRobotPosTime[robotID] = timestamp
+
+	if !hadPrev || !hadTime {
+		return [2]float64{0, 0}
+	}
+
+	dt := timestamp - prevTime
+	if dt < 1e-3 {
+		return [2]float64{0, 0}
+	}
+
+	return [2]float64{
+		(worldPos[0] - prevPos[0]) / dt,
+		(worldPos[1] - prevPos[1]) / dt,
+	}
+}
+
 // executeAutonomousControl handles path-following for all tracked robots.
 func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
@@ -1368,8 +1399,8 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				}
 			}
 
-			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y},
-				[2]float64{0, 0})
+			velocity := rs.estimateRobotVelocity(robotID, [2]float64{worldPos.X, worldPos.Y}, track.Timestamp)
+			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y}, velocity)
 		} else if rs.commandQueue != nil && rs.commandQueue.IsRunning() {
 			rs.commandQueue.ClearActiveCommand()
 		}
