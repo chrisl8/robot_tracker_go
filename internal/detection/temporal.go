@@ -177,10 +177,13 @@ func (f *TemporalFilter) armSuppressions(now time.Time) {
 }
 
 // candidates filters and merges the raw detections. Merging combines boxes
-// (as before); a merged detection's Quad becomes its merged box's own four
-// corners (a degenerate rectangle) since combining two oriented quads into one
-// tight shape has no single right answer — merges of separate blobs are rare,
-// so this trades a small, rare loss of tightness for simplicity.
+// (as before); a detection that merged with no other keeps its own quad,
+// tracked through the merge by MergeWorldBoxesWithGroups rather than assumed
+// from position (the merged result is sorted, so it is not in input order). A
+// detection that did merge with another gets its merged box's own four
+// corners (a degenerate rectangle) since combining two oriented quads into
+// one tight shape has no single right answer — merges of separate blobs are
+// rare, so this trades a small, rare loss of tightness for simplicity.
 func (f *TemporalFilter) candidates(detections []Detection) []Detection {
 	kept := make([]Detection, 0, len(detections))
 	for _, d := range detections {
@@ -198,18 +201,14 @@ func (f *TemporalFilter) candidates(detections []Detection) []Detection {
 	for i, d := range kept {
 		boxes[i] = d.Box
 	}
-	mergedBoxes := MergeWorldBoxes(boxes, f.p.MergeGap)
-	if len(mergedBoxes) == len(kept) {
-		// The common case: nothing merged, so every detection keeps its own quad.
-		out := make([]Detection, len(kept))
-		for i, d := range kept {
-			out[i] = Detection{Box: mergedBoxes[i], Quad: d.Quad}
-		}
-		return out
-	}
+	mergedBoxes, groups := MergeWorldBoxesWithGroups(boxes, f.p.MergeGap)
 	out := make([]Detection, len(mergedBoxes))
 	for i, b := range mergedBoxes {
-		out[i] = Detection{Box: b, Quad: rectQuad(b)}
+		if len(groups[i]) == 1 {
+			out[i] = Detection{Box: b, Quad: kept[groups[i][0]].Quad}
+		} else {
+			out[i] = Detection{Box: b, Quad: rectQuad(b)}
+		}
 	}
 	return out
 }

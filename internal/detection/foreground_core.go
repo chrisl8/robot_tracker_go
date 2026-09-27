@@ -248,8 +248,26 @@ func BlobTouchesDisc(r image.Rectangle, d Disc, pad float64) bool {
 // metres of each other (along both axes) into their union, until none do. The
 // result is sorted by (MinX, MinY) so it is deterministic.
 func MergeWorldBoxes(boxes []WorldBox, gap float64) []WorldBox {
+	out, _ := MergeWorldBoxesWithGroups(boxes, gap)
+	return out
+}
+
+// MergeWorldBoxesWithGroups behaves like MergeWorldBoxes, but also returns,
+// for each returned box (same order, same index), the indices into the input
+// slice that were merged into it (a single-element slice when that box did
+// not merge with any other). A caller that has per-input data alongside each
+// box — such as an oriented quad — needs this: the returned boxes are sorted,
+// so their order does not match the input's, and pairing per-input data back
+// up positionally (assuming "same count in, same count out" means "same
+// order") silently mismatches data across boxes whenever the input wasn't
+// already sorted.
+func MergeWorldBoxesWithGroups(boxes []WorldBox, gap float64) ([]WorldBox, [][]int) {
 	out := make([]WorldBox, len(boxes))
 	copy(out, boxes)
+	groups := make([][]int, len(boxes))
+	for i := range groups {
+		groups[i] = []int{i}
+	}
 
 	for merged := true; merged; {
 		merged = false
@@ -258,7 +276,9 @@ func MergeWorldBoxes(boxes []WorldBox, gap float64) []WorldBox {
 			for j := i + 1; j < len(out); j++ {
 				if out[i].Expand(gap).Intersects(out[j]) {
 					out[i] = out[i].Union(out[j])
+					groups[i] = append(groups[i], groups[j]...)
 					out = append(out[:j], out[j+1:]...)
+					groups = append(groups[:j], groups[j+1:]...)
 					merged = true
 					break scan
 				}
@@ -266,11 +286,22 @@ func MergeWorldBoxes(boxes []WorldBox, gap float64) []WorldBox {
 		}
 	}
 
-	sort.Slice(out, func(a, b int) bool {
-		if out[a].MinX != out[b].MinX {
-			return out[a].MinX < out[b].MinX
+	idx := make([]int, len(out))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.Slice(idx, func(a, b int) bool {
+		ba, bb := out[idx[a]], out[idx[b]]
+		if ba.MinX != bb.MinX {
+			return ba.MinX < bb.MinX
 		}
-		return out[a].MinY < out[b].MinY
+		return ba.MinY < bb.MinY
 	})
-	return out
+	sortedOut := make([]WorldBox, len(out))
+	sortedGroups := make([][]int, len(out))
+	for i, gi := range idx {
+		sortedOut[i] = out[gi]
+		sortedGroups[i] = groups[gi]
+	}
+	return sortedOut, sortedGroups
 }

@@ -185,6 +185,51 @@ func TestTemporalFilter_MergesOverlappingDetections(t *testing.T) {
 	}
 }
 
+// TestTemporalFilter_QuadsStayPairedWithTheirOwnBoxWhenUnsorted is a
+// regression test: MergeWorldBoxesWithGroups sorts its output by position, so
+// candidates() must track each detection's quad through that reorder by
+// identity (its group), not by assuming the Nth output box is the Nth input
+// detection. Three separate, non-merging boxes are given out of sorted
+// (MinX, MinY) order, each with its own distinctive (marker) quad, so a
+// mispairing shows up as one track publishing a different track's quad.
+func TestTemporalFilter_QuadsStayPairedWithTheirOwnBoxWhenUnsorted(t *testing.T) {
+	f := NewTemporalFilter(instant())
+	boxA := wbox(5, 5, 5.1, 5.1) // sorts last
+	boxB := wbox(1, 1, 1.1, 1.1) // sorts first
+	boxC := wbox(3, 3, 3.1, 3.1) // sorts middle
+	quadA := Quad{{9, 9}, {9, 9}, {9, 9}, {9, 9}}
+	quadB := Quad{{1, 1}, {1, 1}, {1, 1}, {1, 1}}
+	quadC := Quad{{5, 5}, {5, 5}, {5, 5}, {5, 5}}
+
+	got := f.Update(at(0), []Detection{
+		{Box: boxA, Quad: quadA},
+		{Box: boxB, Quad: quadB},
+		{Box: boxC, Quad: quadC},
+	})
+	if len(got) != 3 {
+		t.Fatalf("got %d tracks, want 3", len(got))
+	}
+	cases := []struct {
+		box  WorldBox
+		quad Quad
+	}{{boxA, quadA}, {boxB, quadB}, {boxC, quadC}}
+	for _, tb := range got {
+		matched := false
+		for _, c := range cases {
+			if !boxNear(tb.Box, c.box, 1e-9) {
+				continue
+			}
+			matched = true
+			if tb.Quad != c.quad {
+				t.Errorf("box %v published with quad %v, want its own quad %v (a different track's quad leaked in)", tb.Box, tb.Quad, c.quad)
+			}
+		}
+		if !matched {
+			t.Fatalf("published box %v does not match any input box", tb.Box)
+		}
+	}
+}
+
 func TestTemporalFilter_IDsStableAndMonotonicAcrossReset(t *testing.T) {
 	f := NewTemporalFilter(instant())
 	a := wbox(1, 1, 1.2, 1.2)
