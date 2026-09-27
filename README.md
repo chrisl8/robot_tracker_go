@@ -122,8 +122,12 @@ or an obstacle you marked static, and can plan around it. It works by comparing 
 an adaptive picture of the empty floor (background subtraction): no model, any kind of object,
 about 1.5 ms per frame.
 
-- **Detected obstacles** are drawn as translucent boxes over the video. The detector needs a few
-  seconds of clear floor at start-up ("Learning background"). Robots are ignored using their tags.
+- **Detected obstacles** are drawn as translucent shapes over the video, fitted tightly to each
+  object's own footprint and rotation rather than an axis-aligned box — an elongated object lying
+  at an angle (a screwdriver, a cable) no longer inflates to a large box around it. The planner and
+  proximity-stop clearance check use that same tight shape, not a bounding box, so a robot can pass
+  closer to a rotated object than a box-only fix would allow. The detector needs a few seconds of
+  clear floor at start-up ("Learning background"). Robots are ignored using their tags.
 - **Shadow mode first.** By default (`foreground.apply_to_planner: false`) obstacles are shown but the
   planner does not steer around them. Turn on **Steer around them** in the *Temporary obstacles* panel
   (or set it in `config/tracking_config.yaml`) once the detections look right.
