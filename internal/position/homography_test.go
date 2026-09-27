@@ -3,6 +3,7 @@ package position
 import (
 	"math"
 	"math/rand"
+	"path/filepath"
 	"testing"
 )
 
@@ -210,9 +211,54 @@ func TestHomography_GetPixelsPerMeter(t *testing.T) {
 		t.Errorf("NewHomography GetPixelsPerMeter = %f, want 0", ppm)
 	}
 
+	// SetFromValues is a plain matrix setter: it must not silently overwrite
+	// a scale the caller hasn't set (see TestHomography_SetFromValues_PreservesScale).
 	h.SetFromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
-	if ppm := h.GetPixelsPerMeter(); ppm != 100.0 {
-		t.Errorf("After SetFromValues GetPixelsPerMeter = %f, want 100.0", ppm)
+	if ppm := h.GetPixelsPerMeter(); ppm != 0 {
+		t.Errorf("After SetFromValues GetPixelsPerMeter = %f, want 0 (untouched)", ppm)
+	}
+}
+
+// TestHomography_SetFromValues_PreservesScale guards against a real bug: an
+// earlier version of SetFromValues called EstimateScale() internally, so it
+// silently reset PixelsPerMeter to a hardcoded 100.0 on every call -- even
+// when a caller (e.g. Homography.Load) had already set the real, calibrated
+// scale immediately beforehand.
+func TestHomography_SetFromValues_PreservesScale(t *testing.T) {
+	h := NewHomography()
+	h.SetPixelsPerMeter(654.3)
+	h.SetFromValues(1, 2, 3, 4, 5, 6, 7, 8, 9)
+	if ppm := h.GetPixelsPerMeter(); ppm != 654.3 {
+		t.Errorf("SetFromValues changed PixelsPerMeter = %f, want unchanged 654.3", ppm)
+	}
+}
+
+// TestHomography_SaveLoad_RoundTrip covers the actual bug: Load() reads the
+// real calibrated PixelsPerMeter off disk, then (before the fix) immediately
+// clobbered it back to 100.0 via the SetFromValues -> EstimateScale chain.
+func TestHomography_SaveLoad_RoundTrip(t *testing.T) {
+	h := NewHomography()
+	h.SetFromValues(1, 2, 3, 4, 5, 6, 7, 8, 9)
+	h.SetPixelsPerMeter(654.3)
+
+	path := filepath.Join(t.TempDir(), "homography.txt")
+	if err := h.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded := NewHomography()
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if !loaded.Valid {
+		t.Error("Loaded homography should be valid")
+	}
+	if loaded.H != h.H {
+		t.Errorf("Loaded H = %v, want %v", loaded.H, h.H)
+	}
+	if loaded.PixelsPerMeter != 654.3 {
+		t.Errorf("Loaded PixelsPerMeter = %f, want 654.3 (the saved value, not the EstimateScale default)", loaded.PixelsPerMeter)
 	}
 }
 

@@ -264,6 +264,10 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 
 	if scale, ok := calibration["world_scale"].(float64); ok {
 		newHomography.SetPixelsPerMeter(scale)
+	} else {
+		// No world_scale in the file (e.g. an older calibration): fall back
+		// to the documented default rather than leaving PixelsPerMeter at 0.
+		newHomography.EstimateScale()
 	}
 
 	e.homography = newHomography

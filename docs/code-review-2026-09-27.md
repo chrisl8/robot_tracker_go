@@ -79,12 +79,21 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    patching the unit conversion — the code was already dead (foreground detector
    fully supersedes it) and self-documented as scheduled for removal.
 
-8. **`Homography.SetFromValues` stomps the calibrated pixels-per-meter scale.**
+8. **[FIXED] `Homography.SetFromValues` stomps the calibrated pixels-per-meter scale.**
    `internal/position/homography.go:285-298` calls `EstimateScale()`, which is a
    hardcoded stub (`h.PixelsPerMeter = 100.0`). The real value only survives today
    because `estimator.LoadCalibration` happens to re-apply it afterward from YAML —
    a coincidental double-write, not an enforced invariant. Any other caller, or a
    reordering, silently gets `100.0`.
+   **Fix:** `SetFromValues` no longer touches `PixelsPerMeter` at all — it's a
+   plain matrix setter now, not a calibration step. `EstimateScale()` is an
+   explicit last-resort fallback callers opt into (`ComputeFromAprilTag`'s
+   degenerate-corners branch, and `estimator.LoadCalibration` when a file has no
+   `world_scale`). This also fixes a previously-dead-but-real bug in
+   `Homography.Load`: it read the correct saved scale off disk and then
+   immediately clobbered it back to 100.0 via the `SetFromValues` call that
+   followed. Added `TestHomography_SetFromValues_PreservesScale` and
+   `TestHomography_SaveLoad_RoundTrip` to cover both cases.
 
 9. **`MatchThresh` config is effectively dead below 0.5 IoU.**
    `internal/tracking/hungarian.go` computes cost against the configured

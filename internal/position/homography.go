@@ -237,6 +237,11 @@ func (h *Homography) ComputeInverse() {
 	h.HInv[2][2] = (h.H[0][0]*h.H[1][1] - h.H[0][1]*h.H[1][0]) * invDet
 }
 
+// EstimateScale sets PixelsPerMeter to a generic default (100.0). It is a
+// last-resort fallback for callers with no way to derive a real scale (e.g.
+// degenerate calibration input, or a calibration file with no world_scale) —
+// it is never invoked implicitly by SetFromValues, so it must be called
+// explicitly wherever that fallback is actually wanted.
 func (h *Homography) EstimateScale() {
 	h.PixelsPerMeter = 100.0
 }
@@ -282,6 +287,11 @@ func (h *Homography) WorldToPixel(world Point2D) (int, int) {
 	return int(dst[0] / dst[2]), int(dst[1] / dst[2])
 }
 
+// SetFromValues loads a raw 3x3 homography matrix (row-major) and marks it
+// valid. It intentionally leaves PixelsPerMeter untouched: this is a plain
+// matrix setter, not a calibration step, so it must not silently overwrite a
+// scale a caller already computed or loaded. Callers that need a scale set it
+// explicitly via SetPixelsPerMeter (or EstimateScale as an explicit fallback).
 func (h *Homography) SetFromValues(h0, h1, h2, h3, h4, h5, h6, h7, h8 float64) {
 	h.H[0][0] = h0
 	h.H[0][1] = h1
@@ -293,7 +303,6 @@ func (h *Homography) SetFromValues(h0, h1, h2, h3, h4, h5, h6, h7, h8 float64) {
 	h.H[2][1] = h7
 	h.H[2][2] = h8
 	h.ComputeInverse()
-	h.EstimateScale()
 	h.Valid = true
 }
 
