@@ -113,6 +113,12 @@ type TempObstacleResponse struct {
 	PixelBottomRight [2]int     `json:"pixel_bottom_right"`
 	WorldTopLeft     [2]float64 `json:"world_top_left"`
 	WorldBottomRight [2]float64 `json:"world_bottom_right"`
+	// PixelQuad/WorldQuad are the obstacle's exact (possibly rotated)
+	// footprint, four corners in order, omitted when unavailable (in which
+	// case the UI should fall back to the rectangle above). world_top_left/
+	// world_bottom_right/pixel_* stay populated as that shape's bounding box.
+	PixelQuad [][2]int     `json:"pixel_quad,omitempty"`
+	WorldQuad [][2]float64 `json:"world_quad,omitempty"`
 }
 
 // TempObstaclesMessage carries the current temporary obstacles and the

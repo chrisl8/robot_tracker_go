@@ -9,9 +9,11 @@ import { getVideoDimensions } from '@/utils/coordinates'
 import { createRateLimiter } from '@/utils/rateLimiter'
 import {
     hitTestTempObstacle,
+    tempObstacleCanvasPolygon,
     tempObstacleCanvasRect,
     tempObstacleLabel,
     tempObstacleStatusChip,
+    topmostPoint,
 } from '@/utils/tempObstacles'
 
 export interface CanvasPoint {
@@ -492,23 +494,42 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
         const applied = tempObstacleStore.applied
 
         for (const obs of tempObstacleStore.obstacles) {
-            const r = tempObstacleCanvasRect(obs, naturalToCanvas)
+            const polygon = tempObstacleCanvasPolygon(obs, naturalToCanvas)
+            const r = polygon ? null : tempObstacleCanvasRect(obs, naturalToCanvas)
+            const tracePath = (): void => {
+                c.beginPath()
+                if (polygon) {
+                    c.moveTo(polygon[0].x, polygon[0].y)
+                    for (let i = 1; i < polygon.length; i++) c.lineTo(polygon[i].x, polygon[i].y)
+                    c.closePath()
+                } else if (r) {
+                    c.rect(r.x, r.y, r.w, r.h)
+                }
+            }
+            // Bounds of the shape (its rect, or the polygon's own AABB), used
+            // for the hatch fill's span so diagonal lines still cover it.
+            const bounds = r ?? {
+                x: Math.min(...polygon!.map(p => p.x)),
+                y: Math.min(...polygon!.map(p => p.y)),
+                w: Math.max(...polygon!.map(p => p.x)) - Math.min(...polygon!.map(p => p.x)),
+                h: Math.max(...polygon!.map(p => p.y)) - Math.min(...polygon!.map(p => p.y)),
+            }
 
             c.save()
             c.fillStyle = applied ? THEME.tempFill : THEME.tempIdleFill
-            c.fillRect(r.x, r.y, r.w, r.h)
+            tracePath()
+            c.fill()
 
             if (!applied) {
-                // Hatch the box to show the planner is ignoring it
-                c.beginPath()
-                c.rect(r.x, r.y, r.w, r.h)
+                // Hatch the shape to show the planner is ignoring it
+                tracePath()
                 c.clip()
                 c.strokeStyle = THEME.tempIdleStroke
                 c.lineWidth = 1
                 c.beginPath()
-                for (let d = -r.h; d < r.w; d += 8) {
-                    c.moveTo(r.x + d, r.y + r.h)
-                    c.lineTo(r.x + d + r.h, r.y)
+                for (let d = -bounds.h; d < bounds.w; d += 8) {
+                    c.moveTo(bounds.x + d, bounds.y + bounds.h)
+                    c.lineTo(bounds.x + d + bounds.h, bounds.y)
                 }
                 c.stroke()
             }
@@ -518,12 +539,14 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
             c.setLineDash([6, 4])
             c.lineWidth = 2
             c.strokeStyle = applied ? THEME.tempStroke : THEME.tempIdleStroke
-            c.strokeRect(r.x, r.y, r.w, r.h)
+            tracePath()
+            c.stroke()
             c.restore()
 
+            const labelPoint = polygon ? topmostPoint(polygon) : { x: r!.x, y: r!.y }
             c.font = THEME.fontLabel
             c.fillStyle = THEME.tempStroke
-            c.fillText(tempObstacleLabel(applied), r.x + 3, Math.max(12, r.y - 4))
+            c.fillText(tempObstacleLabel(applied), labelPoint.x + 3, Math.max(12, labelPoint.y - 4))
         }
 
         const chip = tempObstacleStatusChip(tempObstacleStore)

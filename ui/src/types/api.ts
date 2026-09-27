@@ -170,6 +170,11 @@ export interface TempObstacle {
     pixel_bottom_right: [number, number]
     world_top_left: [number, number]
     world_bottom_right: [number, number]
+    // The obstacle's exact (possibly rotated) footprint, four corners in
+    // order; absent when the detector could not fit an oriented shape, in
+    // which case the top-left/bottom-right box above is what's known.
+    pixel_quad?: [number, number][]
+    world_quad?: [number, number][]
 }
 
 export interface TempObstaclesPayload {

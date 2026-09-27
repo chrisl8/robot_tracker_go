@@ -285,6 +285,7 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 	msgs := make([]ui.TempObstacleResponse, 0, len(tracked))
 	for _, t := range tracked {
 		box := t.Box.Expand(g.settings.PadM)
+		quad := t.Quad.ExpandRect(g.settings.PadM)
 		name := fmt.Sprintf("temp_%d", t.ID)
 		obstacles = append(obstacles, planning.Obstacle{
 			Name:             name,
@@ -293,16 +294,22 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 			// The real, possibly-rotated footprint (a degenerate rectangle
 			// when the detector could not fit an oriented box), padded the
 			// same as the cached AABB envelope above.
-			Quad: planning.Quad(t.Quad.ExpandRect(g.settings.PadM)),
+			Quad: planning.Quad(quad),
 		})
 		var tl, br [2]int
+		var pixelQuad [][2]int
 		if est != nil {
 			tl, br = worldBoxToPixels(est, box)
+			pixelQuad = worldQuadToPixels(est, quad)
 		}
+		worldQuad := make([][2]float64, 4)
+		copy(worldQuad, quad[:])
 		msgs = append(msgs, ui.TempObstacleResponse{
 			ID: name, PixelTopLeft: tl, PixelBottomRight: br,
 			WorldTopLeft:     [2]float64{box.MinX, box.MinY},
 			WorldBottomRight: [2]float64{box.MaxX, box.MaxY},
+			PixelQuad:        pixelQuad,
+			WorldQuad:        worldQuad,
 		})
 	}
 
@@ -343,6 +350,16 @@ func worldBoxToPixels(est *position.PositionEstimator, b detection.WorldBox) ([2
 		minY, maxY = min(minY, py), max(maxY, py)
 	}
 	return [2]int{minX, minY}, [2]int{maxX, maxY}
+}
+
+// worldQuadToPixels projects a quad's four corners (in order) to pixels.
+func worldQuadToPixels(est *position.PositionEstimator, q detection.Quad) [][2]int {
+	out := make([][2]int, 4)
+	for i, c := range q {
+		x, y := est.WorldToPixel(position.Point2D{X: c[0], Y: c[1]})
+		out[i] = [2]int{x, y}
+	}
+	return out
 }
 
 // logChanges records temporary obstacles appearing and disappearing, so a run
