@@ -126,3 +126,23 @@ func TestLoad_ReservedCalibrationTagIDs(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveMaxFPS(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *Config
+		want int
+	}{
+		{"nil config", nil, DefaultMaxFPS},
+		{"unset", &Config{}, DefaultMaxFPS},
+		{"negative", &Config{Processing: ProcessingConfig{MaxFPS: -3}}, DefaultMaxFPS},
+		{"configured", &Config{Processing: ProcessingConfig{MaxFPS: 20}}, 20},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.EffectiveMaxFPS(); got != tt.want {
+				t.Errorf("EffectiveMaxFPS() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

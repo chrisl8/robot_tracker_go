@@ -1833,6 +1833,8 @@ func main() {
 			utils.Logf("Starting real camera capture...")
 			frameNum := 0
 			frameFailures := 0
+			minFrameInterval := time.Second / time.Duration(rs.cfg.EffectiveMaxFPS())
+			utils.Logf("Processing capped at %d fps", rs.cfg.EffectiveMaxFPS())
 			for rs.cameraRunning {
 				startTime := time.Now()
 				frame, err := rs.cam.GetFrame()
@@ -1862,9 +1864,8 @@ func main() {
 				}
 				rs.ProcessFrame(img, frame.Data)
 				frameNum++
-				elapsed := time.Since(startTime)
-				if elapsed < 33*time.Millisecond {
-					time.Sleep(33*time.Millisecond - elapsed)
+				if elapsed := time.Since(startTime); elapsed < minFrameInterval {
+					time.Sleep(minFrameInterval - elapsed)
 				}
 			}
 		}

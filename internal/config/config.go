@@ -22,6 +22,26 @@ type Config struct {
 	Tracking      TrackingConfig      `yaml:"tracking"`
 	Cameras       []CameraConfig      `yaml:"cameras"`
 	Controller    ControllerConfig    `yaml:"controller"`
+	Processing    ProcessingConfig    `yaml:"processing"`
+}
+
+// DefaultMaxFPS is the frame-processing cap used when processing.max_fps is
+// unset. The path-following controller is tuned in frames around 12 fps; an
+// uncapped loop would run about twice as fast and burn far more CPU.
+const DefaultMaxFPS = 15
+
+// ProcessingConfig controls how hard the tracker works.
+type ProcessingConfig struct {
+	MaxFPS int `yaml:"max_fps"`
+}
+
+// EffectiveMaxFPS returns the configured cap, or DefaultMaxFPS when unset or
+// not positive.
+func (c *Config) EffectiveMaxFPS() int {
+	if c == nil || c.Processing.MaxFPS <= 0 {
+		return DefaultMaxFPS
+	}
+	return c.Processing.MaxFPS
 }
 
 type ControllerConfig struct {

@@ -3,6 +3,7 @@ package planning
 import (
 	"math"
 	"sync"
+	"time"
 
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
@@ -27,12 +28,28 @@ type Planner struct {
 	dynamicObstacles  []Obstacle
 	paths             map[int][][2]float64 // robotID -> list of waypoints
 	currentWaypoint   map[int]int          // robotID -> index into paths
+
+	// Rate limiting for replans triggered by changing dynamic obstacles.
+	clock             func() time.Time
+	lastDynamicReplan time.Time
+	replanPending     bool
+	replans           int // total replanAllPathsLocked runs (observed by tests)
 }
+
+const (
+	// dynamicObstacleEpsilon is how far (metres) an obstacle edge may move
+	// before it counts as a change worth replanning for.
+	dynamicObstacleEpsilon = 0.03
+	// minDynamicReplanInterval bounds how often changing obstacles can force
+	// every robot to replan.
+	minDynamicReplanInterval = 500 * time.Millisecond
+)
 
 func NewPlanner(config *PlannerConfig) *Planner {
 	planner := &Planner{
 		paths:           make(map[int][][2]float64),
 		currentWaypoint: make(map[int]int),
+		clock:           time.Now,
 	}
 
 	if config != nil {
@@ -127,13 +144,29 @@ func (p *Planner) SetObstacles(obstacles []Obstacle) {
 	p.replanAllPathsLocked()
 }
 
+// SetDynamicObstacles installs the current temporary obstacles. The new set is
+// used immediately for clearance checks and new plans, but re-planning existing
+// paths is rate limited so flickering or jittering detections cannot force a
+// replan storm: changes smaller than dynamicObstacleEpsilon (or a mere
+// reordering) are ignored, and replans happen at most once per
+// minDynamicReplanInterval, with a change that arrives too soon deferred to the
+// next call rather than dropped.
 func (p *Planner) SetDynamicObstacles(obstacles []Obstacle) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if obstaclesEqual(p.dynamicObstacles, obstacles) {
+	if !obstaclesEquivalent(p.dynamicObstacles, obstacles, dynamicObstacleEpsilon) {
+		p.dynamicObstacles = obstacles
+		p.replanPending = true
+	}
+	if !p.replanPending {
 		return
 	}
-	p.dynamicObstacles = obstacles
+	now := p.clock()
+	if now.Sub(p.lastDynamicReplan) < minDynamicReplanInterval {
+		return
+	}
+	p.lastDynamicReplan = now
+	p.replanPending = false
 	p.replanAllPathsLocked()
 }
 
@@ -236,6 +269,7 @@ func (p *Planner) expandObstacles(obstacles []Obstacle, margin float64) []Obstac
 
 // replanAllPathsLocked requires the caller to already hold p.mu.
 func (p *Planner) replanAllPathsLocked() {
+	p.replans++
 	for robotID := range p.paths {
 		robot, exists := p.coordinator.GetRobotState(robotID)
 		if !exists {
@@ -496,24 +530,35 @@ func (p *Planner) LocalPlanner() *LocalPlanner {
 	return p.localPlanner
 }
 
-// obstaclesEqual returns true if two obstacle slices have the same contents.
-// World coordinates are compared with a small epsilon to avoid replanning on
-// sub-centimeter jitter from detection noise.
-func obstaclesEqual(a, b []Obstacle) bool {
+// obstaclesEquivalent reports whether two obstacle sets describe the same
+// boxes: same count, and every box in a has an unused counterpart in b whose
+// four world edges are each within eps metres. Order and names do not matter,
+// so an unstable ordering of detections cannot look like a change.
+func obstaclesEquivalent(a, b []Obstacle, eps float64) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	const eps = 0.01
-	for i := range a {
-		if a[i].Name != b[i].Name {
-			return false
+	used := make([]bool, len(b))
+	for _, oa := range a {
+		matched := false
+		for j, ob := range b {
+			if used[j] || !boxesClose(oa, ob, eps) {
+				continue
+			}
+			used[j] = true
+			matched = true
+			break
 		}
-		if math.Abs(a[i].WorldTopLeft[0]-b[i].WorldTopLeft[0]) > eps ||
-			math.Abs(a[i].WorldTopLeft[1]-b[i].WorldTopLeft[1]) > eps ||
-			math.Abs(a[i].WorldBottomRight[0]-b[i].WorldBottomRight[0]) > eps ||
-			math.Abs(a[i].WorldBottomRight[1]-b[i].WorldBottomRight[1]) > eps {
+		if !matched {
 			return false
 		}
 	}
 	return true
+}
+
+func boxesClose(a, b Obstacle, eps float64) bool {
+	return math.Abs(a.WorldTopLeft[0]-b.WorldTopLeft[0]) <= eps &&
+		math.Abs(a.WorldTopLeft[1]-b.WorldTopLeft[1]) <= eps &&
+		math.Abs(a.WorldBottomRight[0]-b.WorldBottomRight[0]) <= eps &&
+		math.Abs(a.WorldBottomRight[1]-b.WorldBottomRight[1]) <= eps
 }

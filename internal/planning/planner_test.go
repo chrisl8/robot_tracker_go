@@ -3,6 +3,7 @@ package planning
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestNewPlanner(t *testing.T) {
@@ -412,5 +413,93 @@ func TestPlanner_SetPath_OverwriteExisting(t *testing.T) {
 	}
 	if wp != newPath[0] {
 		t.Errorf("Waypoint should be reset to start of new path, got %v want %v", wp, newPath[0])
+	}
+}
+
+func obstacleAt(name string, x0, y0, x1, y1 float64) Obstacle {
+	return Obstacle{Name: name, WorldTopLeft: [2]float64{x0, y0}, WorldBottomRight: [2]float64{x1, y1}}
+}
+
+func TestObstaclesEquivalent(t *testing.T) {
+	a := obstacleAt("temp_1", 0, 0, 0.2, 0.2)
+	b := obstacleAt("temp_2", 1, 1, 1.3, 1.2)
+
+	tests := []struct {
+		name string
+		x, y []Obstacle
+		want bool
+	}{
+		{"both empty", nil, nil, true},
+		{"identical", []Obstacle{a, b}, []Obstacle{a, b}, true},
+		{"reordered", []Obstacle{a, b}, []Obstacle{b, a}, true},
+		{"renamed only", []Obstacle{a}, []Obstacle{obstacleAt("other", 0, 0, 0.2, 0.2)}, true},
+		{"jitter inside epsilon", []Obstacle{a}, []Obstacle{obstacleAt("temp_1", 0.02, -0.02, 0.22, 0.19)}, true},
+		{"moved beyond epsilon", []Obstacle{a}, []Obstacle{obstacleAt("temp_1", 0.05, 0, 0.25, 0.2)}, false},
+		{"one added", []Obstacle{a}, []Obstacle{a, b}, false},
+		{"one removed", []Obstacle{a, b}, []Obstacle{a}, false},
+		{"one box cannot match two", []Obstacle{a, a}, []Obstacle{a, b}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := obstaclesEquivalent(tt.x, tt.y, dynamicObstacleEpsilon); got != tt.want {
+				t.Errorf("obstaclesEquivalent = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPlanner_SetDynamicObstacles_DoesNotStormReplans guards against flickering
+// or jittering detections forcing every robot to replan on every frame.
+func TestPlanner_SetDynamicObstacles_DoesNotStormReplans(t *testing.T) {
+	p := NewPlanner(nil)
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	p.clock = func() time.Time { return now }
+	advance := func(d time.Duration) { now = now.Add(d) }
+
+	a := obstacleAt("temp_1", 0, 0, 0.2, 0.2)
+	moved := obstacleAt("temp_1", 0.5, 0.5, 0.7, 0.7)
+
+	p.SetDynamicObstacles([]Obstacle{a})
+	if p.replans != 1 {
+		t.Fatalf("first change should replan immediately, replans=%d", p.replans)
+	}
+
+	// Identical, reordered-equivalent and sub-epsilon jitter: never replans.
+	for i := 0; i < 20; i++ {
+		advance(100 * time.Millisecond)
+		p.SetDynamicObstacles([]Obstacle{obstacleAt("temp_9", 0.01, 0.01, 0.21, 0.19)})
+	}
+	if p.replans != 1 {
+		t.Errorf("jitter caused %d replans, want no more than the first", p.replans)
+	}
+
+	// A real change long after the last replan replans immediately...
+	moved2 := obstacleAt("temp_1", 1.0, 1.0, 1.2, 1.2)
+	advance(100 * time.Millisecond)
+	p.SetDynamicObstacles([]Obstacle{moved})
+	if p.replans != 2 {
+		t.Fatalf("a real change after a quiet period should replan, replans=%d", p.replans)
+	}
+
+	// ...but a further change too soon afterwards is deferred, not dropped.
+	advance(100 * time.Millisecond)
+	p.SetDynamicObstacles([]Obstacle{moved2})
+	if p.replans != 2 {
+		t.Errorf("replan was not rate limited (replans=%d)", p.replans)
+	}
+	if len(p.dynamicObstacles) != 1 || p.dynamicObstacles[0].WorldTopLeft[0] != 1.0 {
+		t.Error("the new obstacle set should be installed immediately for clearance checks")
+	}
+
+	// Later calls with the same set run the deferred replan exactly once.
+	advance(minDynamicReplanInterval)
+	p.SetDynamicObstacles([]Obstacle{moved2})
+	if p.replans != 3 {
+		t.Errorf("deferred replan did not run (replans=%d)", p.replans)
+	}
+	advance(minDynamicReplanInterval)
+	p.SetDynamicObstacles([]Obstacle{moved2})
+	if p.replans != 3 {
+		t.Errorf("replan repeated with nothing new (replans=%d)", p.replans)
 	}
 }

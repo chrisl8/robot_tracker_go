@@ -90,6 +90,12 @@ position:
   heading_max_rate_deg: 0.0    # Max heading change per frame before rejection (0.0=disabled)
 
 # Output Settings
+# Processing
+processing:
+  max_fps: 15 # cap on frames processed per second. Cuts CPU use, and keeps the
+              # controller's frame-counted settings (burst/wait) behaving as tuned
+              # at ~12 fps. Uncapped, the loop would run at the camera's 30 fps.
+
 output:
   # Real-time UDP stream
   udp:
