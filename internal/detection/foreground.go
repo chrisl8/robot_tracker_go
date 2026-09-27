@@ -455,7 +455,7 @@ func (d *ForegroundDetector) extractBlobs(fg []uint8, width, height int) []Detec
 // only that small region of d.labels, not the whole frame.
 func (d *ForegroundDetector) minAreaRectForLabel(id int32, left, top, w, h int) ([4]image.Point, bool) {
 	const maxPoints = 4096 // a generous cap; MinAreaRect only needs the shape, not every pixel
-	pts := make([]image.Point, 0, minInt(w*h, maxPoints))
+	pts := make([]image.Point, 0, utils.Min(w*h, maxPoints))
 	stride := 1
 	if w*h > maxPoints {
 		stride = w*h/maxPoints + 1

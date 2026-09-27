@@ -2,9 +2,8 @@ package detection
 
 import "log"
 
-func NewDetectionPipeline(yoloConfig *YOLOConfig, tagConfig AprilTagConfig) *DetectionPipeline {
+func NewDetectionPipeline(tagConfig AprilTagConfig) *DetectionPipeline {
 	pipeline := &DetectionPipeline{
-		yoloEnabled:    false,
 		obstacleDrawer: NewObstacleDrawer(),
 	}
 
@@ -15,31 +14,7 @@ func NewDetectionPipeline(yoloConfig *YOLOConfig, tagConfig AprilTagConfig) *Det
 		pipeline.tagDetector = nil
 	}
 
-	if yoloConfig != nil && yoloConfig.ModelPath != "" {
-		detector, err := NewYOLODetector(yoloConfig)
-		if err == nil {
-			pipeline.yoloDetector = detector
-			pipeline.yoloEnabled = true
-		}
-	}
-
-	pipeline.setDefaultClassNames()
-
 	return pipeline
-}
-
-func (p *DetectionPipeline) setDefaultClassNames() {
-	classNames := map[int]string{
-		0: "person",
-		1: "bicycle",
-		2: "car",
-		3: "motorcycle",
-		5: "bus",
-		7: "truck",
-	}
-	if p.yoloDetector != nil {
-		p.yoloDetector.SetClassNames(classNames)
-	}
 }
 
 func (p *DetectionPipeline) Detect(image []byte, width, height int, timestamp float64, frameIdx int) *DetectionResult {
@@ -51,81 +26,27 @@ func (p *DetectionPipeline) Detect(image []byte, width, height int, timestamp fl
 	tags := p.tagDetector.Detect(image, width, height)
 	result.Tags = tags
 
-	var yoloDetections []YOLODetection
-	if p.yoloEnabled {
-		yoloDetections = p.yoloDetector.Detect(image, width, height)
-	}
-	result.YOLODetections = yoloDetections
-
-	result.FusedDetections = p.fuseDetections(tags, yoloDetections)
+	result.FusedDetections = p.fuseDetections(tags)
 
 	return result
 }
 
-func (p *DetectionPipeline) fuseDetections(tags []AprilTag, yoloDetections []YOLODetection) []FusedDetection {
-	fused := make([]FusedDetection, 0)
-
-	yoloMatched := make(map[int]bool)
+func (p *DetectionPipeline) fuseDetections(tags []AprilTag) []FusedDetection {
+	fused := make([]FusedDetection, 0, len(tags))
 
 	for _, tag := range tags {
-		matchedIdx := p.findMatchingYOLO(tag, yoloDetections)
-
-		var bbox *BoundingBox
-		confidence := 1.0
-
-		if matchedIdx >= 0 {
-			// findMatchingYOLO only returns indices produced by ranging over
-			// yoloDetections itself, so matchedIdx is always in bounds here.
-			bbox = yoloDetections[matchedIdx].Bbox //nolint:nilaway
-			confidence = yoloDetections[matchedIdx].Confidence
-			yoloMatched[matchedIdx] = true
-		}
-
-		if bbox == nil {
-			bbox = p.tagToBbox(tag)
-		}
-
-		detectionType := DetectionTypeAprilTag
-		if matchedIdx >= 0 {
-			detectionType = DetectionTypeFused
-		}
-
 		tagID := tag.TagID
 		fused = append(fused, FusedDetection{
-			DetectionType: detectionType,
-			Bbox:          bbox,
+			DetectionType: DetectionTypeAprilTag,
+			Bbox:          p.tagToBbox(tag),
 			TagID:         &tagID,
-			Confidence:    confidence,
+			Confidence:    1.0,
 			Corners:       tag.Corners,
 			Source:        "april_tag",
 		})
 	}
 
-	for i, yoloDet := range yoloDetections {
-		if !yoloMatched[i] {
-			fused = append(fused, FusedDetection{
-				DetectionType: DetectionTypeYOLO,
-				Bbox:          yoloDet.Bbox,
-				Confidence:    yoloDet.Confidence,
-				ClassName:     yoloDet.ClassName,
-				Source:        "yolo",
-			})
-		}
-	}
-
 	return fused
-}
-
-func (p *DetectionPipeline) findMatchingYOLO(tag AprilTag, yoloDetections []YOLODetection) int {
-	tagCenterX, tagCenterY := int(tag.CenterX), int(tag.CenterY)
-
-	for i, det := range yoloDetections {
-		if det.Bbox != nil && det.Bbox.Contains(tagCenterX, tagCenterY) {
-			return i
-		}
-	}
-
-	return -1
 }
 
 func (p *DetectionPipeline) tagToBbox(tag AprilTag) *BoundingBox {
@@ -158,10 +79,6 @@ func (p *DetectionPipeline) DrawResults(image []byte, width, height int, result 
 		output = p.tagDetector.DrawTags(output, width, height, result.Tags)
 	}
 
-	if len(result.YOLODetections) > 0 && p.yoloDetector != nil {
-		output = p.yoloDetector.DrawDetections(output, width, height, result.YOLODetections)
-	}
-
 	if len(p.obstacles) > 0 && p.obstacleDrawer != nil {
 		output = p.obstacleDrawer.DrawObstacles(output, width, height, p.obstacles)
 	} else if len(p.obstacles) > 0 {
@@ -169,8 +86,4 @@ func (p *DetectionPipeline) DrawResults(image []byte, width, height int, result 
 	}
 
 	return output
-}
-
-func (p *DetectionPipeline) IsYOLOEnabled() bool {
-	return p.yoloEnabled
 }

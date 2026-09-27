@@ -18,14 +18,7 @@ func TestDetectionToTrackingPipeline(t *testing.T) {
 		QuadDecimate: 2.0,
 	}
 
-	yoloConfig := &detection.YOLOConfig{
-		ModelPath: "assets/yolov8n.onnx",
-		InputSize: 640,
-		ConfThres: 0.5,
-		IOUThres:  0.45,
-	}
-
-	pipeline := detection.NewDetectionPipeline(yoloConfig, tagConfig)
+	pipeline := detection.NewDetectionPipeline(tagConfig)
 	if pipeline == nil {
 		t.Fatal("Failed to create detection pipeline")
 	}
@@ -58,8 +51,8 @@ func TestDetectionToTrackingPipeline(t *testing.T) {
 		t.Fatal("Tracking returned nil")
 	}
 
-	t.Logf("Detection result: %d tags, %d YOLO detections, %d fused",
-		len(result.Tags), len(result.YOLODetections), len(result.FusedDetections))
+	t.Logf("Detection result: %d tags, %d fused",
+		len(result.Tags), len(result.FusedDetections))
 	t.Logf("Tracking result: %d tracks", len(trackingResult.Tracks))
 }
 
@@ -133,12 +126,6 @@ func TestFullPipelineIntegration(t *testing.T) {
 			Family:       "tag36h11",
 			QuadDecimate: 2.0,
 		},
-		YOLO: config.YOLOConfig{
-			ModelPath: "assets/yolov8n.onnx",
-			InputSize: 640,
-			ConfThres: 0.5,
-			IOUThres:  0.45,
-		},
 		Tracking: config.TrackingConfig{
 			TrackThresh: 0.5,
 			TrackBuffer: 30,
@@ -162,13 +149,7 @@ func TestFullPipelineIntegration(t *testing.T) {
 		Family:       cfg.AprilTags.Family,
 		QuadDecimate: cfg.AprilTags.QuadDecimate,
 	}
-	yoloConfig := &detection.YOLOConfig{
-		ModelPath: cfg.YOLO.ModelPath,
-		InputSize: cfg.YOLO.InputSize,
-		ConfThres: cfg.YOLO.ConfThres,
-		IOUThres:  cfg.YOLO.IOUThres,
-	}
-	pipeline := detection.NewDetectionPipeline(yoloConfig, tagConfig)
+	pipeline := detection.NewDetectionPipeline(tagConfig)
 	tracker := tracking.NewByteTrack(&tracking.ByteTrackConfig{
 		TrackThresh: cfg.Tracking.TrackThresh,
 		TrackBuffer: cfg.Tracking.TrackBuffer,
@@ -240,8 +221,7 @@ func TestConfigLoadingIntegration(t *testing.T) {
 		t.Error("AprilTag family not configured")
 	}
 
-	// Temporary obstacles come from the foreground detector, which is on by
-	// default; YOLO is intentionally off (empty model path).
+	// Temporary obstacles come from the foreground detector, which is on by default.
 	if !cfg.EffectiveForeground().Enabled {
 		t.Error("foreground obstacle detection should be enabled in the shipped config")
 	}
@@ -260,14 +240,7 @@ func TestDetectionWithRealImage(t *testing.T) {
 		QuadDecimate: 2.0,
 	}
 
-	yoloConfig := &detection.YOLOConfig{
-		ModelPath: "assets/yolov8n.onnx",
-		InputSize: 640,
-		ConfThres: 0.5,
-		IOUThres:  0.45,
-	}
-
-	pipeline := detection.NewDetectionPipeline(yoloConfig, tagConfig)
+	pipeline := detection.NewDetectionPipeline(tagConfig)
 	if pipeline == nil {
 		t.Fatal("Failed to create pipeline")
 	}
@@ -287,6 +260,6 @@ func TestDetectionWithRealImage(t *testing.T) {
 		t.Error("DrawResults returned nil")
 	}
 
-	t.Logf("Detection on empty image: tags=%d, yolo=%d, fused=%d",
-		len(result.Tags), len(result.YOLODetections), len(result.FusedDetections))
+	t.Logf("Detection on empty image: tags=%d, fused=%d",
+		len(result.Tags), len(result.FusedDetections))
 }

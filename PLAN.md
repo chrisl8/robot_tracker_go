@@ -11,7 +11,7 @@
 | Position Estimation | Homography, pixel↔world transforms | Complete |
 | Multi-Object Tracking | ByteTrack, Kalman filter, Hungarian algorithm | Complete |
 | Path Planning | A*, LocalPlanner (Velocity Obstacles), Coordinator | Complete |
-| Dynamic Obstacles | YOLO integration, collision avoidance | Complete |
+| Dynamic Obstacles | Background-subtraction detection, collision avoidance | Complete |
 | Static Obstacles | UI drawing + YAML persistence | Complete |
 
 ### User Interface
@@ -41,7 +41,7 @@
 │                                                                         │
 │  ┌──────────────┐    ┌──────────────┐    ┌────────────────────────┐    │
 │  │   Camera     │───>│   Detector   │───>│     Tracker           │    │
-│  │ (gocv/ONNX) │    │ (April+YOLO)│    │   (ByteTrack)         │    │
+│  │   (gocv)     │    │  (AprilTag)  │    │   (ByteTrack)         │    │
 │  └──────────────┘    └──────────────┘    └────────────┬───────────┘    │
 │                                                         │                │
 │  ┌──────────────────────────────────────────────────────┼───────────┐    │
@@ -68,7 +68,7 @@
 [Camera Frame]
        │
        ▼
-[AprilTag Detector + YOLO] ──> [Detection Pipeline]
+[AprilTag Detector] ──> [Detection Pipeline]
                                     │
                                     ▼
                            [ByteTrack Tracker]
@@ -90,7 +90,7 @@
 | `internal/config` | YAML configuration | `config.go` |
 | `internal/camera` | Camera abstraction | `camera.go`, `gocv_camera.go`, `video.go`, `ip.go`, `usb.go` |
 | `internal/position` | Homography, transforms | `types.go`, `homography.go`, `estimator.go` |
-| `internal/detection` | AprilTag + YOLO | `types.go`, `apriltag.go`, `yolo.go`, `pipeline.go` |
+| `internal/detection` | AprilTag + background-subtraction obstacles | `types.go`, `apriltag.go`, `foreground.go`, `pipeline.go` |
 | `internal/tracking` | Multi-object tracking | `types.go`, `kalman.go`, `hungarian.go`, `bytetrack.go` |
 | `internal/planning` | Path planning | `types.go`, `astar.go`, `local.go`, `coordinator.go`, `collision.go`, `planner.go` |
 | `internal/controller` | Serial control | `protocol.go`, `arduino.go`, `queue.go`, `executor.go` |
@@ -162,7 +162,7 @@ robot_tracker_go/
 │   ├── config/                    # YAML configuration
 │   ├── camera/                    # Camera sources
 │   ├── position/                  # Homography & transforms
-│   ├── detection/                 # AprilTag + YOLO
+│   ├── detection/                 # AprilTag + background-subtraction obstacles
 │   ├── tracking/                 # ByteTrack
 │   ├── planning/                 # A* + LocalPlanner
 │   ├── controller/               # Arduino serial
@@ -176,7 +176,7 @@ robot_tracker_go/
 │   └── package.json
 ├── scripts/                       # Build scripts
 ├── config/                        # Configuration files
-├── assets/                       # YOLO ONNX model
+├── assets/                       # AprilTag print sheets
 └── docs/
     ├── PLAN.md                   # This file
     ├── AGENTS.md                 # Build commands

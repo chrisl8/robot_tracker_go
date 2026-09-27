@@ -262,7 +262,6 @@ func TestDetectionType(t *testing.T) {
 		expectedName  string
 	}{
 		{DetectionTypeAprilTag, "AprilTag"},
-		{DetectionTypeYOLO, "YOLO"},
 		{DetectionTypeFused, "Fused"},
 	}
 
@@ -272,8 +271,6 @@ func TestDetectionType(t *testing.T) {
 			switch tt.detectionType {
 			case DetectionTypeAprilTag:
 				name = "AprilTag"
-			case DetectionTypeYOLO:
-				name = "YOLO"
 			case DetectionTypeFused:
 				name = "Fused"
 			}
@@ -351,106 +348,3 @@ func TestAprilTagDetector_Detect(t *testing.T) {
 	}
 }
 
-func TestYOLODetector_NewYOLODetector(t *testing.T) {
-	tests := []struct {
-		name        string
-		config      *YOLOConfig
-		expectError bool
-	}{
-		{
-			name:        "empty model path",
-			config:      &YOLOConfig{ModelPath: ""},
-			expectError: false,
-		},
-		{
-			name:        "non-existent model path",
-			config:      &YOLOConfig{ModelPath: "/nonexistent/path/model.onnx"},
-			expectError: true, // Real implementation checks file existence
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			detector, err := NewYOLODetector(tt.config)
-			if tt.expectError && err == nil {
-				t.Errorf("Expected error, got nil")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got %v", err)
-			}
-			if !tt.expectError && detector == nil {
-				t.Errorf("Expected detector, got nil")
-			}
-		})
-	}
-}
-
-func TestYOLODetector_Detect(t *testing.T) {
-	detector, _ := NewYOLODetector(&YOLOConfig{ModelPath: ""})
-	detections := detector.Detect([]byte{}, 640, 480)
-	if len(detections) != 0 {
-		t.Errorf("Expected empty detections slice (stub), got %d detections", len(detections))
-	}
-}
-
-func TestYOLODetector_GetClassName(t *testing.T) {
-	detector, _ := NewYOLODetector(&YOLOConfig{})
-	detector.SetClassNames(map[int]string{
-		0: "person",
-		1: "car",
-	})
-
-	tests := []struct {
-		classID  int
-		expected string
-	}{
-		{0, "person"},
-		{1, "car"},
-		{99, "class_99"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			if name := detector.GetClassName(tt.classID); name != tt.expected {
-				t.Errorf("GetClassName(%d) = %s, want %s", tt.classID, name, tt.expected)
-			}
-		})
-	}
-}
-
-func TestYOLODetector_IsAvailable(t *testing.T) {
-	tests := []struct {
-		name              string
-		modelPath         string
-		expectError       bool
-		expectedAvailable bool
-	}{
-		{"empty path", "", false, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			detector, err := NewYOLODetector(&YOLOConfig{ModelPath: tt.modelPath})
-			if tt.expectError && err == nil {
-				t.Skip("Expected error but got nil")
-			}
-			if err != nil {
-				t.Skipf("Skipping due to error: %v", err)
-			}
-			if available := detector.IsAvailable(); available != tt.expectedAvailable {
-				t.Errorf("IsAvailable() = %v, want %v", available, tt.expectedAvailable)
-			}
-		})
-	}
-}
-
-func TestYOLODetector_DefaultConfig(t *testing.T) {
-	config := &YOLOConfig{}
-	detector, err := NewYOLODetector(config)
-	if err != nil {
-		t.Fatalf("NewYOLODetector failed: %v", err)
-	}
-	if detector == nil {
-		t.Error("Expected detector, got nil")
-	}
-}

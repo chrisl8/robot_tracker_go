@@ -67,13 +67,17 @@ ranked by severity. This file is the deliverable — a report, not an implementa
 
 ## 🟠 High — real bugs, lower likelihood or narrower blast radius
 
-7. **`YOLODetectionsToDynamicObstacles` mixes pixel and metre units.**
+7. **[FIXED] `YOLODetectionsToDynamicObstacles` mixes pixel and metre units.**
    `internal/detection/dynamic_obstacle.go:35-52` — world position is correctly
    converted to metres, but the obstacle `radius` is left in raw pixels and fed
    into a metres-based struct. If YOLO obstacle detection is ever re-enabled
    (config still supports it, code path still live via `feedYOLOObstacles`), every
    detected object becomes an obstacle tens-to-hundreds of metres wide, effectively
-   blocking the whole planning grid.
+   blocking the whole planning grid. (User note: We originally intended to REMOVE YOLO entirely after the new background-based obstacle detection was implemented, so it MAY BE that the fix here is to finish the YOLO removal instaed. Investigate this option as well.)
+   **Fix:** removed YOLO detection entirely (detector, config, obstacle
+   conversion, `--self-test`/`--demo-yolo` modes, and all references) rather than
+   patching the unit conversion — the code was already dead (foreground detector
+   fully supersedes it) and self-documented as scheduled for removal.
 
 8. **`Homography.SetFromValues` stomps the calibrated pixels-per-meter scale.**
    `internal/position/homography.go:285-298` calls `EstimateScale()`, which is a

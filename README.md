@@ -1,6 +1,6 @@
 # Robot Tracker
 
-An overhead camera system that tracks and autonomously steers robots around a tabletop arena. A ceiling-mounted camera watches the playing field, computer vision identifies robots by their AprilTag markers and detects obstacles with YOLOv8, an A\* path planner charts a course around them, and serial commands drive each robot to its destination.
+An overhead camera system that tracks and autonomously steers robots around a tabletop arena. A ceiling-mounted camera watches the playing field, computer vision identifies robots by their AprilTag markers and detects obstacles via background subtraction, an A\* path planner charts a course around them, and serial commands drive each robot to its destination.
 
 [Video demo](https://youtu.be/VX7ouvZ6DLI)
 
@@ -9,7 +9,7 @@ Built for [Vorpal the Hexapod](https://log.ekpyroticfrood.net/vorpal-the-hexapod
 ## Features
 
 - **AprilTag identification** — each robot wears a unique tag; the system tracks multiple robots simultaneously
-- **YOLOv8 obstacle detection** — real-time detection of objects on the playing field
+- **Background-subtraction obstacle detection** — real-time detection of objects on the playing field
 - **A\* path planning** — global paths with velocity-obstacle local avoidance and multi-robot coordination
 - **Vue 3 web UI** — live MJPEG video with canvas overlay showing tracks, paths, and obstacle boundaries; click anywhere to send a robot there
 - **Guided web calibration** — print five tags, drop them roughly in the boxes the wizard draws on the video, and it solves the pixel-to-floor mapping (no measuring) and reports its accuracy in centimeters
@@ -154,10 +154,6 @@ about 1.5 ms per frame.
 - Tuning knobs are in the `foreground:` section of `config/tracking_config.yaml` (threshold, minimum
   size, how long an object must persist to count, and so on).
 
-### YOLO Model
-
-A pre-trained YOLOv8n ONNX model is included at `assets/yolov8n.onnx`. No export step is needed.
-
 ### macOS: Running Remotely over SSH
 
 macOS blocks camera access for processes started via SSH. Use the LaunchAgent service manager instead:
@@ -187,18 +183,17 @@ The AprilTag should be at least ~40 px across in the image for reliable detectio
 
 ### Compute Platforms
 
-| Platform | AprilTag | YOLOv8 nano | Track + Plan | Effective FPS |
-|----------|----------|-------------|-------------|---------------|
-| **Mac Mini M4** | ~40--70 ms | ~20--35 ms | ~15 ms | **~8--12 fps** |
-| **x86 desktop (4+ cores)** | ~100--150 ms | ~50--70 ms | ~33 ms | **~5 fps** |
-| Raspberry Pi 5 | ~150--250 ms | ~100--200 ms | ~50 ms | ~2--3 fps |
+| Platform | AprilTag | Track + Plan | Effective FPS |
+|----------|----------|-------------|---------------|
+| **Mac Mini M4** | ~40--70 ms | ~15 ms | **~8--12 fps** |
+| **x86 desktop (4+ cores)** | ~100--150 ms | ~33 ms | **~5 fps** |
+| Raspberry Pi 5 | ~150--250 ms | ~50 ms | ~2--3 fps |
 
 **Mac Mini M4** is the fastest option (roughly 2--3x faster than a typical x86 desktop). Install OpenCV via Homebrew. Serial ports are `/dev/cu.usbserial-*` or `/dev/tty.usbmodem-*`.
 
 **Raspberry Pi 5** works but navigation is noticeably more sluggish. If using Pi 5:
-- Disable YOLO (`conf_thres: 1.0`) if you don't need dynamic obstacle detection — saves ~100--200 ms per frame
 - Increase `quad_decimate` from 2.0 to 3.0 for faster AprilTag detection at slight accuracy cost
-- Use the 8 GB RAM model (4 GB is tight with YOLO loaded)
+- Use the 8 GB RAM model for headroom
 
 **Budget alternative:** Intel N100-based mini PCs (~$100--150) deliver near-desktop performance in a small form factor and run the standard Linux build without modification.
 
@@ -219,7 +214,7 @@ robot_tracker_go/
 │   ├── camera/                 # Camera abstraction
 │   ├── config/                 # YAML configuration loading
 │   ├── controller/             # Arduino serial communication
-│   ├── detection/              # AprilTag + YOLOv8 detection
+│   ├── detection/              # AprilTag detection + background-subtraction obstacle detection
 │   ├── planning/               # A* path planning + velocity obstacles
 │   ├── position/               # Homography calibration (pixel ↔ world) and calibration target fit
 │   ├── tracking/               # ByteTrack multi-object tracker + Kalman filter
@@ -227,7 +222,7 @@ robot_tracker_go/
 │   └── utils/                  # Logging utilities
 ├── ui/                         # Vue 3 + TypeScript frontend (Pinia stores, canvas overlay)
 ├── Arduino/                    # Arduino gamepad firmware
-├── assets/                     # YOLOv8 ONNX model
+├── assets/                     # AprilTag print sheets
 ├── config/                     # Configuration YAML files
 └── scripts/                    # Build, run, test, and install wrappers
 ```

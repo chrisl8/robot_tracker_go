@@ -117,7 +117,7 @@ func TestConvertPlanningObstacles_ToDetection(t *testing.T) {
 }
 
 func TestDetectionPipeline_SetObstacles_FromDemo(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(nil, detection.AprilTagConfig{Family: "tag36h11"})
+	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
 
 	demoObs := []DemoObstacle{
 		{
@@ -143,7 +143,7 @@ func TestDetectionPipeline_SetObstacles_FromDemo(t *testing.T) {
 }
 
 func TestDetectionPipeline_SetObstacles_FromPlanning(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(nil, detection.AprilTagConfig{Family: "tag36h11"})
+	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
 
 	planningObs := []planning.Obstacle{
 		{

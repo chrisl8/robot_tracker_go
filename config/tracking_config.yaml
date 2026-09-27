@@ -88,22 +88,6 @@ foreground:
                                 # allowed and called a shadow; raise if real shadows
                                 # still get flagged, lower if dim objects get missed
 
-# YOLOv8 Detection Settings (legacy; superseded by the foreground detector above)
-yolo:
-  model: "" # empty = YOLO off. The model file is not needed any more.
-  input_size: 640
-  conf_thres: 0.25 # Lowered to detect smaller objects
-  iou_thres: 0.45 # NMS threshold
-  device: "" # Empty = auto (CUDA if available, else CPU)
-  min_obstacle_size: 0.005 # 0.5cm minimum (detect small objects like cups)
-  pixels_per_meter: 1000 # Scale factor for size filtering
-  classes: # Indoor-relevant classes
-    - person
-    - cup
-    - chair
-    - laptop
-    - keyboard
-
 # ByteTrack Settings
 tracking:
   track_thresh: 0.5
@@ -203,7 +187,7 @@ planning:
   max_path_length: 1000 # steps
   avoidance:
     enabled: true
-    dynamic_obstacles: true # use YOLOv8 detections
+    dynamic_obstacles: true # use foreground-detector obstacles
     multi_robot_avoidance: "first_come_first_served"
 
 # Obstacle Configuration

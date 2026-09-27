@@ -6,44 +6,17 @@ import (
 )
 
 func TestNewDetectionPipeline(t *testing.T) {
-	tests := []struct {
-		name        string
-		config      *YOLOConfig
-		tagConfig   AprilTagConfig
-		yoloEnabled bool
-	}{
-		{
-			name:        "nil config",
-			config:      nil,
-			tagConfig:   AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0},
-			yoloEnabled: false,
-		},
-		{
-			name:        "empty model path",
-			config:      &YOLOConfig{ModelPath: ""},
-			tagConfig:   AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0},
-			yoloEnabled: false,
-		},
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	if pipeline == nil {
+		t.Fatal("NewDetectionPipeline returned nil")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pipeline := NewDetectionPipeline(tt.config, tt.tagConfig)
-			if pipeline == nil {
-				t.Fatal("NewDetectionPipeline returned nil")
-			}
-			if pipeline.tagDetector == nil {
-				t.Error("tagDetector is nil")
-			}
-			if pipeline.yoloEnabled != tt.yoloEnabled {
-				t.Errorf("yoloEnabled = %v, want %v", pipeline.yoloEnabled, tt.yoloEnabled)
-			}
-		})
+	if pipeline.tagDetector == nil {
+		t.Error("tagDetector is nil")
 	}
 }
 
 func TestDetectionPipeline_Detect(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	timestamp := float64(time.Now().UnixNano()) / 1e9
 	result := pipeline.Detect([]byte{}, 640, 480, timestamp, 1)
@@ -60,39 +33,16 @@ func TestDetectionPipeline_Detect(t *testing.T) {
 	if len(result.Tags) != 0 {
 		t.Errorf("Expected 0 tags (empty image input), got %d", len(result.Tags))
 	}
-	if len(result.YOLODetections) != 0 {
-		t.Errorf("Expected 0 YOLO detections (YOLO disabled), got %d", len(result.YOLODetections))
-	}
 	if len(result.FusedDetections) != 0 {
 		t.Errorf("Expected 0 fused detections, got %d", len(result.FusedDetections))
 	}
 }
 
-func TestDetectionPipeline_IsYOLOEnabled(t *testing.T) {
-	tests := []struct {
-		name          string
-		config        *YOLOConfig
-		expectedValue bool
-	}{
-		{"nil config", nil, false},
-		{"empty model", &YOLOConfig{ModelPath: ""}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pipeline := NewDetectionPipeline(tt.config, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
-			if pipeline.IsYOLOEnabled() != tt.expectedValue {
-				t.Errorf("IsYOLOEnabled() = %v, want %v", pipeline.IsYOLOEnabled(), tt.expectedValue)
-			}
-		})
-	}
-}
-
 func TestDetectionPipeline_fuseDetections(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	t.Run("no detections", func(t *testing.T) {
-		fused := pipeline.fuseDetections([]AprilTag{}, []YOLODetection{})
+		fused := pipeline.fuseDetections([]AprilTag{})
 		if len(fused) != 0 {
 			t.Errorf("Expected 0 fused detections, got %d", len(fused))
 		}
@@ -108,7 +58,7 @@ func TestDetectionPipeline_fuseDetections(t *testing.T) {
 				Corners: [4][2]float64{{0, 0}, {50, 0}, {50, 50}, {0, 50}},
 			},
 		}
-		fused := pipeline.fuseDetections(tags, []YOLODetection{})
+		fused := pipeline.fuseDetections(tags)
 
 		if len(fused) != 1 {
 			t.Fatalf("Expected 1 fused detection, got %d", len(fused))
@@ -124,110 +74,21 @@ func TestDetectionPipeline_fuseDetections(t *testing.T) {
 		}
 	})
 
-	t.Run("only yolo", func(t *testing.T) {
-		yoloDetections := []YOLODetection{
-			{
-				Bbox:       &BoundingBox{X1: 10, Y1: 10, X2: 50, Y2: 50},
-				Confidence: 0.85,
-				ClassID:    0,
-				ClassName:  "person",
-			},
-		}
-		fused := pipeline.fuseDetections([]AprilTag{}, yoloDetections)
-
-		if len(fused) != 1 {
-			t.Fatalf("Expected 1 fused detection, got %d", len(fused))
-		}
-		if fused[0].DetectionType != DetectionTypeYOLO {
-			t.Errorf("DetectionType = %v, want %v", fused[0].DetectionType, DetectionTypeYOLO)
-		}
-		if fused[0].ClassName != "person" {
-			t.Errorf("ClassName = %s, want person", fused[0].ClassName)
-		}
-		if fused[0].Source != "yolo" {
-			t.Errorf("Source = %s, want yolo", fused[0].Source)
-		}
-	})
-
-	t.Run("tags and yolo separate", func(t *testing.T) {
+	t.Run("multiple tags", func(t *testing.T) {
 		tags := []AprilTag{
 			{TagID: 1, CenterX: 100, CenterY: 100, Corners: [4][2]float64{{0, 0}, {50, 0}, {50, 50}, {0, 50}}},
+			{TagID: 2, CenterX: 200, CenterY: 200, Corners: [4][2]float64{{200, 200}, {250, 200}, {250, 250}, {200, 250}}},
 		}
-		yoloDetections := []YOLODetection{
-			{Bbox: &BoundingBox{X1: 200, Y1: 200, X2: 250, Y2: 250}, Confidence: 0.9, ClassID: 2, ClassName: "car"},
-		}
-		fused := pipeline.fuseDetections(tags, yoloDetections)
+		fused := pipeline.fuseDetections(tags)
 
 		if len(fused) != 2 {
 			t.Fatalf("Expected 2 fused detections, got %d", len(fused))
 		}
 	})
-
-	t.Run("fused detection when yolo contains tag", func(t *testing.T) {
-		tags := []AprilTag{
-			{TagID: 5, CenterX: 100, CenterY: 100, Corners: [4][2]float64{{90, 90}, {110, 90}, {110, 110}, {90, 110}}},
-		}
-		yoloDetections := []YOLODetection{
-			{Bbox: &BoundingBox{X1: 50, Y1: 50, X2: 150, Y2: 150}, Confidence: 0.95, ClassID: 0, ClassName: "person"},
-		}
-		fused := pipeline.fuseDetections(tags, yoloDetections)
-
-		if len(fused) != 1 {
-			t.Fatalf("Expected 1 fused detection, got %d", len(fused))
-		}
-		if fused[0].DetectionType != DetectionTypeFused {
-			t.Errorf("DetectionType = %v, want %v", fused[0].DetectionType, DetectionTypeFused)
-		}
-	})
-}
-
-func TestDetectionPipeline_findMatchingYOLO(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
-
-	t.Run("no yolo detections", func(t *testing.T) {
-		tag := AprilTag{TagID: 1, CenterX: 100, CenterY: 100}
-		idx := pipeline.findMatchingYOLO(tag, []YOLODetection{})
-		if idx != -1 {
-			t.Errorf("Expected -1, got %d", idx)
-		}
-	})
-
-	t.Run("tag not in yolo bbox", func(t *testing.T) {
-		tag := AprilTag{TagID: 1, CenterX: 100, CenterY: 100}
-		yoloDetections := []YOLODetection{
-			{Bbox: &BoundingBox{X1: 200, Y1: 200, X2: 300, Y2: 300}},
-		}
-		idx := pipeline.findMatchingYOLO(tag, yoloDetections)
-		if idx != -1 {
-			t.Errorf("Expected -1, got %d", idx)
-		}
-	})
-
-	t.Run("tag in yolo bbox", func(t *testing.T) {
-		tag := AprilTag{TagID: 1, CenterX: 150, CenterY: 150}
-		yoloDetections := []YOLODetection{
-			{Bbox: &BoundingBox{X1: 100, Y1: 100, X2: 200, Y2: 200}},
-		}
-		idx := pipeline.findMatchingYOLO(tag, yoloDetections)
-		if idx != 0 {
-			t.Errorf("Expected 0, got %d", idx)
-		}
-	})
-
-	t.Run("nil bbox", func(t *testing.T) {
-		tag := AprilTag{TagID: 1, CenterX: 100, CenterY: 100}
-		yoloDetections := []YOLODetection{
-			{Bbox: nil},
-		}
-		idx := pipeline.findMatchingYOLO(tag, yoloDetections)
-		if idx != -1 {
-			t.Errorf("Expected -1, got %d", idx)
-		}
-	})
 }
 
 func TestDetectionPipeline_tagToBbox(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	tests := []struct {
 		name       string
@@ -277,12 +138,11 @@ func TestDetectionPipeline_tagToBbox(t *testing.T) {
 }
 
 func TestDetectionPipeline_DrawResults(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	image := []byte{1, 2, 3, 4, 5}
 	result := &DetectionResult{
 		Tags:            []AprilTag{},
-		YOLODetections:  []YOLODetection{},
 		FusedDetections: []FusedDetection{},
 		Timestamp:       0,
 		FrameIdx:        0,
@@ -297,7 +157,6 @@ func TestDetectionPipeline_DrawResults(t *testing.T) {
 func TestDetectionResult_Empty(t *testing.T) {
 	result := &DetectionResult{
 		Tags:            []AprilTag{},
-		YOLODetections:  []YOLODetection{},
 		FusedDetections: []FusedDetection{},
 		Timestamp:       1234.5,
 		FrameIdx:        10,
@@ -305,9 +164,6 @@ func TestDetectionResult_Empty(t *testing.T) {
 
 	if len(result.Tags) != 0 {
 		t.Error("Tags should be empty")
-	}
-	if len(result.YOLODetections) != 0 {
-		t.Error("YOLODetections should be empty")
 	}
 	if len(result.FusedDetections) != 0 {
 		t.Error("FusedDetections should be empty")
@@ -320,21 +176,8 @@ func TestDetectionResult_Empty(t *testing.T) {
 	}
 }
 
-func TestDetectionPipeline_setDefaultClassNames(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
-
-	if pipeline.yoloDetector == nil {
-		t.Skip("yoloDetector is nil (expected with nil config)")
-	}
-
-	className := pipeline.yoloDetector.GetClassName(0)
-	if className == "" {
-		t.Error("GetClassName should return a valid class name")
-	}
-}
-
 func TestDetectionPipeline_SetObstacles_Integration(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	t.Run("initial obstacles should be empty", func(t *testing.T) {
 		obstacles := pipeline.GetObstacles()
@@ -412,14 +255,13 @@ func TestDetectionPipeline_SetObstacles_Integration(t *testing.T) {
 }
 
 func TestDetectionPipeline_DrawResults_Obstacles_Integration(t *testing.T) {
-	pipeline := NewDetectionPipeline(nil, AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
+	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
 	t.Run("DrawResults should not draw obstacles when none are set", func(t *testing.T) {
 		imgData := make([]byte, 640*480*3)
 
 		result := &DetectionResult{
 			Tags:            []AprilTag{},
-			YOLODetections:  []YOLODetection{},
 			FusedDetections: []FusedDetection{},
 		}
 
@@ -443,7 +285,6 @@ func TestDetectionPipeline_DrawResults_Obstacles_Integration(t *testing.T) {
 
 		result := &DetectionResult{
 			Tags:            []AprilTag{},
-			YOLODetections:  []YOLODetection{},
 			FusedDetections: []FusedDetection{},
 		}
 
@@ -477,7 +318,6 @@ func TestDetectionPipeline_DrawResults_Obstacles_Integration(t *testing.T) {
 
 		result := &DetectionResult{
 			Tags:            []AprilTag{},
-			YOLODetections:  []YOLODetection{},
 			FusedDetections: []FusedDetection{},
 		}
 
@@ -503,7 +343,6 @@ func TestDetectionPipeline_DrawResults_Obstacles_Integration(t *testing.T) {
 
 		result := &DetectionResult{
 			Tags:            []AprilTag{},
-			YOLODetections:  []YOLODetection{},
 			FusedDetections: []FusedDetection{},
 		}
 

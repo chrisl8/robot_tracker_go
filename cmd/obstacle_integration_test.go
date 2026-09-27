@@ -38,7 +38,7 @@ func TestPlanningToDetectionConversion(t *testing.T) {
 }
 
 func TestPipelineStoresObstacles(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(nil, detection.AprilTagConfig{Family: "tag36h11"})
+	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
 
 	stored := pipeline.GetObstacles()
 	if len(stored) != 0 {
@@ -79,7 +79,7 @@ func TestMultipleObstacles(t *testing.T) {
 }
 
 func TestClearObstacles(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(nil, detection.AprilTagConfig{Family: "tag36h11"})
+	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
 
 	pipeline.SetObstacles([]detection.Obstacle{
 		{ID: "Test", PixelTopLeft: [2]int{100, 100}, PixelBottomRight: [2]int{200, 200}},
@@ -99,14 +99,14 @@ func TestClearObstacles(t *testing.T) {
 }
 
 func TestDrawResultsWithObstacles(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(nil, detection.AprilTagConfig{Family: "tag36h11"})
+	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
 
 	pipeline.SetObstacles([]detection.Obstacle{
 		{ID: "VisualTest", PixelTopLeft: [2]int{100, 100}, PixelBottomRight: [2]int{200, 200}},
 	})
 
 	result := &detection.DetectionResult{
-		Tags: []detection.AprilTag{}, YOLODetections: []detection.YOLODetection{},
+		Tags:            []detection.AprilTag{},
 		FusedDetections: []detection.FusedDetection{}, Timestamp: 0, FrameIdx: 0,
 	}
 
@@ -175,7 +175,7 @@ func TestObstaclesWithWorldCoords(t *testing.T) {
 }
 
 func TestFullObstacleAddFlow(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(nil, detection.AprilTagConfig{Family: "tag36h11"})
+	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
 
 	input := []planning.Obstacle{
 		{
@@ -200,7 +200,7 @@ func TestFullObstacleAddFlow(t *testing.T) {
 	}
 
 	result := &detection.DetectionResult{
-		Tags: []detection.AprilTag{}, YOLODetections: []detection.YOLODetection{},
+		Tags:            []detection.AprilTag{},
 		FusedDetections: []detection.FusedDetection{}, Timestamp: 0, FrameIdx: 0,
 	}
 
@@ -209,98 +209,6 @@ func TestFullObstacleAddFlow(t *testing.T) {
 
 	if output == nil {
 		t.Error("DrawResults returned nil")
-	}
-}
-
-// TestNonRobotYOLODetections_ExcludesRobotsOwnBody guards against a robot
-// whose body gets classified by YOLO as an obstacle class (e.g. "chair")
-// being fed back into obstacle avoidance as its own obstacle — which
-// previously caused the robot to become permanently stuck, reporting
-// negative clearance to an "obstacle" that was actually itself.
-func TestNonRobotYOLODetections_ExcludesRobotsOwnBody(t *testing.T) {
-	// Mirrors what DetectionPipeline.fuseDetections produces (see
-	// TestDetectionPipeline_fuseDetections/"fused detection when yolo
-	// contains tag" in internal/detection): a robot whose AprilTag sits
-	// inside a YOLO "chair" bbox (a false positive on its own body) fuses
-	// into a single DetectionTypeFused entry, while an unrelated "cup"
-	// detection stays as DetectionTypeYOLO.
-	result := &detection.DetectionResult{
-		FusedDetections: []detection.FusedDetection{
-			{
-				DetectionType: detection.DetectionTypeFused,
-				Bbox:          &detection.BoundingBox{X1: 50, Y1: 50, X2: 150, Y2: 150},
-				TagID:         intPtr(1),
-				ClassName:     "chair",
-				Source:        "april_tag",
-			},
-			{
-				DetectionType: detection.DetectionTypeYOLO,
-				Bbox:          &detection.BoundingBox{X1: 400, Y1: 400, X2: 450, Y2: 450},
-				Confidence:    0.8,
-				ClassName:     "cup",
-				Source:        "yolo",
-			},
-		},
-	}
-
-	nonRobot := nonRobotYOLODetections(result)
-
-	if len(nonRobot) != 1 {
-		t.Fatalf("expected 1 non-robot detection (the cup), got %d", len(nonRobot))
-	}
-	if nonRobot[0].ClassName != "cup" {
-		t.Errorf("expected remaining detection to be 'cup', got %q", nonRobot[0].ClassName)
-	}
-}
-
-func intPtr(v int) *int { return &v }
-
-// TestExcludeYOLONearKnownRobots_DropsPhantomSelfObstacle guards the second
-// half of the self-obstacle fix: even when a robot's AprilTag fails to
-// detect in a given frame (so nonRobotYOLODetections can't exclude it via
-// tag-matching), a YOLO detection sitting on top of the robot's last known
-// tracked position must still be excluded from obstacle avoidance.
-func TestExcludeYOLONearKnownRobots_DropsPhantomSelfObstacle(t *testing.T) {
-	est, err := position.NewPositionEstimator("", "", false, 0.0)
-	if err != nil {
-		t.Fatalf("NewPositionEstimator failed: %v", err)
-	}
-	est.GetHomography().SetFromValues(1, 0, 0, 0, 1, 0, 0, 0, 1) // identity: pixel == world
-
-	robots := map[int]planning.RobotState{
-		1: {RobotID: 1, Position: [2]float64{100, 100}, Diameter: 0.30},
-	}
-
-	detections := []detection.YOLODetection{
-		// Phantom: bbox centered right on the robot's own tracked position.
-		{Bbox: &detection.BoundingBox{X1: 90, Y1: 90, X2: 110, Y2: 110}, Confidence: 0.9, ClassName: "chair"},
-		// Real obstacle, far from any robot.
-		{Bbox: &detection.BoundingBox{X1: 400, Y1: 400, X2: 420, Y2: 420}, Confidence: 0.8, ClassName: "cup"},
-	}
-
-	filtered := excludeYOLONearKnownRobots(detections, est, robots)
-
-	if len(filtered) != 1 {
-		t.Fatalf("expected 1 detection after filtering, got %d", len(filtered))
-	}
-	if filtered[0].ClassName != "cup" {
-		t.Errorf("expected remaining detection to be 'cup', got %q", filtered[0].ClassName)
-	}
-}
-
-func TestExcludeYOLONearKnownRobots_PassthroughWhenUncalibrated(t *testing.T) {
-	est, _ := position.NewPositionEstimator("", "", false, 0.0)
-	robots := map[int]planning.RobotState{
-		1: {RobotID: 1, Position: [2]float64{100, 100}, Diameter: 0.30},
-	}
-	detections := []detection.YOLODetection{
-		{Bbox: &detection.BoundingBox{X1: 90, Y1: 90, X2: 110, Y2: 110}, Confidence: 0.9, ClassName: "chair"},
-	}
-
-	filtered := excludeYOLONearKnownRobots(detections, est, robots)
-
-	if len(filtered) != 1 {
-		t.Errorf("expected passthrough (uncalibrated) to keep all detections, got %d", len(filtered))
 	}
 }
 

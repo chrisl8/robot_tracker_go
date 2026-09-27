@@ -38,7 +38,6 @@ type WebServer struct {
 	isRunning     bool
 	stopChan      chan struct{}
 	lastTagCount  int
-	lastYoloCount int
 	lastFPS       float64
 	lastUptimeSec float64
 	lastHostMemMB float64
@@ -635,7 +634,6 @@ func (s *WebServer) handleDestinationClear(c *gin.Context) {
 func (s *WebServer) handleStatus(c *gin.Context) {
 	s.statsMutex.RLock()
 	tagCount := s.lastTagCount
-	yoloCount := s.lastYoloCount
 	fps := s.lastFPS
 	uptimeSec := s.lastUptimeSec
 	hostMemMB := s.lastHostMemMB
@@ -655,7 +653,6 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 		"fps":          fps,
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
-		"yoloCount":    yoloCount,
 		"arduinoState": state,
 		"hostMemoryMB": hostMemMB,
 		"uptimeSec":    uptimeSec,
@@ -1040,10 +1037,9 @@ func (s *WebServer) PushRawJPEG(jpegData []byte) {
 	s.stream.updateJPEG(jpegData)
 }
 
-func (s *WebServer) UpdateStats(tagCount, yoloCount int) {
+func (s *WebServer) UpdateStats(tagCount int) {
 	s.statsMutex.Lock()
 	s.lastTagCount = tagCount
-	s.lastYoloCount = yoloCount
 	s.statsMutex.Unlock()
 }
 

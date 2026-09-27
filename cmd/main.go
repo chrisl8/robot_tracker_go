@@ -285,8 +285,8 @@ func (rs *RobotSystem) initDemoMode() {
 		Family:       "tag36h11",
 		QuadDecimate: 2.0,
 	}
-	rs.detectionPipe = detection.NewDetectionPipeline(nil, tagConfig)
-	utils.Logf("Demo mode: Detection pipeline initialized (YOLO disabled)")
+	rs.detectionPipe = detection.NewDetectionPipeline(tagConfig)
+	utils.Logf("Demo mode: Detection pipeline initialized")
 
 	rs.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
@@ -334,41 +334,6 @@ func (rs *RobotSystem) cameraDisplayName() string {
 	return ""
 }
 
-// feedYOLOObstacles is the legacy obstacle source: YOLO detections that are not
-// a robot become obstacles for the planner. It is used only when the foreground
-// detector is not running, and goes away with YOLO.
-func (rs *RobotSystem) feedYOLOObstacles(detectionResult *detection.DetectionResult) {
-	nonRobotYOLO := nonRobotYOLODetections(detectionResult)
-	nonRobotYOLO = excludeYOLONearKnownRobots(nonRobotYOLO, rs.positionEst, rs.planner.GetAllRobotStates())
-
-	relevantClasses := classesToMap(rs.cfg.LocalPlanning.ObstacleClasses)
-	minConfidence := rs.cfg.LocalPlanning.MinConfidence
-	rs.DynamicObstacles = detection.YOLODetectionsToDynamicObstacles(
-		nonRobotYOLO,
-		rs.positionEst,
-		relevantClasses,
-		minConfidence,
-	)
-
-	// Feed YOLO-detected obstacles into the A* global planner
-	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
-		var plannerObstacles []planning.Obstacle
-		for _, det := range nonRobotYOLO {
-			if det.Bbox == nil {
-				continue
-			}
-			tl := rs.positionEst.PixelToWorld(det.Bbox.X1, det.Bbox.Y1)
-			br := rs.positionEst.PixelToWorld(det.Bbox.X2, det.Bbox.Y2)
-			// Normalize so TopLeft has smaller coords and BottomRight has larger
-			minX, maxX := math.Min(tl.X, br.X), math.Max(tl.X, br.X)
-			minY, maxY := math.Min(tl.Y, br.Y), math.Max(tl.Y, br.Y)
-			plannerObstacles = append(plannerObstacles, planning.NewRectObstacle(
-				det.ClassName, [2]float64{minX, minY}, [2]float64{maxX, maxY}))
-		}
-		rs.planner.SetDynamicObstacles(plannerObstacles)
-	}
-}
-
 // statusBroadcastDue reports whether a status update (FPS, Arduino state) should
 // go to the UI now. It is time-based rather than every N frames so the FPS
 // readout keeps refreshing about once a second even when the frame rate is
@@ -381,32 +346,14 @@ func (rs *RobotSystem) statusBroadcastDue() bool {
 	return true
 }
 
-func classesToMap(classes []string) map[string]bool {
-	m := make(map[string]bool)
-	for _, c := range classes {
-		m[c] = true
-	}
-	return m
-}
-
 func (rs *RobotSystem) Initialize() error {
 	tagConfig := detection.AprilTagConfig{
 		Family:       rs.cfg.AprilTags.Family,
 		QuadDecimate: rs.cfg.AprilTags.QuadDecimate,
 	}
 
-	yoloConfig := &detection.YOLOConfig{
-		ModelPath:       rs.cfg.YOLO.ModelPath,
-		InputSize:       rs.cfg.YOLO.InputSize,
-		ConfThres:       rs.cfg.YOLO.ConfThres,
-		IOUThres:        rs.cfg.YOLO.IOUThres,
-		Device:          rs.cfg.YOLO.Device,
-		MinObstacleSize: rs.cfg.YOLO.MinObstacleSize,
-		PixelsPerMeter:  rs.cfg.YOLO.PixelsPerMeter,
-	}
-
-	rs.detectionPipe = detection.NewDetectionPipeline(yoloConfig, tagConfig)
-	utils.Logf("Detection pipeline initialized, YOLO enabled: %v", rs.detectionPipe.IsYOLOEnabled())
+	rs.detectionPipe = detection.NewDetectionPipeline(tagConfig)
+	utils.Logf("Detection pipeline initialized")
 
 	trackConfig := &tracking.ByteTrackConfig{
 		TrackThresh: rs.cfg.Tracking.TrackThresh,
@@ -1033,11 +980,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	rs.processForeground(frameData, width, height, frameStart, detectionResult)
 
-	// Legacy YOLO obstacle feed: only when the foreground detector is not in charge.
-	if rs.fg == nil {
-		rs.feedYOLOObstacles(detectionResult)
-	}
-
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
 	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
 
@@ -1096,7 +1038,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		rs.webServer.PushFrame(img)
 	}
 
-	rs.webServer.UpdateStats(len(detectionResult.Tags), len(detectionResult.YOLODetections))
+	rs.webServer.UpdateStats(len(detectionResult.Tags))
 
 	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 	if rs.statusBroadcastDue() {
@@ -1677,7 +1619,6 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 
 	result := &detection.DetectionResult{
 		Tags:            demoTags,
-		YOLODetections:  []detection.YOLODetection{},
 		FusedDetections: []detection.FusedDetection{},
 		Timestamp:       timestamp,
 		FrameIdx:        rs.frameNum,
@@ -1751,7 +1692,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 	}
 
 	if rs.webServer != nil {
-		rs.webServer.UpdateStats(len(demoTags), 0)
+		rs.webServer.UpdateStats(len(demoTags))
 
 		// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 		if rs.statusBroadcastDue() {
@@ -1780,8 +1721,6 @@ func main() {
 	testCameraID := flag.Int("test-camera", -1, "Test specific camera by ID")
 	flag.String("web-port", ":9086", "Web server port")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
-	selfTestMode := flag.Bool("self-test", false, "Run self-test for dynamic obstacle pipeline")
-	demoYOLOMode := flag.Bool("demo-yolo", false, "Run demo mode with YOLO obstacles visualization")
 	quiet := flag.Bool("quiet", false, "Suppress all logging output")
 	logFile := flag.String("log-file", "", "Log to file with rotation (default: log to stderr)")
 	flag.Parse()
@@ -1846,28 +1785,6 @@ func main() {
 		rs.Stop()
 		os.Exit(0)
 	}()
-
-	if *selfTestMode {
-		rs := NewRobotSystem(cfg)
-		if cfg != nil {
-			if err := rs.Initialize(); err != nil {
-				utils.Logf("Warning: Failed to initialize robot system: %v", err)
-			}
-		}
-		RunSelfTest(rs)
-		return
-	}
-
-	if *demoYOLOMode {
-		rs := NewRobotSystem(cfg)
-		if cfg != nil {
-			if err := rs.Initialize(); err != nil {
-				utils.Logf("Warning: Failed to initialize robot system: %v", err)
-			}
-		}
-		RunDemoYOLOMode(rs)
-		return
-	}
 
 	// If camera isn't available yet (e.g., macOS permission dialog pending),
 	// retry with backoff before falling back to demo mode.

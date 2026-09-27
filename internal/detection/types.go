@@ -6,7 +6,6 @@ type DetectionType int
 
 const (
 	DetectionTypeAprilTag DetectionType = iota
-	DetectionTypeYOLO
 	DetectionTypeFused
 )
 
@@ -64,13 +63,6 @@ type AprilTag struct {
 	Rotation float64
 }
 
-type YOLODetection struct {
-	Bbox       *BoundingBox
-	Confidence float64
-	ClassID    int
-	ClassName  string
-}
-
 type FusedDetection struct {
 	DetectionType DetectionType
 	Bbox          *BoundingBox
@@ -83,22 +75,9 @@ type FusedDetection struct {
 
 type DetectionResult struct {
 	Tags            []AprilTag
-	YOLODetections  []YOLODetection
 	FusedDetections []FusedDetection
 	Timestamp       float64
 	FrameIdx        int
-}
-
-type YOLOConfig struct {
-	ModelPath       string
-	InputSize       int
-	ConfThres       float64
-	IOUThres        float64
-	Device          string
-	ObstacleClasses []string
-	RelevantClasses map[int]string // Map of classID → name for filtering
-	MinObstacleSize float64        // Minimum obstacle size in meters
-	PixelsPerMeter  float64        // Scale factor for size filtering
 }
 
 type AprilTagConfig struct {
@@ -115,8 +94,6 @@ type AprilTagConfig struct {
 
 type DetectionPipeline struct {
 	tagDetector    TagDetector
-	yoloDetector   YOLODetectorInterface
-	yoloEnabled    bool
 	obstacleDrawer *ObstacleDrawer
 	obstacles      []Obstacle
 }
@@ -133,12 +110,4 @@ type TagDetector interface {
 	Detect(image []byte, width, height int) []AprilTag
 	DrawTags(image []byte, width, height int, tags []AprilTag) []byte
 	Close() error
-}
-
-type YOLODetectorInterface interface {
-	Detect(image []byte, width, height int) []YOLODetection
-	DrawDetections(image []byte, width, height int, detections []YOLODetection) []byte
-	IsAvailable() bool
-	SetClassNames(names map[int]string)
-	GetClassName(classID int) string
 }

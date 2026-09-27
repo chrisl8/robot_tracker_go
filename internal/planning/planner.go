@@ -78,7 +78,7 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 // without re-entering the lock.
 func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]float64, bool) {
 	// Expand obstacles by the robot's radius so the path keeps the full body clear.
-	// Add safety margin beyond the radius to account for YOLO bbox inaccuracy and chair legs.
+	// Add safety margin beyond the radius to account for obstacle-detection bbox inaccuracy and chair legs.
 	margin := 0.15
 	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
 		margin = robot.Diameter/2 + 0.12

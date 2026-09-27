@@ -15,7 +15,6 @@ type Config struct {
 	LocalPlanning LocalPlanningConfig `yaml:"local_planning"`
 	PathExecution PathExecutionConfig `yaml:"path_execution"`
 	AprilTags     AprilTagConfig      `yaml:"april_tags"`
-	YOLO          YOLOConfig          `yaml:"yolo"`
 	Obstacles     ObstaclesConfig     `yaml:"obstacles"`
 	Position      PositionConfig      `yaml:"position"`
 	Output        OutputConfig        `yaml:"output"`
@@ -234,17 +233,6 @@ type AprilTagConfig struct {
 	TagSize      float64 `yaml:"tag_size"`
 	NThreads     int     `yaml:"nthreads"`
 	QuadDecimate float64 `yaml:"quad_decimate"`
-}
-
-type YOLOConfig struct {
-	ModelPath       string   `yaml:"model"`
-	InputSize       int      `yaml:"input_size"`
-	ConfThres       float64  `yaml:"conf_thres"`
-	IOUThres        float64  `yaml:"iou_thres"`
-	Device          string   `yaml:"device"`
-	MinObstacleSize float64  `yaml:"min_obstacle_size"`
-	PixelsPerMeter  float64  `yaml:"pixels_per_meter"`
-	RelevantClasses []string `yaml:"classes"`
 }
 
 type ObstaclesConfig struct {

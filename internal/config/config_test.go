@@ -24,10 +24,6 @@ planning:
   replan_interval: 0.5
   avoidance:
     safety_margin: 0.05
-
-yolo:
-  model: assets/yolov8n.onnx
-  conf_thres: 0.5
 `
 	tmpFile, err := os.CreateTemp("", "config-*.yaml")
 	if err != nil {
@@ -58,10 +54,6 @@ yolo:
 	}
 	if robot.Name != "robot_1" {
 		t.Errorf("robot.Name = %s, want robot_1", robot.Name)
-	}
-
-	if cfg.YOLO.ConfThres != 0.5 {
-		t.Errorf("YOLO.ConfThres = %f, want 0.5", cfg.YOLO.ConfThres)
 	}
 }
 
@@ -193,8 +185,8 @@ func TestEffectiveForeground(t *testing.T) {
 	})
 }
 
-// TestShippedConfigLoads guards the repository's own config file: it must parse,
-// enable the foreground detector, and have YOLO switched off.
+// TestShippedConfigLoads guards the repository's own config file: it must parse
+// and enable the foreground detector.
 func TestShippedConfigLoads(t *testing.T) {
 	cfg, err := Load("../../config/tracking_config.yaml")
 	if err != nil {
@@ -203,9 +195,6 @@ func TestShippedConfigLoads(t *testing.T) {
 	fg := cfg.EffectiveForeground()
 	if !fg.Enabled || fg.Scale <= 0 || fg.AppearMs <= 0 {
 		t.Errorf("shipped foreground settings look wrong: %+v", fg)
-	}
-	if cfg.YOLO.ModelPath != "" {
-		t.Errorf("YOLO should be off in the shipped config, model = %q", cfg.YOLO.ModelPath)
 	}
 	if got := cfg.EffectiveMaxFPS(); got < 1 {
 		t.Errorf("max fps = %d", got)

@@ -40,7 +40,7 @@ The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems v
 
 ### Key Packages
 
-- **`internal/detection/`** — AprilTag (robot ID) + YOLOv8 (obstacle) detection; results fused by bounding box overlap
+- **`internal/detection/`** — AprilTag (robot ID) detection, fused into `FusedDetection`s; obstacles come from the background-subtraction foreground detector, not this package
 - **`internal/tracking/`** — ByteTrack multi-object tracker with Kalman filter; outputs `Track` objects with world positions
 - **`internal/position/`** — Homography calibration maps pixel↔world coordinates; saved to `config/calibration_<camera>.yaml`
 - **`internal/planning/`** — Three-layer: A\* global path, velocity obstacle local planner, multi-robot `Coordinator`
