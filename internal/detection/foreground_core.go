@@ -67,8 +67,69 @@ func (b WorldBox) Contains(x, y float64) bool {
 	return x >= b.MinX && x <= b.MaxX && y >= b.MinY && y <= b.MaxY
 }
 
+// Quad is an obstacle's exact footprint: four world-metre corners in a
+// consistent winding order. Every Quad this package produces is a rectangle
+// (axis-aligned, or oriented via MinAreaRect) — never an arbitrary polygon —
+// which ExpandRect relies on.
+type Quad [4][2]float64
+
+// signedArea2 returns twice the signed area (its sign gives the winding).
+func (q Quad) signedArea2() float64 {
+	sum := 0.0
+	for i := 0; i < 4; i++ {
+		a, b := q[i], q[(i+1)%4]
+		sum += a[0]*b[1] - b[0]*a[1]
+	}
+	return sum
+}
+
+// Normalized returns q with a consistent winding, reversed if projecting
+// through a reflective transform flipped it.
+func (q Quad) Normalized() Quad {
+	if q.signedArea2() < 0 {
+		return Quad{q[0], q[3], q[2], q[1]}
+	}
+	return q
+}
+
+// ExpandRect grows the quad by m metres along each of its two axes (so a
+// rectangle w x h becomes (w+2m) x (h+2m), same as WorldBox.Expand for an
+// axis-aligned box). Exact for any rectangle, which is everything this
+// package's quads are; degenerate (zero-length) quads are returned unchanged.
+func (q Quad) ExpandRect(m float64) Quad {
+	if m == 0 {
+		return q
+	}
+	ux, uy := q[1][0]-q[0][0], q[1][1]-q[0][1] // along one edge
+	vx, vy := q[3][0]-q[0][0], q[3][1]-q[0][1] // along the adjacent edge
+	ulen, vlen := math.Hypot(ux, uy), math.Hypot(vx, vy)
+	if ulen < 1e-12 || vlen < 1e-12 {
+		return q
+	}
+	ux, uy = ux/ulen*m, uy/ulen*m
+	vx, vy = vx/vlen*m, vy/vlen*m
+	return Quad{
+		{q[0][0] - ux - vx, q[0][1] - uy - vy},
+		{q[1][0] + ux - vx, q[1][1] + uy - vy},
+		{q[2][0] + ux + vx, q[2][1] + uy + vy},
+		{q[3][0] - ux + vx, q[3][1] - uy + vy},
+	}
+}
+
 // PixelToWorldFunc maps a full-resolution frame pixel to floor metres.
 type PixelToWorldFunc func(px, py float64) (wx, wy float64)
+
+// BlobQuadToWorld projects each of the blob's four (possibly rotated) corners
+// individually onto the floor, giving its exact footprint rather than an
+// axis-aligned bounding box of it.
+func BlobQuadToWorld(corners [4]image.Point, fn PixelToWorldFunc) Quad {
+	var q Quad
+	for i, c := range corners {
+		x, y := fn(float64(c.X), float64(c.Y))
+		q[i] = [2]float64{x, y}
+	}
+	return q.Normalized()
+}
 
 // BlobToWorld projects all four corners of r onto the floor and returns their
 // bounding box. Under perspective or rotation the box through two opposite

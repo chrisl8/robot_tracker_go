@@ -11,10 +11,13 @@ type Obstacle struct {
 	// remain a cached axis-aligned envelope (still used for cheap jitter
 	// comparisons); Quad is what collision/clearance checks and A*
 	// rasterization use, so a rotated obstacle is not inflated to its
-	// bounding box. NewRectObstacle fills both consistently; a bare struct
-	// literal with only WorldTopLeft/WorldBottomRight set gets a zero-value
-	// Quad, which callers must not do directly outside this package's own
-	// tests — construct obstacles through NewRectObstacle instead.
+	// bounding box. For a plain rectangle, use NewRectObstacle, which fills
+	// both consistently. For a genuinely oriented obstacle (a detector's
+	// fitted footprint), build the struct directly with a real Quad — just
+	// keep WorldTopLeft/WorldBottomRight as that Quad's own bounding box. A
+	// bare struct literal with only WorldTopLeft/WorldBottomRight set gets a
+	// zero-value Quad, which callers must not do outside this package's own
+	// tests.
 	Quad Quad
 }
 

@@ -15,6 +15,16 @@ func boxNear(a, b WorldBox, tol float64) bool {
 		math.Abs(a.MaxX-b.MaxX) <= tol && math.Abs(a.MaxY-b.MaxY) <= tol
 }
 
+// dets wraps boxes as Detections with a degenerate rectangular Quad matching
+// each box, for tests that only care about the AABB-tracking behaviour.
+func dets(boxes ...WorldBox) []Detection {
+	out := make([]Detection, len(boxes))
+	for i, b := range boxes {
+		out[i] = Detection{Box: b, Quad: rectQuad(b)}
+	}
+	return out
+}
+
 // instant publishes on first sight so tests can focus on other behaviour.
 func instant() TemporalParams {
 	p := DefaultTemporalParams()
@@ -27,11 +37,11 @@ var objA = wbox(1.00, 1.00, 1.20, 1.20)
 func TestTemporalFilter_AppearsOnlyAfterAppear(t *testing.T) {
 	f := NewTemporalFilter(DefaultTemporalParams())
 	for _, ms := range []int{0, 100, 200, 300} {
-		if got := f.Update(at(ms), []WorldBox{objA}); len(got) != 0 {
+		if got := f.Update(at(ms), dets(objA)); len(got) != 0 {
 			t.Fatalf("published %v at %d ms, before Appear", got, ms)
 		}
 	}
-	got := f.Update(at(400), []WorldBox{objA})
+	got := f.Update(at(400), dets(objA))
 	if len(got) != 1 || got[0].ID != 1 {
 		t.Fatalf("at Appear got %+v, want one box with ID 1", got)
 	}
@@ -40,9 +50,9 @@ func TestTemporalFilter_AppearsOnlyAfterAppear(t *testing.T) {
 func TestTemporalFilter_FlickerStaysContinuousAndVanishesLate(t *testing.T) {
 	f := NewTemporalFilter(DefaultTemporalParams())
 	for ms := 0; ms <= 500; ms += 100 {
-		f.Update(at(ms), []WorldBox{objA})
+		f.Update(at(ms), dets(objA))
 	}
-	if got := f.Update(at(500), []WorldBox{objA}); len(got) != 1 {
+	if got := f.Update(at(500), dets(objA)); len(got) != 1 {
 		t.Fatalf("expected the object to be published, got %+v", got)
 	}
 
@@ -50,7 +60,7 @@ func TestTemporalFilter_FlickerStaysContinuousAndVanishesLate(t *testing.T) {
 	if got := f.Update(at(1400), nil); len(got) != 1 || got[0].ID != 1 {
 		t.Fatalf("a short flicker dropped the object: %+v", got)
 	}
-	if got := f.Update(at(1450), []WorldBox{objA}); len(got) != 1 || got[0].ID != 1 {
+	if got := f.Update(at(1450), dets(objA)); len(got) != 1 || got[0].ID != 1 {
 		t.Fatalf("object should keep its ID after a flicker, got %+v", got)
 	}
 
@@ -63,8 +73,8 @@ func TestTemporalFilter_FlickerStaysContinuousAndVanishesLate(t *testing.T) {
 	}
 
 	// Coming back later is a new object with a new ID.
-	f.Update(at(3000), []WorldBox{objA})
-	got := f.Update(at(3400), []WorldBox{objA})
+	f.Update(at(3000), dets(objA))
+	got := f.Update(at(3400), dets(objA))
 	if len(got) != 1 || got[0].ID != 2 {
 		t.Fatalf("returning object should be new (ID 2), got %+v", got)
 	}
@@ -83,11 +93,11 @@ func TestTemporalFilter_Hysteresis(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := NewTemporalFilter(instant())
-			first := f.Update(at(0), []WorldBox{objA})
+			first := f.Update(at(0), dets(objA))
 			if len(first) != 1 {
 				t.Fatalf("expected published box, got %+v", first)
 			}
-			next := f.Update(at(100), []WorldBox{tt.moved})
+			next := f.Update(at(100), dets(tt.moved))
 			if len(next) != 1 {
 				t.Fatalf("expected one box, got %+v", next)
 			}
@@ -100,7 +110,7 @@ func TestTemporalFilter_Hysteresis(t *testing.T) {
 
 func TestTemporalFilter_QuantisesOutward(t *testing.T) {
 	f := NewTemporalFilter(instant())
-	got := f.Update(at(0), []WorldBox{wbox(0.101, 0.203, 0.309, 0.407)})
+	got := f.Update(at(0), dets(wbox(0.101, 0.203, 0.309, 0.407)))
 	if len(got) != 1 {
 		t.Fatalf("got %+v", got)
 	}
@@ -111,7 +121,7 @@ func TestTemporalFilter_QuantisesOutward(t *testing.T) {
 
 	// Values already on the grid are not pushed a cell outward by float error.
 	f = NewTemporalFilter(instant())
-	got = f.Update(at(0), []WorldBox{wbox(0.30, 0.30, 0.50, 0.50)})
+	got = f.Update(at(0), dets(wbox(0.30, 0.30, 0.50, 0.50)))
 	if !boxNear(got[0].Box, wbox(0.30, 0.30, 0.50, 0.50), 1e-9) {
 		t.Errorf("on-grid box changed: %+v", got[0].Box)
 	}
@@ -121,7 +131,7 @@ func TestTemporalFilter_QuantisesOutward(t *testing.T) {
 	p.Quantum = 0
 	f = NewTemporalFilter(p)
 	raw := wbox(0.1013, 0.2027, 0.3091, 0.4073)
-	if got = f.Update(at(0), []WorldBox{raw}); got[0].Box != raw {
+	if got = f.Update(at(0), dets(raw)); got[0].Box != raw {
 		t.Errorf("quantum 0 should not modify the box, got %+v", got[0].Box)
 	}
 }
@@ -133,7 +143,7 @@ func TestTemporalFilter_MaxTracksKeepsLargestSortedByID(t *testing.T) {
 	small := wbox(0, 0, 0.10, 0.10)  // area 0.01
 	medium := wbox(1, 0, 1.20, 0.20) // area 0.04
 	large := wbox(2, 0, 2.40, 0.40)  // area 0.16
-	got := f.Update(at(0), []WorldBox{small, medium, large})
+	got := f.Update(at(0), dets(small, medium, large))
 	if len(got) != 2 {
 		t.Fatalf("got %d boxes, want 2: %+v", len(got), got)
 	}
@@ -157,7 +167,7 @@ func TestTemporalFilter_DropsTinyDetections(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f.Reset()
-			if got := f.Update(at(0), []WorldBox{tt.box}); len(got) != tt.want {
+			if got := f.Update(at(0), dets(tt.box)); len(got) != tt.want {
 				t.Errorf("got %d boxes, want %d", len(got), tt.want)
 			}
 		})
@@ -166,7 +176,7 @@ func TestTemporalFilter_DropsTinyDetections(t *testing.T) {
 
 func TestTemporalFilter_MergesOverlappingDetections(t *testing.T) {
 	f := NewTemporalFilter(instant())
-	got := f.Update(at(0), []WorldBox{wbox(1, 1, 1.20, 1.20), wbox(1.15, 1.0, 1.40, 1.20), wbox(5, 5, 5.2, 5.2)})
+	got := f.Update(at(0), dets(wbox(1, 1, 1.20, 1.20), wbox(1.15, 1.0, 1.40, 1.20), wbox(5, 5, 5.2, 5.2)))
 	if len(got) != 2 {
 		t.Fatalf("got %+v, want the two overlapping detections merged (2 boxes total)", got)
 	}
@@ -180,12 +190,12 @@ func TestTemporalFilter_IDsStableAndMonotonicAcrossReset(t *testing.T) {
 	a := wbox(1, 1, 1.2, 1.2)
 	b := wbox(3, 3, 3.2, 3.2)
 
-	first := f.Update(at(0), []WorldBox{a, b})
+	first := f.Update(at(0), dets(a, b))
 	if len(first) != 2 || first[0].ID != 1 || first[1].ID != 2 {
 		t.Fatalf("first frame IDs = %+v, want 1 and 2", first)
 	}
 	// Both drift slightly and swap order in the input: IDs must follow the objects.
-	second := f.Update(at(100), []WorldBox{b.Expand(0.005), a.Expand(0.005)})
+	second := f.Update(at(100), dets(b.Expand(0.005), a.Expand(0.005)))
 	if len(second) != 2 || second[0].ID != 1 || second[1].ID != 2 {
 		t.Fatalf("IDs changed between frames: %+v", second)
 	}
@@ -194,7 +204,7 @@ func TestTemporalFilter_IDsStableAndMonotonicAcrossReset(t *testing.T) {
 	if got := f.Update(at(200), nil); len(got) != 0 {
 		t.Fatalf("Reset should clear tracks, got %+v", got)
 	}
-	after := f.Update(at(300), []WorldBox{a})
+	after := f.Update(at(300), dets(a))
 	if len(after) != 1 || after[0].ID != 3 {
 		t.Errorf("ID after Reset = %+v, want 3 (never reused)", after)
 	}
@@ -202,7 +212,7 @@ func TestTemporalFilter_IDsStableAndMonotonicAcrossReset(t *testing.T) {
 
 func TestTemporalFilter_AbsorbRemovesSuppressesThenExpires(t *testing.T) {
 	f := NewTemporalFilter(instant())
-	if got := f.Update(at(0), []WorldBox{objA}); len(got) != 1 {
+	if got := f.Update(at(0), dets(objA)); len(got) != 1 {
 		t.Fatalf("setup failed: %+v", got)
 	}
 
@@ -218,11 +228,11 @@ func TestTemporalFilter_AbsorbRemovesSuppressesThenExpires(t *testing.T) {
 
 	// The expiry clock starts at the next Update (1 s) and lasts 5 s.
 	for _, ms := range []int{1000, 2000, 5000, 5900} {
-		if got := f.Update(at(ms), []WorldBox{objA}); len(got) != 0 {
+		if got := f.Update(at(ms), dets(objA)); len(got) != 0 {
 			t.Fatalf("absorbed object reappeared at %d ms: %+v", ms, got)
 		}
 	}
-	got := f.Update(at(6100), []WorldBox{objA})
+	got := f.Update(at(6100), dets(objA))
 	if len(got) != 1 || got[0].ID != 2 {
 		t.Errorf("after suppression expired the object should be tracked again as ID 2, got %+v", got)
 	}
@@ -230,15 +240,15 @@ func TestTemporalFilter_AbsorbRemovesSuppressesThenExpires(t *testing.T) {
 
 func TestTemporalFilter_MatchesByCentreWhenNoOverlap(t *testing.T) {
 	f := NewTemporalFilter(instant())
-	first := f.Update(at(0), []WorldBox{wbox(1, 1, 1.10, 1.10)})
+	first := f.Update(at(0), dets(wbox(1, 1, 1.10, 1.10)))
 	// Jumps a full box width sideways: no overlap, but the centre is within 15 cm.
-	second := f.Update(at(100), []WorldBox{wbox(1.10, 1.0, 1.20, 1.10)})
+	second := f.Update(at(100), dets(wbox(1.10, 1.0, 1.20, 1.10)))
 	if len(first) != 1 || len(second) != 1 || first[0].ID != second[0].ID {
 		t.Errorf("expected the same track to follow the object: %+v then %+v", first, second)
 	}
 
 	// Far away is a different object.
-	third := f.Update(at(200), []WorldBox{wbox(1.10, 1.0, 1.20, 1.10), wbox(4, 4, 4.1, 4.1)})
+	third := f.Update(at(200), dets(wbox(1.10, 1.0, 1.20, 1.10), wbox(4, 4, 4.1, 4.1)))
 	if len(third) != 2 || third[0].ID == third[1].ID {
 		t.Errorf("distant detection should be a separate track: %+v", third)
 	}

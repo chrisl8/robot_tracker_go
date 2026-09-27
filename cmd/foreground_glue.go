@@ -217,15 +217,14 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 	case res.Guarded:
 		// Lighting event: hold the last obstacles rather than flooding the planner.
 	default:
-		// TODO(phase 6): also project b.Corners (the tight oriented box) to
-		// world coordinates and thread it through the temporal filter and
-		// into planning.Obstacle.Quad; for now only the AABB drives tracking
-		// and every obstacle stays a (degenerate) rectangle.
-		boxes := make([]detection.WorldBox, 0, len(res.Blobs))
+		dets := make([]detection.Detection, 0, len(res.Blobs))
 		for _, b := range res.Blobs {
-			boxes = append(boxes, detection.BlobToWorld(b.AABB, toWorld))
+			dets = append(dets, detection.Detection{
+				Box:  detection.BlobToWorld(b.AABB, toWorld),
+				Quad: detection.BlobQuadToWorld(b.Corners, toWorld),
+			})
 		}
-		g.published = g.filter.Update(now, boxes)
+		g.published = g.filter.Update(now, dets)
 	}
 	rs.publishTempObstacles(now, g.published, res.Warming, res.Guarded, true)
 }
@@ -287,8 +286,15 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 	for _, t := range tracked {
 		box := t.Box.Expand(g.settings.PadM)
 		name := fmt.Sprintf("temp_%d", t.ID)
-		obstacles = append(obstacles, planning.NewRectObstacle(
-			name, [2]float64{box.MinX, box.MinY}, [2]float64{box.MaxX, box.MaxY}))
+		obstacles = append(obstacles, planning.Obstacle{
+			Name:             name,
+			WorldTopLeft:     [2]float64{box.MinX, box.MinY},
+			WorldBottomRight: [2]float64{box.MaxX, box.MaxY},
+			// The real, possibly-rotated footprint (a degenerate rectangle
+			// when the detector could not fit an oriented box), padded the
+			// same as the cached AABB envelope above.
+			Quad: planning.Quad(t.Quad.ExpandRect(g.settings.PadM)),
+		})
 		var tl, br [2]int
 		if est != nil {
 			tl, br = worldBoxToPixels(est, box)

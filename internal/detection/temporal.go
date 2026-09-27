@@ -37,10 +37,20 @@ func DefaultTemporalParams() TemporalParams {
 	}
 }
 
+// Detection is one frame's raw observation of a candidate obstacle: Box (its
+// AABB) drives tracking/association/quantization exactly as before; Quad is
+// its exact (possibly oriented) footprint, carried alongside unchanged by
+// that logic and published as-is.
+type Detection struct {
+	Box  WorldBox
+	Quad Quad
+}
+
 // TrackedBox is a published, stable obstacle.
 type TrackedBox struct {
-	ID  int
-	Box WorldBox
+	ID   int
+	Box  WorldBox
+	Quad Quad
 }
 
 const (
@@ -58,11 +68,13 @@ const (
 type track struct {
 	id        int
 	box       WorldBox // latest detection
+	quad      Quad     // latest detection's exact footprint
 	firstSeen time.Time
 	lastSeen  time.Time
 	published bool
 	pubBox    WorldBox // quantised box that was last published
 	pubRaw    WorldBox // raw box at the moment pubBox was published
+	pubQuad   Quad     // exact footprint at the moment pubBox was published
 }
 
 type suppression struct {
@@ -115,7 +127,7 @@ func (f *TemporalFilter) Absorb(x, y float64) bool {
 
 // Update feeds one frame's detections observed at now and returns the currently
 // published obstacles, sorted by ID.
-func (f *TemporalFilter) Update(now time.Time, detections []WorldBox) []TrackedBox {
+func (f *TemporalFilter) Update(now time.Time, detections []Detection) []TrackedBox {
 	f.armSuppressions(now)
 
 	// Drop tracks that have been unseen for Vanish.
@@ -139,7 +151,7 @@ func (f *TemporalFilter) Update(now time.Time, detections []WorldBox) []TrackedB
 		if detTrack[di] >= 0 {
 			continue
 		}
-		t := &track{id: f.nextID, box: d, firstSeen: now, lastSeen: now}
+		t := &track{id: f.nextID, box: d.Box, quad: d.Quad, firstSeen: now, lastSeen: now}
 		f.nextID++
 		f.tracks = append(f.tracks, t)
 		f.observe(t, d, now)
@@ -164,20 +176,47 @@ func (f *TemporalFilter) armSuppressions(now time.Time) {
 	f.suppress = kept
 }
 
-// candidates filters and merges the raw detections.
-func (f *TemporalFilter) candidates(detections []WorldBox) []WorldBox {
-	kept := make([]WorldBox, 0, len(detections))
+// candidates filters and merges the raw detections. Merging combines boxes
+// (as before); a merged detection's Quad becomes its merged box's own four
+// corners (a degenerate rectangle) since combining two oriented quads into one
+// tight shape has no single right answer — merges of separate blobs are rare,
+// so this trades a small, rare loss of tightness for simplicity.
+func (f *TemporalFilter) candidates(detections []Detection) []Detection {
+	kept := make([]Detection, 0, len(detections))
 	for _, d := range detections {
-		if d.Width() < f.p.MinSize || d.Height() < f.p.MinSize {
+		if d.Box.Width() < f.p.MinSize || d.Box.Height() < f.p.MinSize {
 			continue
 		}
-		cx, cy := d.Center()
+		cx, cy := d.Box.Center()
 		if f.suppressed(cx, cy) {
 			continue
 		}
 		kept = append(kept, d)
 	}
-	return MergeWorldBoxes(kept, f.p.MergeGap)
+
+	boxes := make([]WorldBox, len(kept))
+	for i, d := range kept {
+		boxes[i] = d.Box
+	}
+	mergedBoxes := MergeWorldBoxes(boxes, f.p.MergeGap)
+	if len(mergedBoxes) == len(kept) {
+		// The common case: nothing merged, so every detection keeps its own quad.
+		out := make([]Detection, len(kept))
+		for i, d := range kept {
+			out[i] = Detection{Box: mergedBoxes[i], Quad: d.Quad}
+		}
+		return out
+	}
+	out := make([]Detection, len(mergedBoxes))
+	for i, b := range mergedBoxes {
+		out[i] = Detection{Box: b, Quad: rectQuad(b)}
+	}
+	return out
+}
+
+// rectQuad returns the axis-aligned quad for b's four corners.
+func rectQuad(b WorldBox) Quad {
+	return Quad{{b.MinX, b.MinY}, {b.MaxX, b.MinY}, {b.MaxX, b.MaxY}, {b.MinX, b.MaxY}}
 }
 
 func (f *TemporalFilter) suppressed(x, y float64) bool {
@@ -192,7 +231,7 @@ func (f *TemporalFilter) suppressed(x, y float64) bool {
 // associate matches detections to tracks: greedily by best overlap first, then
 // by nearest centre. It returns, per track, the matched detection index (or -1)
 // and, per detection, the matched track index (or -1).
-func (f *TemporalFilter) associate(dets []WorldBox) (trackDet, detTrack []int) {
+func (f *TemporalFilter) associate(dets []Detection) (trackDet, detTrack []int) {
 	trackDet = make([]int, len(f.tracks))
 	for i := range trackDet {
 		trackDet[i] = -1
@@ -209,7 +248,7 @@ func (f *TemporalFilter) associate(dets []WorldBox) (trackDet, detTrack []int) {
 	pairs := make([]pair, 0, len(f.tracks)*len(dets))
 	for ti, t := range f.tracks {
 		for di, d := range dets {
-			if iou := t.box.IoU(d); iou >= assocMinIoU {
+			if iou := t.box.IoU(d.Box); iou >= assocMinIoU {
 				pairs = append(pairs, pair{ti, di, iou})
 			}
 		}
@@ -233,7 +272,7 @@ func (f *TemporalFilter) associate(dets []WorldBox) (trackDet, detTrack []int) {
 		if detTrack[di] != -1 {
 			continue
 		}
-		dx, dy := d.Center()
+		dx, dy := d.Box.Center()
 		best, bestDist := -1, assocMaxDist
 		for ti, t := range f.tracks {
 			if trackDet[ti] != -1 {
@@ -251,23 +290,29 @@ func (f *TemporalFilter) associate(dets []WorldBox) (trackDet, detTrack []int) {
 	return trackDet, detTrack
 }
 
-// observe records that track t was seen at now with box d, publishing it once it
-// has been present for Appear and republishing only on real movement.
-func (f *TemporalFilter) observe(t *track, d WorldBox, now time.Time) {
-	t.box = d
+// observe records that track t was seen at now with detection d, publishing it
+// once it has been present for Appear and republishing only on real movement.
+// The published Quad always tracks the latest detection's exact footprint in
+// lockstep with the published Box (it is not itself quantised or hysteresis
+// gated — only whether to update it follows the box's movement gate).
+func (f *TemporalFilter) observe(t *track, d Detection, now time.Time) {
+	t.box = d.Box
+	t.quad = d.Quad
 	t.lastSeen = now
 
 	if !t.published {
 		if now.Sub(t.firstSeen) >= f.p.Appear {
 			t.published = true
-			t.pubRaw = d
-			t.pubBox = quantise(d, f.p.Quantum)
+			t.pubRaw = d.Box
+			t.pubBox = quantise(d.Box, f.p.Quantum)
+			t.pubQuad = d.Quad
 		}
 		return
 	}
-	if movedBeyond(d, t.pubRaw, f.p.MoveEps) {
-		t.pubRaw = d
-		t.pubBox = quantise(d, f.p.Quantum)
+	if movedBeyond(d.Box, t.pubRaw, f.p.MoveEps) {
+		t.pubRaw = d.Box
+		t.pubBox = quantise(d.Box, f.p.Quantum)
+		t.pubQuad = d.Quad
 	}
 }
 
@@ -277,7 +322,7 @@ func (f *TemporalFilter) published() []TrackedBox {
 	out := make([]TrackedBox, 0, len(f.tracks))
 	for _, t := range f.tracks {
 		if t.published {
-			out = append(out, TrackedBox{ID: t.id, Box: t.pubBox})
+			out = append(out, TrackedBox{ID: t.id, Box: t.pubBox, Quad: t.pubQuad})
 		}
 	}
 	if f.p.MaxTracks > 0 && len(out) > f.p.MaxTracks {
