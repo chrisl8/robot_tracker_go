@@ -80,6 +80,13 @@ foreground:
                                # of re-learning (and any object in view isn't briefly
                                # absorbed into the new "empty floor" baseline)
   persist_interval_sec: 30    # how often the background is saved while warm
+  shadow_alpha_min: 0.35       # a darkened pixel colour-matching the background
+  shadow_alpha_max: 0.98       # scaled by a factor in this range is a cast shadow,
+                                # not an object (e.g. a robot's shadow on the floor),
+                                # and stays classified as background
+  shadow_chroma_max: 0.12      # how much colour drift (beyond just darker) is still
+                                # allowed and called a shadow; raise if real shadows
+                                # still get flagged, lower if dim objects get missed
 
 # YOLOv8 Detection Settings (legacy; superseded by the foreground detector above)
 yolo:

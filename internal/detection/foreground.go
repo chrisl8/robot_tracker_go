@@ -53,6 +53,11 @@ type ForegroundDetector struct {
 	labels, stats, centroids                 gocv.Mat
 	kOpen, kClose                            gocv.Mat
 	dbg                                      gocv.Mat
+	// colorBlur is a small blur of the resized BGR frame (small), independent
+	// of gray/blur's own pipeline, feeding the shadow-suppression colour test
+	// (isShadowColor) — kept separate so the existing, tuned gray/blur path
+	// is untouched.
+	colorBlur gocv.Mat
 }
 
 // NewForegroundDetector creates a detector. Zero-valued params are replaced by
@@ -80,15 +85,25 @@ func NewForegroundDetector(p ForegroundParams) *ForegroundDetector {
 	if p.MinBlobPx <= 0 {
 		p.MinBlobPx = def.MinBlobPx
 	}
+	if p.ShadowAlphaMin <= 0 {
+		p.ShadowAlphaMin = def.ShadowAlphaMin
+	}
+	if p.ShadowAlphaMax <= 0 {
+		p.ShadowAlphaMax = def.ShadowAlphaMax
+	}
+	if p.ShadowChromaMax <= 0 {
+		p.ShadowChromaMax = def.ShadowChromaMax
+	}
 	return &ForegroundDetector{
 		params: p,
 		model:  newForegroundModel(p),
 		small:  gocv.NewMat(), gray: gocv.NewMat(), blur: gocv.NewMat(),
 		fgMat: gocv.NewMat(), opened: gocv.NewMat(), closed: gocv.NewMat(),
 		labels: gocv.NewMat(), stats: gocv.NewMat(), centroids: gocv.NewMat(),
-		kOpen:  gocv.GetStructuringElement(gocv.MorphRect, image.Pt(3, 3)),
-		kClose: gocv.GetStructuringElement(gocv.MorphRect, image.Pt(9, 9)),
-		dbg:    gocv.NewMat(),
+		kOpen:     gocv.GetStructuringElement(gocv.MorphRect, image.Pt(3, 3)),
+		kClose:    gocv.GetStructuringElement(gocv.MorphRect, image.Pt(9, 9)),
+		dbg:       gocv.NewMat(),
+		colorBlur: gocv.NewMat(),
 	}
 }
 
@@ -202,7 +217,7 @@ func (d *ForegroundDetector) DebugJPEG() []byte {
 func (d *ForegroundDetector) Close() {
 	d.persistWG.Wait()
 	for _, m := range []*gocv.Mat{&d.small, &d.gray, &d.blur, &d.fgMat, &d.opened, &d.closed,
-		&d.labels, &d.stats, &d.centroids, &d.kOpen, &d.kClose, &d.dbg} {
+		&d.labels, &d.stats, &d.centroids, &d.kOpen, &d.kClose, &d.dbg, &d.colorBlur} {
 		_ = m.Close()
 	}
 }
@@ -237,6 +252,18 @@ func (d *ForegroundDetector) Process(frame []byte, width, height int, now time.T
 		return ForegroundResult{}
 	}
 
+	// A small, independent blur of the resized colour frame, purely for the
+	// shadow-suppression colour test (isShadowColor) — deliberately not
+	// reusing gray/blur's own pipeline. A failure here just means no colour
+	// this frame (colorPixels stays nil), degrading to the pre-shadow-
+	// suppression behaviour rather than failing the whole frame.
+	var colorPixels []uint8
+	if gocv.GaussianBlur(d.small, &d.colorBlur, image.Pt(5, 5), 0, 0, gocv.BorderDefault) == nil {
+		if cp, err := d.colorBlur.DataPtrUint8(); err == nil && len(cp) == d.sw*d.sh*3 {
+			colorPixels = cp
+		}
+	}
+
 	d.rasterizeMasks(masks)
 
 	dt := 0.07
@@ -245,9 +272,7 @@ func (d *ForegroundDetector) Process(frame []byte, width, height int, now time.T
 	}
 	d.lastNow = now
 
-	// TODO(shadow-suppression phase 2): pass the resized frame's colour here
-	// instead of nil, to enable isShadowColor.
-	fg, st := d.model.step(pixels, d.sw, d.sh, dt, d.robotMask, d.staticMask, nil)
+	fg, st := d.model.step(pixels, d.sw, d.sh, dt, d.robotMask, d.staticMask, colorPixels)
 	if !st.Warming {
 		d.maybePersist(now)
 	}

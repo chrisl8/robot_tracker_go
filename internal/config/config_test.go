@@ -162,6 +162,9 @@ func TestEffectiveForeground(t *testing.T) {
 		if !got.PersistBackground || got.PersistIntervalSec != 30 {
 			t.Errorf("background persistence should default to on with a 30s interval, got %+v", got)
 		}
+		if got.ShadowAlphaMin != 0.35 || got.ShadowAlphaMax != 0.98 || got.ShadowChromaMax != 0.12 {
+			t.Errorf("unexpected shadow-suppression defaults: %+v", got)
+		}
 	})
 	t.Run("nil config", func(t *testing.T) {
 		if got := (*Config)(nil).EffectiveForeground(); !got.Enabled || got.TauSec != 60 {
@@ -172,6 +175,7 @@ func TestEffectiveForeground(t *testing.T) {
 		cfg := &Config{Foreground: ForegroundConfig{
 			Enabled: &off, ApplyToPlanner: &on, Threshold: 30, AppearMs: 250, AbsorbAfterSec: 600,
 			PersistBackground: &off, PersistIntervalSec: 10,
+			ShadowAlphaMin: 0.4, ShadowAlphaMax: 0.9, ShadowChromaMax: 0.2,
 		}}
 		got := cfg.EffectiveForeground()
 		if got.Enabled || !got.ApplyToPlanner || got.Threshold != 30 || got.AppearMs != 250 || got.AbsorbAfterSec != 600 {
@@ -182,6 +186,9 @@ func TestEffectiveForeground(t *testing.T) {
 		}
 		if got.PersistBackground || got.PersistIntervalSec != 10 {
 			t.Errorf("persistence settings not honoured: %+v", got)
+		}
+		if got.ShadowAlphaMin != 0.4 || got.ShadowAlphaMax != 0.9 || got.ShadowChromaMax != 0.2 {
+			t.Errorf("shadow-suppression settings not honoured: %+v", got)
 		}
 	})
 }

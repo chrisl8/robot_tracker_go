@@ -74,6 +74,9 @@ func newForegroundGlue(s config.ForegroundSettings) *foregroundGlue {
 	params.WarmupSec = s.WarmupSec
 	params.GuardFraction = s.GuardFraction
 	params.AbsorbAfterSec = s.AbsorbAfterSec
+	params.ShadowAlphaMin = s.ShadowAlphaMin
+	params.ShadowAlphaMax = s.ShadowAlphaMax
+	params.ShadowChromaMax = s.ShadowChromaMax
 
 	tp := detection.DefaultTemporalParams()
 	tp.Appear = time.Duration(s.AppearMs) * time.Millisecond

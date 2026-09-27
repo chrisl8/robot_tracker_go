@@ -52,28 +52,37 @@ type ForegroundConfig struct {
 	// restart resumes instantly instead of re-learning. nil = on.
 	PersistBackground  *bool   `yaml:"persist_background"`
 	PersistIntervalSec float64 `yaml:"persist_interval_sec"`
+	// Shadow suppression: a darkened pixel whose colour is still just the
+	// background colour scaled down (within these bounds) is a cast shadow,
+	// not an object. See detection.isShadowColor.
+	ShadowAlphaMin  float64 `yaml:"shadow_alpha_min"`
+	ShadowAlphaMax  float64 `yaml:"shadow_alpha_max"`
+	ShadowChromaMax float64 `yaml:"shadow_chroma_max"`
 }
 
 // ForegroundSettings is ForegroundConfig with every default applied.
 type ForegroundSettings struct {
-	Enabled        bool
-	ApplyToPlanner bool
-	Scale          float64
-	Threshold      float64
-	DarkFactor     float64
-	MinSizeM       float64
-	AppearMs       int
-	VanishMs       int
-	TauSec         float64
-	WarmupSec      float64
-	RobotMarginM   float64
-	StaticMarginPx int
-	MaxBlobs       int
-	AbsorbAfterSec float64
+	Enabled            bool
+	ApplyToPlanner     bool
+	Scale              float64
+	Threshold          float64
+	DarkFactor         float64
+	MinSizeM           float64
+	AppearMs           int
+	VanishMs           int
+	TauSec             float64
+	WarmupSec          float64
+	RobotMarginM       float64
+	StaticMarginPx     int
+	MaxBlobs           int
+	AbsorbAfterSec     float64
 	GuardFraction      float64
 	PadM               float64
 	PersistBackground  bool
 	PersistIntervalSec float64
+	ShadowAlphaMin     float64
+	ShadowAlphaMax     float64
+	ShadowChromaMax    float64
 }
 
 // EffectiveForeground returns the foreground settings with defaults filled in.
@@ -97,23 +106,27 @@ func (c *Config) EffectiveForeground() ForegroundSettings {
 		return def
 	}
 	s := ForegroundSettings{
-		Enabled:        true,
-		Scale:          orF(f.Scale, 0.5),
-		Threshold:      orF(f.Threshold, 22),
-		DarkFactor:     orF(f.DarkFactor, 1.4),
-		MinSizeM:       orF(f.MinSizeM, 0.05),
-		AppearMs:       orI(f.AppearMs, 400),
-		VanishMs:       orI(f.VanishMs, 1500),
-		TauSec:         orF(f.TauSec, 60),
-		WarmupSec:      orF(f.WarmupSec, 3),
-		RobotMarginM:   orF(f.RobotMarginM, 0.06),
-		StaticMarginPx: orI(f.StaticMarginPx, 6),
-		MaxBlobs:       orI(f.MaxBlobs, 8),
-		AbsorbAfterSec: f.AbsorbAfterSec, // 0 = never (objects stay obstacles)
+		Enabled:            true,
+		Scale:              orF(f.Scale, 0.5),
+		Threshold:          orF(f.Threshold, 22),
+		DarkFactor:         orF(f.DarkFactor, 1.4),
+		MinSizeM:           orF(f.MinSizeM, 0.05),
+		AppearMs:           orI(f.AppearMs, 400),
+		VanishMs:           orI(f.VanishMs, 1500),
+		TauSec:             orF(f.TauSec, 60),
+		WarmupSec:          orF(f.WarmupSec, 3),
+		RobotMarginM:       orF(f.RobotMarginM, 0.06),
+		StaticMarginPx:     orI(f.StaticMarginPx, 6),
+		MaxBlobs:           orI(f.MaxBlobs, 8),
+		AbsorbAfterSec:     f.AbsorbAfterSec, // 0 = never (objects stay obstacles)
 		GuardFraction:      orF(f.GuardFraction, 0.25),
 		PadM:               orF(f.PadM, 0.02),
 		PersistBackground:  true,
 		PersistIntervalSec: orF(f.PersistIntervalSec, 30),
+		// Defaults must match detection.DefaultForegroundParams.
+		ShadowAlphaMin:  orF(f.ShadowAlphaMin, 0.35),
+		ShadowAlphaMax:  orF(f.ShadowAlphaMax, 0.98),
+		ShadowChromaMax: orF(f.ShadowChromaMax, 0.12),
 	}
 	if f.Enabled != nil {
 		s.Enabled = *f.Enabled
@@ -201,13 +214,13 @@ type LocalPlanningConfig struct {
 }
 
 type PathExecutionConfig struct {
-	WaypointThreshold   float64 `yaml:"waypoint_threshold"`
-	MaxSpeed            float64 `yaml:"max_speed"`
-	TurnSpeed           float64 `yaml:"turn_speed"`
-	CommandIntervalMs   int     `yaml:"command_interval_ms"`
-	SpinThresholdDeg    float64 `yaml:"spin_threshold_deg"`
-	BurstFrames         int     `yaml:"burst_frames"`
-	MaxWaitFrames       int     `yaml:"max_wait_frames"`
+	WaypointThreshold    float64 `yaml:"waypoint_threshold"`
+	MaxSpeed             float64 `yaml:"max_speed"`
+	TurnSpeed            float64 `yaml:"turn_speed"`
+	CommandIntervalMs    int     `yaml:"command_interval_ms"`
+	SpinThresholdDeg     float64 `yaml:"spin_threshold_deg"`
+	BurstFrames          int     `yaml:"burst_frames"`
+	MaxWaitFrames        int     `yaml:"max_wait_frames"`
 	ForwardThresholdDeg  float64 `yaml:"forward_threshold_deg"`
 	TrackingLostTimeoutS float64 `yaml:"tracking_lost_timeout_s"`
 }
