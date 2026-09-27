@@ -22,6 +22,9 @@ export const useRobotStore = defineStore('robot', () => {
         arduinoState: 'Disconnected',
     })
     const selectedTrackId = ref<number | null>(null)
+    // The tracker hands out a NEW track id after a track loss, but the robot's
+    // AprilTag id is stable, so the selection follows the tag.
+    const selectedTagId = ref<number | null>(null)
     const destinationMode = ref(false)
     const destination = ref<Destination | null>(null)
     const paths = ref<PathMessage[]>([])
@@ -63,6 +66,7 @@ export const useRobotStore = defineStore('robot', () => {
                 const nestedTracks = (data as { tracks: TracksNestedResponse }).tracks
                 if (nestedTracks && Array.isArray(nestedTracks.tracks)) {
                     tracks.value = nestedTracks.tracks
+                    remapSelection()
                 }
                 break
             }
@@ -112,10 +116,31 @@ export const useRobotStore = defineStore('robot', () => {
         } else {
             tracks.value.push(track)
         }
+        remapSelection()
+    }
+
+    // Keep the selection on the same robot when its track id changes.
+    function remapSelection(): void {
+        if (selectedTrackId.value === null) return
+
+        const current = tracks.value.find(t => t.id === selectedTrackId.value)
+        if (current) {
+            if (current.tag_id !== undefined) selectedTagId.value = current.tag_id
+            return
+        }
+
+        // Selected track is gone. If its robot is tracked again under a new id, follow it;
+        // otherwise keep the selection so it remaps when the robot reappears.
+        if (selectedTagId.value === null) return
+        const successor = tracks.value.find(
+            t => t.state === 'confirmed' && t.tag_id === selectedTagId.value
+        )
+        if (successor) selectedTrackId.value = successor.id
     }
 
     function setTracks(newTracks: Track[]): void {
         tracks.value = newTracks
+        remapSelection()
     }
 
     function setStatus(newStatus: RobotStatus): void {
@@ -128,11 +153,13 @@ export const useRobotStore = defineStore('robot', () => {
 
     function selectTrack(id: number): void {
         selectedTrackId.value = id
+        selectedTagId.value = tracks.value.find(t => t.id === id)?.tag_id ?? null
         destinationMode.value = true
     }
 
     function clearSelection(): void {
         selectedTrackId.value = null
+        selectedTagId.value = null
         destinationMode.value = false
     }
 
@@ -140,25 +167,48 @@ export const useRobotStore = defineStore('robot', () => {
         destinationMode.value = false
     }
 
+    // Every destination failure is shown: a toast and an activity-log entry.
+    function reportDestinationFailure(message: string): false {
+        const uiStore = useUIStore()
+        uiStore.showToast(message, 'error', 6000)
+        uiStore.addLogEntry('error', message)
+        return false
+    }
+
+    async function serverErrorMessage(response: Response): Promise<string> {
+        try {
+            const body = (await response.json()) as { error?: unknown }
+            if (typeof body.error === 'string' && body.error !== '') return body.error
+        } catch {
+            // Body was not JSON; fall through to the generic message.
+        }
+        return `The tracker service rejected the destination (HTTP ${response.status})`
+    }
+
     async function confirmDestination(canvasX: number, canvasY: number): Promise<boolean> {
         if (selectedTrackId.value === null) {
-            return false
+            return reportDestinationFailure('Click the robot first, then click where it should go')
         }
 
-        // Look up the selected track to get its AprilTag ID (used by the planner)
-        const track = tracks.value.find(t => t.id === selectedTrackId.value)
-        if (!track || track.tag_id === undefined) {
-            console.error('[DEST] Selected track has no tag_id, cannot set destination')
-            return false
+        // The selected track id can be stale after a track loss; fall back to the robot's tag.
+        const track =
+            tracks.value.find(t => t.id === selectedTrackId.value) ??
+            tracks.value.find(t => t.state === 'confirmed' && t.tag_id === selectedTagId.value)
+        if (!track) {
+            const who = selectedTagId.value === null ? 'The robot' : `Robot ${selectedTagId.value}`
+            return reportDestinationFailure(
+                `${who} is not visible right now; wait for it to be detected, then try again`
+            )
+        }
+        if (track.tag_id === undefined) {
+            return reportDestinationFailure(
+                'That object has no AprilTag, so it cannot be sent anywhere'
+            )
         }
         const robotId = track.tag_id
 
         // Use the SAME canvasToNatural function as useCanvas.ts for consistency
         const naturalCoords = canvasToNaturalShared(canvasX, canvasY)
-
-        console.log('[DEST DEBUG] Click (canvas):', { canvasX, canvasY })
-        console.log('[DEST DEBUG] Stored (natural):', naturalCoords)
-        console.log('[DEST DEBUG] Robot tag_id:', robotId)
 
         try {
             const response = await fetch('/api/destination', {
@@ -184,10 +234,10 @@ export const useRobotStore = defineStore('robot', () => {
                 uiStore.addLogEntry('success', 'Destination set for robot ' + robotId)
                 return true
             }
-            return false
+            return reportDestinationFailure(await serverErrorMessage(response))
         } catch (error) {
             console.error('Failed to set destination:', error)
-            return false
+            return reportDestinationFailure('Could not reach the tracker service')
         }
     }
 
@@ -300,6 +350,7 @@ export const useRobotStore = defineStore('robot', () => {
         tracks,
         status,
         selectedTrackId,
+        selectedTagId,
         destinationMode,
         destination,
         paths,

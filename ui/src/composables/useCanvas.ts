@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { getTrackColor } from '@/types/robot'
 import type { Track } from '@/types/api'
 import { getVideoDimensions } from '@/utils/coordinates'
+import { createRateLimiter } from '@/utils/rateLimiter'
 
 export interface CanvasPoint {
     x: number
@@ -87,6 +88,8 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
     const robotStore = useRobotStore()
     const obstacleStore = useObstacleStore()
     const uiStore = useUIStore()
+    // A robot is selected but the click landed on empty video and did nothing: say why, sparingly.
+    const canShowSelectionHint = createRateLimiter(8000)
 
     const canvas = ref<HTMLCanvasElement | null>(null)
     const context = ref<CanvasRenderingContext2D | null>(null)
@@ -1084,6 +1087,11 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
                     robotStore.selectTrack(track.id)
                     return
                 }
+            }
+
+            // Stray clicks must never dispatch the robot (select, then click), so only explain.
+            if (robotStore.selectedTrackId !== null && canShowSelectionHint()) {
+                uiStore.showToast('Click the robot again, then click where it should go', 'info')
             }
         }
     }
