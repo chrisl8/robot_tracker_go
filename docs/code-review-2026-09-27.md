@@ -54,7 +54,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    goroutine) races against the frame-processing goroutine — can send a robot's
    computed position to a nonsensical place.
 
-6. **`CommandQueue`/`ArduinoController` have unsynchronized shared state.**
+6. **[FIXED] `CommandQueue`/`ArduinoController` have unsynchronized shared state.**
    `internal/controller/queue.go` — `running` is read/written without `q.mu` from
    multiple goroutines (HTTP handler via `ClearEmergencyStop`, frame-processing
    goroutine, shutdown path). Concurrent `Stop()` calls can both pass the
@@ -259,15 +259,3 @@ ranked by severity. This file is the deliverable — a report, not an implementa
 
 ---
 
-## Suggested next steps (for discussion, not started)
-
-Given the severity spread, if/when you want to act on this:
-1. Fix the two safety-critical items first (#1 keyboard stop, #2 zero velocity) —
-   both are small, isolated changes.
-2. Fix the concurrency bugs (#5, #6) since they can silently corrupt live behavior
-   under normal operator actions (recalibrating, emergency stop).
-3. Decide whether to delete or actually wire in the dead `Coordinator` path —
-   right now it's pure risk with no benefit.
-4. The `cmd/main.go` god-file and `useCanvas.ts` decomposition are larger,
-   optional refactors — worth doing opportunistically rather than as one big
-   change, given how much surrounding code depends on current wiring.

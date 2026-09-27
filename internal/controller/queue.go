@@ -35,28 +35,35 @@ func NewCommandQueue(controller *ArduinoController, intervalMs int) *CommandQueu
 }
 
 func (q *CommandQueue) Start() {
+	q.mu.Lock()
 	if q.running {
+		q.mu.Unlock()
 		return
 	}
 
 	// Recreate channels so queue can restart after Stop
-	q.commandCh = make(chan Command, 10)
-	q.stopCh = make(chan struct{})
+	commandCh := make(chan Command, 10)
+	stopCh := make(chan struct{})
+	q.commandCh = commandCh
+	q.stopCh = stopCh
 	q.running = true
-	go q.runLoop()
+	q.mu.Unlock()
+
+	go q.runLoop(commandCh, stopCh)
 }
 
 func (q *CommandQueue) Stop() {
+	q.mu.Lock()
 	if !q.running {
+		q.mu.Unlock()
 		return
 	}
-
-	q.mu.Lock()
+	q.running = false
 	q.hasActiveCommand = false
+	stopCh := q.stopCh
 	q.mu.Unlock()
 
-	q.running = false
-	close(q.stopCh)
+	close(stopCh)
 }
 
 func (q *CommandQueue) Enqueue(cmd Command) {
@@ -67,10 +74,11 @@ func (q *CommandQueue) Enqueue(cmd Command) {
 		q.activeCommand = cmd
 		q.hasActiveCommand = true
 	}
+	commandCh := q.commandCh
 	q.mu.Unlock()
 
 	select {
-	case q.commandCh <- cmd:
+	case commandCh <- cmd:
 	default:
 	}
 }
@@ -94,13 +102,13 @@ func (q *CommandQueue) ClearActiveCommand() {
 	q.mu.Unlock()
 }
 
-func (q *CommandQueue) runLoop() {
+func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 	ticker := time.NewTicker(q.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case cmd := <-q.commandCh:
+		case cmd := <-commandCh:
 			q.sendCommand(cmd)
 
 		case <-ticker.C:
@@ -116,7 +124,7 @@ func (q *CommandQueue) runLoop() {
 				}
 			}
 
-		case <-q.stopCh:
+		case <-stopCh:
 			return
 		}
 	}
@@ -148,5 +156,7 @@ func (q *CommandQueue) GetLastCommand() Command {
 }
 
 func (q *CommandQueue) IsRunning() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.running
 }
