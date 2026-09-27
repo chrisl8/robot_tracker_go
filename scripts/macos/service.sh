@@ -87,6 +87,12 @@ generate_plist() {
 
     <key>KeepAlive</key>
     <false/>
+
+    <key>StandardOutPath</key>
+    <string>${HOME}/Library/Logs/robot-tracker-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>${HOME}/Library/Logs/robot-tracker-stderr.log</string>
 </dict>
 </plist>
 PLIST
