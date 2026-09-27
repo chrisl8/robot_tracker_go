@@ -86,16 +86,15 @@ func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]floa
 	allObstacles := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
 	allObstacles = append(allObstacles, p.obstacles...)
 	allObstacles = append(allObstacles, p.dynamicObstacles...)
-	obstacles := p.expandObstacles(allObstacles, margin)
-	path, ok := p.globalPlanner.Plan(start, goal, obstacles)
+	path, ok := p.globalPlanner.Plan(start, goal, allObstacles, margin)
 	if ok && len(path) > 2 {
 		before := len(path)
 		originalPath := make([][2]float64, len(path))
 		copy(originalPath, path)
 		simplified := SimplifyPath(path, 0.15)
-		path = ValidateSimplifiedPath(originalPath, simplified, obstacles, 0.05)
+		path = ValidateSimplifiedPath(originalPath, simplified, allObstacles, margin, 0.05)
 		path = SimplifyPath(path, 0.15)
-		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(obstacles))
+		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(allObstacles))
 	}
 	return path, ok
 }
@@ -259,13 +258,6 @@ func (p *Planner) CheckCollision(robot RobotState) bool {
 	return len(collisions) > 0
 }
 
-func (p *Planner) expandObstacles(obstacles []Obstacle, margin float64) []Obstacle {
-	expanded := make([]Obstacle, len(obstacles))
-	for i, obs := range obstacles {
-		expanded[i] = p.collisionDetector.ExpandObstacle(obs, margin)
-	}
-	return expanded
-}
 
 // replanAllPathsLocked requires the caller to already hold p.mu.
 func (p *Planner) replanAllPathsLocked() {

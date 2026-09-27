@@ -107,15 +107,6 @@ func (d *CollisionDetector) IsPointInObstacle(point [2]float64, obstacle Obstacl
 	return quadContains(point, obstacle.Quad)
 }
 
-func (d *CollisionDetector) ExpandObstacle(obstacle Obstacle, amount float64) Obstacle {
-	expanded := obstacle
-	expanded.WorldTopLeft[0] -= amount
-	expanded.WorldTopLeft[1] -= amount
-	expanded.WorldBottomRight[0] += amount
-	expanded.WorldBottomRight[1] += amount
-	return expanded
-}
-
 func (d *CollisionDetector) GetClearance(robot RobotState, obstacles []Obstacle) float64 {
 	minDist := 1e10
 	for _, obs := range obstacles {

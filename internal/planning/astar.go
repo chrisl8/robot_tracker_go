@@ -67,7 +67,7 @@ func NewAStar(config *AStarConfig) *AStar {
 	return &AStar{config: config}
 }
 
-func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64, bool) {
+func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float64) ([][2]float64, bool) {
 	gridWidth := int(float64(a.config.GridWidth) / a.config.Resolution)
 	gridHeight := int(float64(a.config.GridHeight) / a.config.Resolution)
 
@@ -102,7 +102,7 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle) ([][2]float64
 
 	obstacleMap := make(map[[2]int]bool)
 	for _, obs := range obstacles {
-		gridObs := worldToGrid(obs, a.config.Resolution, gridWidth, gridHeight)
+		gridObs := worldToGrid(obs, margin, a.config.Resolution, gridWidth, gridHeight)
 		for _, cell := range gridObs {
 			obstacleMap[cell] = true
 		}
@@ -296,31 +296,35 @@ func perpendicularDistance(point, lineStart, lineEnd [2]float64) float64 {
 
 // segmentIntersectsObstacle checks if a line segment from p1 to p2 passes through
 // an obstacle's axis-aligned bounding box by sampling at the given resolution.
-func segmentIntersectsObstacle(p1, p2 [2]float64, obs Obstacle, resolution float64) bool {
+// segmentIntersectsObstacle checks whether a line segment from p1 to p2 comes
+// within margin of the obstacle's exact (possibly rotated) footprint, by
+// sampling points along it — the same margin the A* grid rasterization uses,
+// so a simplified path segment is only accepted when it would not have been
+// blocked in the grid either.
+func segmentIntersectsObstacle(p1, p2 [2]float64, obs Obstacle, margin, resolution float64) bool {
 	dx := p2[0] - p1[0]
 	dy := p2[1] - p1[1]
 	length := math.Sqrt(dx*dx + dy*dy)
 	if length == 0 {
-		return p1[0] >= obs.WorldTopLeft[0] && p1[0] <= obs.WorldBottomRight[0] &&
-			p1[1] >= obs.WorldTopLeft[1] && p1[1] <= obs.WorldBottomRight[1]
+		return distanceToQuad(p1, obs.Quad) <= margin
 	}
 	steps := int(length/resolution) + 1
 	for i := 0; i <= steps; i++ {
 		t := float64(i) / float64(steps)
 		x := p1[0] + t*dx
 		y := p1[1] + t*dy
-		if x >= obs.WorldTopLeft[0] && x <= obs.WorldBottomRight[0] &&
-			y >= obs.WorldTopLeft[1] && y <= obs.WorldBottomRight[1] {
+		if distanceToQuad([2]float64{x, y}, obs.Quad) <= margin {
 			return true
 		}
 	}
 	return false
 }
 
-// ValidateSimplifiedPath checks each segment of a simplified path against expanded
-// obstacles. If a simplified segment passes through an obstacle, the original
-// unsimplified waypoints for that segment are restored.
-func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, resolution float64) [][2]float64 {
+// ValidateSimplifiedPath checks each segment of a simplified path against the
+// obstacles' exact footprints plus margin. If a simplified segment passes
+// through an obstacle, the original unsimplified waypoints for that segment
+// are restored.
+func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, margin, resolution float64) [][2]float64 {
 	if len(simplifiedPath) <= 1 || len(obstacles) == 0 {
 		return simplifiedPath
 	}
@@ -346,7 +350,7 @@ func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles
 
 		blocked := false
 		for _, obs := range obstacles {
-			if segmentIntersectsObstacle(p1, p2, obs, resolution) {
+			if segmentIntersectsObstacle(p1, p2, obs, margin, resolution) {
 				blocked = true
 				break
 			}
@@ -367,20 +371,37 @@ func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles
 	return validated
 }
 
-func worldToGrid(obs Obstacle, resolution float64, width, height int) [][2]int {
+// worldToGrid returns the grid cells within margin of obs's exact footprint
+// (its Quad — a plain rectangle for an axis-aligned obstacle, an arbitrary
+// quadrilateral for a detected, oriented one). This folds rasterization and
+// the robot-radius safety margin into a single pass: a cell is blocked when
+// its center is within margin of the shape, so there is no separate
+// expand-the-rectangle step before this runs.
+func worldToGrid(obs Obstacle, margin, resolution float64, width, height int) [][2]int {
 	cells := make([][2]int, 0)
 
 	offsetX := width / 2
 	offsetY := height / 2
 
-	x1 := int(obs.WorldTopLeft[0]/resolution) + offsetX
-	y1 := int(obs.WorldTopLeft[1]/resolution) + offsetY
-	x2 := int(obs.WorldBottomRight[0]/resolution) + offsetX
-	y2 := int(obs.WorldBottomRight[1]/resolution) + offsetY
+	tl, br := obs.Quad.Bounds()
+	x1 := int(math.Floor((tl[0]-margin)/resolution)) + offsetX
+	y1 := int(math.Floor((tl[1]-margin)/resolution)) + offsetY
+	x2 := int(math.Ceil((br[0]+margin)/resolution)) + offsetX
+	y2 := int(math.Ceil((br[1]+margin)/resolution)) + offsetY
 
 	for x := x1; x <= x2; x++ {
+		if x < 0 || x >= width {
+			continue
+		}
 		for y := y1; y <= y2; y++ {
-			if x >= 0 && x < width && y >= 0 && y < height {
+			if y < 0 || y >= height {
+				continue
+			}
+			cellCenter := [2]float64{
+				(float64(x-offsetX) + 0.5) * resolution,
+				(float64(y-offsetY) + 0.5) * resolution,
+			}
+			if distanceToQuad(cellCenter, obs.Quad) <= margin {
 				cells = append(cells, [2]int{x, y})
 			}
 		}

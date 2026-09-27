@@ -145,23 +145,6 @@ func TestCollisionDetector_IsPointInObstacle(t *testing.T) {
 	}
 }
 
-func TestCollisionDetector_ExpandObstacle(t *testing.T) {
-	cd := NewCollisionDetector(0.1)
-	obstacle := Obstacle{
-		WorldTopLeft:     [2]float64{5, 5},
-		WorldBottomRight: [2]float64{10, 10},
-	}
-
-	expanded := cd.ExpandObstacle(obstacle, 0.5)
-
-	if expanded.WorldTopLeft[0] != 4.5 {
-		t.Errorf("Expanded TopLeft X = %f, want 4.5", expanded.WorldTopLeft[0])
-	}
-	if expanded.WorldBottomRight[0] != 10.5 {
-		t.Errorf("Expanded BottomRight X = %f, want 10.5", expanded.WorldBottomRight[0])
-	}
-}
-
 func TestCollisionDetector_GetClearance(t *testing.T) {
 	cd := NewCollisionDetector(0.1)
 	robot := RobotState{
