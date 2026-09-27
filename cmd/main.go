@@ -936,12 +936,20 @@ func (rs *RobotSystem) Stop() {
 	})
 	if rs.fg != nil {
 		// A final, blocking save so a clean shutdown never has to wait for
-		// the next periodic save to capture the current background.
+		// the next periodic save to capture the current background. Done
+		// before anything stops producing frames, so it captures live state.
 		rs.fg.det.SaveNow()
 	}
 	rs.cameraRunning = false
 	if rs.cam != nil {
 		rs.cam.Stop()
+	}
+	if rs.fg != nil {
+		// Release the detector's OpenCV resources (previously never done on
+		// shutdown, leaking them). This comes after cameraRunning is false and
+		// the camera itself is stopped, so the frame loop is no longer calling
+		// into the detector by the time its Mats are closed.
+		rs.fg.det.Close()
 	}
 	if rs.commandQueue != nil {
 		rs.commandQueue.Stop()
