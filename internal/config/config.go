@@ -47,6 +47,11 @@ type ForegroundConfig struct {
 	AbsorbAfterSec float64 `yaml:"absorb_after_sec"`
 	GuardFraction  float64 `yaml:"guard_fraction"`
 	PadM           float64 `yaml:"pad_m"`
+	// PersistBackground saves the learned background to disk and restores it
+	// on the next start (when the camera and resolution still match), so a
+	// restart resumes instantly instead of re-learning. nil = on.
+	PersistBackground  *bool   `yaml:"persist_background"`
+	PersistIntervalSec float64 `yaml:"persist_interval_sec"`
 }
 
 // ForegroundSettings is ForegroundConfig with every default applied.
@@ -65,8 +70,10 @@ type ForegroundSettings struct {
 	StaticMarginPx int
 	MaxBlobs       int
 	AbsorbAfterSec float64
-	GuardFraction  float64
-	PadM           float64
+	GuardFraction      float64
+	PadM               float64
+	PersistBackground  bool
+	PersistIntervalSec float64
 }
 
 // EffectiveForeground returns the foreground settings with defaults filled in.
@@ -103,14 +110,19 @@ func (c *Config) EffectiveForeground() ForegroundSettings {
 		StaticMarginPx: orI(f.StaticMarginPx, 6),
 		MaxBlobs:       orI(f.MaxBlobs, 8),
 		AbsorbAfterSec: f.AbsorbAfterSec, // 0 = never (objects stay obstacles)
-		GuardFraction:  orF(f.GuardFraction, 0.25),
-		PadM:           orF(f.PadM, 0.02),
+		GuardFraction:      orF(f.GuardFraction, 0.25),
+		PadM:               orF(f.PadM, 0.02),
+		PersistBackground:  true,
+		PersistIntervalSec: orF(f.PersistIntervalSec, 30),
 	}
 	if f.Enabled != nil {
 		s.Enabled = *f.Enabled
 	}
 	if f.ApplyToPlanner != nil {
 		s.ApplyToPlanner = *f.ApplyToPlanner
+	}
+	if f.PersistBackground != nil {
+		s.PersistBackground = *f.PersistBackground
 	}
 	return s
 }

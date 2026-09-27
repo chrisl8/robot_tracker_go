@@ -8,6 +8,7 @@ diagnostics/test_gocv_simple.exe
 robot_tracker
 config/calibration_*
 config/obstacles_*
+config/foreground_bg_*
 
 # Vue 3 UI build output
 internal/ui/static/

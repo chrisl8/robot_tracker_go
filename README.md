@@ -134,6 +134,13 @@ about 1.5 ms per frame.
 - An object that stays put **remains an obstacle until you remove it** (nothing silently absorbs it).
   If something permanent was left in view, click it and choose **Absorb** (treat as floor), or press
   **Reset background** with the floor clear. **Show mask** displays what the detector sees.
+- The learned background is **saved to disk** (`config/foreground_bg_<camera>.bin`) and restored on
+  the next start, so a restart (during development, a service restart, a host reboot) resumes
+  instantly instead of re-learning — and an object already sitting in view isn't briefly absorbed
+  into a fresh "empty floor" baseline while it re-warms. A save that no longer matches the camera or
+  working resolution is ignored, not misapplied. **Reset background** also discards the saved file,
+  not just the live state, so it can't come back on the next restart. Controlled by
+  `persist_background`/`persist_interval_sec` in `config/tracking_config.yaml`.
 - Slow lighting drift is followed automatically. A sudden change that lights up a large part of the
   picture is treated as a lighting event: the last obstacles are held and the background is relearned.
 - While the calibration wizard is open, detection pauses (the tags on the floor would look like

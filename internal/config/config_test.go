@@ -159,6 +159,9 @@ func TestEffectiveForeground(t *testing.T) {
 			got.MaxBlobs != 8 || got.AbsorbAfterSec != 0 {
 			t.Errorf("unexpected defaults: %+v", got)
 		}
+		if !got.PersistBackground || got.PersistIntervalSec != 30 {
+			t.Errorf("background persistence should default to on with a 30s interval, got %+v", got)
+		}
 	})
 	t.Run("nil config", func(t *testing.T) {
 		if got := (*Config)(nil).EffectiveForeground(); !got.Enabled || got.TauSec != 60 {
@@ -168,6 +171,7 @@ func TestEffectiveForeground(t *testing.T) {
 	t.Run("explicit values win, including switching off", func(t *testing.T) {
 		cfg := &Config{Foreground: ForegroundConfig{
 			Enabled: &off, ApplyToPlanner: &on, Threshold: 30, AppearMs: 250, AbsorbAfterSec: 600,
+			PersistBackground: &off, PersistIntervalSec: 10,
 		}}
 		got := cfg.EffectiveForeground()
 		if got.Enabled || !got.ApplyToPlanner || got.Threshold != 30 || got.AppearMs != 250 || got.AbsorbAfterSec != 600 {
@@ -175,6 +179,9 @@ func TestEffectiveForeground(t *testing.T) {
 		}
 		if got.Scale != 0.5 {
 			t.Errorf("unset fields should still default, Scale=%v", got.Scale)
+		}
+		if got.PersistBackground || got.PersistIntervalSec != 10 {
+			t.Errorf("persistence settings not honoured: %+v", got)
 		}
 	})
 }

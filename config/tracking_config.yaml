@@ -75,6 +75,11 @@ foreground:
   guard_fraction: 0.25    # if more than this share of the frame changes at once,
                           # treat it as a lighting event and hold the last obstacles
   absorb_after_sec: 0     # 0 = a stationary object stays an obstacle until removed
+  persist_background: true    # save the learned background to disk and restore it on
+                               # the next start, so a restart resumes instantly instead
+                               # of re-learning (and any object in view isn't briefly
+                               # absorbed into the new "empty floor" baseline)
+  persist_interval_sec: 30    # how often the background is saved while warm
 
 # YOLOv8 Detection Settings (legacy; superseded by the foreground detector above)
 yolo:

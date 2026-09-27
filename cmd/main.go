@@ -934,6 +934,11 @@ func (rs *RobotSystem) Stop() {
 			close(rs.watchdogStop)
 		}
 	})
+	if rs.fg != nil {
+		// A final, blocking save so a clean shutdown never has to wait for
+		// the next periodic save to capture the current background.
+		rs.fg.det.SaveNow()
+	}
 	rs.cameraRunning = false
 	if rs.cam != nil {
 		rs.cam.Stop()

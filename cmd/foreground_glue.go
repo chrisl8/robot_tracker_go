@@ -120,9 +120,19 @@ func (g *foregroundGlue) snapshotState() ui.ForegroundState {
 
 // initForeground creates the detector and wires the UI controls.
 func (rs *RobotSystem) initForeground() {
-	rs.fg = newForegroundGlue(rs.cfg.EffectiveForeground())
+	settings := rs.cfg.EffectiveForeground()
+	rs.fg = newForegroundGlue(settings)
 	g := rs.fg
 	utils.Logf("Foreground obstacle detection: enabled=%v steering_planner=%v", g.enabled.Load(), g.apply.Load())
+
+	if settings.PersistBackground {
+		if name := rs.cameraDisplayName(); name != "" {
+			path := ui.GetForegroundStateFilename(name)
+			interval := time.Duration(settings.PersistIntervalSec * float64(time.Second))
+			g.det.EnablePersistence(path, interval)
+			utils.Logf("Foreground background persistence: %s every %v", path, interval)
+		}
+	}
 
 	rs.webServer.OnForegroundEnabled = func(on bool) {
 		g.enabled.Store(on)

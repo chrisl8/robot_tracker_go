@@ -980,6 +980,14 @@ func GetCalibrationFilename(cameraName string) string {
 	return fmt.Sprintf("config/calibration_%s.yaml", sanitized)
 }
 
+// GetForegroundStateFilename returns where the foreground detector's learned
+// background is saved for cameraName, so a restart can restore it instead of
+// re-learning.
+func GetForegroundStateFilename(cameraName string) string {
+	sanitized := sanitizeCameraName(cameraName)
+	return fmt.Sprintf("config/foreground_bg_%s.bin", sanitized)
+}
+
 func sanitizeCameraName(name string) string {
 	reg := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 	sanitized := reg.ReplaceAllString(name, "_")
