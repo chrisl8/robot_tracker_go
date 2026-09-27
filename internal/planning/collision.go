@@ -1,7 +1,5 @@
 package planning
 
-import "math"
-
 type Obstacle struct {
 	Name              string
 	WorldTopLeft      [2]float64
@@ -58,26 +56,7 @@ func NewCollisionDetector(margin float64) *CollisionDetector {
 
 func (d *CollisionDetector) IsCollision(robot RobotState, obstacle Obstacle) bool {
 	robotRadius := robot.Diameter / 2
-
-	closestX := robot.Position[0]
-	if robot.Position[0] < obstacle.WorldTopLeft[0] {
-		closestX = obstacle.WorldTopLeft[0]
-	} else if robot.Position[0] > obstacle.WorldBottomRight[0] {
-		closestX = obstacle.WorldBottomRight[0]
-	}
-
-	closestY := robot.Position[1]
-	if robot.Position[1] < obstacle.WorldTopLeft[1] {
-		closestY = obstacle.WorldTopLeft[1]
-	} else if robot.Position[1] > obstacle.WorldBottomRight[1] {
-		closestY = obstacle.WorldBottomRight[1]
-	}
-
-	dx := robot.Position[0] - closestX
-	dy := robot.Position[1] - closestY
-	dist := math.Sqrt(dx*dx + dy*dy)
-
-	return dist < robotRadius+d.margin
+	return distanceToQuad(robot.Position, obstacle.Quad) < robotRadius+d.margin
 }
 
 func (d *CollisionDetector) IsCollisionWithPath(robot RobotState, path [][2]float64, obstacle Obstacle) bool {
@@ -121,33 +100,11 @@ func (d *CollisionDetector) WillCollide(robot RobotState, velocity [2]float64, o
 
 func (d *CollisionDetector) DistanceToObstacle(robot RobotState, obstacle Obstacle) float64 {
 	robotRadius := robot.Diameter / 2
-
-	closestX := robot.Position[0]
-	if robot.Position[0] < obstacle.WorldTopLeft[0] {
-		closestX = obstacle.WorldTopLeft[0]
-	} else if robot.Position[0] > obstacle.WorldBottomRight[0] {
-		closestX = obstacle.WorldBottomRight[0]
-	}
-
-	closestY := robot.Position[1]
-	if robot.Position[1] < obstacle.WorldTopLeft[1] {
-		closestY = obstacle.WorldTopLeft[1]
-	} else if robot.Position[1] > obstacle.WorldBottomRight[1] {
-		closestY = obstacle.WorldBottomRight[1]
-	}
-
-	dx := robot.Position[0] - closestX
-	dy := robot.Position[1] - closestY
-	dist := math.Sqrt(dx*dx + dy*dy)
-
-	return dist - robotRadius
+	return distanceToQuad(robot.Position, obstacle.Quad) - robotRadius
 }
 
 func (d *CollisionDetector) IsPointInObstacle(point [2]float64, obstacle Obstacle) bool {
-	return point[0] >= obstacle.WorldTopLeft[0] &&
-		point[0] <= obstacle.WorldBottomRight[0] &&
-		point[1] >= obstacle.WorldTopLeft[1] &&
-		point[1] <= obstacle.WorldBottomRight[1]
+	return quadContains(point, obstacle.Quad)
 }
 
 func (d *CollisionDetector) ExpandObstacle(obstacle Obstacle, amount float64) Obstacle {
