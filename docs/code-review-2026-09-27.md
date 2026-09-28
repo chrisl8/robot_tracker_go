@@ -184,11 +184,21 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     same way. Added `TestCoordinator_AdjustForConflict_CoincidentRobotsNoNaN`
     and `TestCoordinator_AdjustForConflict_CoincidentRobotsDivergeDeterministically`.
 
-15. **`main()` shutdown path can double-`Stop()` and panic.**
+15. **[FIXED] `main()` shutdown path can double-`Stop()` and panic.**
     `cmd/main.go:1806-1817` — both a `defer rs.Stop()` and the SIGINT handler call
     `rs.Stop()`. `os.Exit(0)` in the signal handler happens to prevent the deferred
     call today, but `Stop()` itself isn't fully idempotent (unconditional
     `close()` calls), so this is fragile to future refactors.
+    **Fix:** added a `stopOnce sync.Once` field to `RobotSystem` and wrapped
+    `Stop()`'s entire body in `rs.stopOnce.Do(...)`, matching the existing
+    `watchdogStopOnce` pattern already used inside it. This makes "call `Stop()`
+    more than once, even concurrently" an actual invariant rather than a
+    coincidence of `os.Exit(0)` timing, so a future refactor (e.g. removing that
+    `os.Exit`, or a shutdown path that returns normally while a SIGINT also
+    arrives) can no longer double-close a channel or double-invoke shutdown on
+    a subsystem. Added `TestRobotSystem_Stop_IsIdempotent`, which calls `Stop()`
+    twice sequentially and then 20 times concurrently and fails (panics) without
+    the fix.
 
 16. **`AStarConfig.GridWidth`/`GridHeight` are metres, not cell counts, despite the name.**
     `internal/planning/astar.go` — `gridWidth := int(GridWidth / Resolution)`. With

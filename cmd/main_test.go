@@ -3,6 +3,7 @@
 package main
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
@@ -179,4 +180,33 @@ func TestDemoModeNeverUsesTheRealCalibrationFile(t *testing.T) {
 	if real.cameraDisplayName() != "" {
 		t.Errorf("no camera configured should give an empty name, got %q", real.cameraDisplayName())
 	}
+}
+
+// TestRobotSystem_Stop_IsIdempotent guards against the double-Stop() panic
+// described in docs/code-review-2026-09-27.md #15: main() both defers a call
+// to Stop() and calls it from the SIGINT/SIGTERM handler goroutine, and only
+// the handler's os.Exit(0) happens to keep those from overlapping today. This
+// calls Stop() twice sequentially and many times concurrently, on a
+// RobotSystem with no subsystems wired up (as NewRobotSystem(nil) produces),
+// so any regression to an unconditional close()/Shutdown() in Stop() panics
+// the test instead of only showing up under real shutdown timing.
+func TestRobotSystem_Stop_IsIdempotent(t *testing.T) {
+	rs := NewRobotSystem(nil)
+	rs.watchdogStop = make(chan struct{})
+
+	rs.Stop()
+	rs.Stop() // must not panic (e.g. double close of watchdogStop)
+
+	rs = NewRobotSystem(nil)
+	rs.watchdogStop = make(chan struct{})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rs.Stop()
+		}()
+	}
+	wg.Wait()
 }

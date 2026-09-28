@@ -106,6 +106,7 @@ type RobotSystem struct {
 	watchdogOnce        sync.Once
 	watchdogStopOnce    sync.Once
 	watchdogStop        chan struct{}
+	stopOnce            sync.Once
 	perf                perfWindow
 	fg                  *foregroundGlue
 	lastCPUSeconds      float64
@@ -878,40 +879,49 @@ func (rs *RobotSystem) startFrameWatchdog() {
 	})
 }
 
+// Stop shuts the system down. It is safe to call more than once, and safe to
+// call concurrently: main() both defers a call and calls it from the SIGINT/
+// SIGTERM handler goroutine, and the handler's os.Exit(0) only coincidentally
+// prevents both from running today (see docs/code-review-2026-09-27.md #15).
+// stopOnce makes that safety an actual invariant rather than a side effect of
+// process-exit timing, so a future refactor (e.g. removing the os.Exit) can't
+// reintroduce a double-close panic.
 func (rs *RobotSystem) Stop() {
-	utils.Logf("Stopping system...")
-	rs.watchdogStopOnce.Do(func() {
-		if rs.watchdogStop != nil {
-			close(rs.watchdogStop)
+	rs.stopOnce.Do(func() {
+		utils.Logf("Stopping system...")
+		rs.watchdogStopOnce.Do(func() {
+			if rs.watchdogStop != nil {
+				close(rs.watchdogStop)
+			}
+		})
+		if rs.fg != nil {
+			// A final, blocking save so a clean shutdown never has to wait for
+			// the next periodic save to capture the current background. Done
+			// before anything stops producing frames, so it captures live state.
+			rs.fg.det.SaveNow()
 		}
+		rs.cameraRunning = false
+		if rs.cam != nil {
+			rs.cam.Stop()
+		}
+		if rs.fg != nil {
+			// Release the detector's OpenCV resources (previously never done on
+			// shutdown, leaking them). This comes after cameraRunning is false and
+			// the camera itself is stopped, so the frame loop is no longer calling
+			// into the detector by the time its Mats are closed.
+			rs.fg.det.Close()
+		}
+		if rs.commandQueue != nil {
+			rs.commandQueue.Stop()
+		}
+		if rs.arduino != nil {
+			_ = rs.arduino.Disconnect()
+		}
+		if rs.webServer != nil {
+			rs.webServer.Stop()
+		}
+		utils.Logf("System stopped")
 	})
-	if rs.fg != nil {
-		// A final, blocking save so a clean shutdown never has to wait for
-		// the next periodic save to capture the current background. Done
-		// before anything stops producing frames, so it captures live state.
-		rs.fg.det.SaveNow()
-	}
-	rs.cameraRunning = false
-	if rs.cam != nil {
-		rs.cam.Stop()
-	}
-	if rs.fg != nil {
-		// Release the detector's OpenCV resources (previously never done on
-		// shutdown, leaking them). This comes after cameraRunning is false and
-		// the camera itself is stopped, so the frame loop is no longer calling
-		// into the detector by the time its Mats are closed.
-		rs.fg.det.Close()
-	}
-	if rs.commandQueue != nil {
-		rs.commandQueue.Stop()
-	}
-	if rs.arduino != nil {
-		_ = rs.arduino.Disconnect()
-	}
-	if rs.webServer != nil {
-		rs.webServer.Stop()
-	}
-	utils.Logf("System stopped")
 }
 
 func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedDetection) []tracking.Detection {
