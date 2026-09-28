@@ -281,7 +281,7 @@ func (rs *RobotSystem) initDemoMode() {
 	rs.web.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
 
-	rs.web.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+	rs.web.webServer.Callbacks.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
 		utils.Debugf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planning.planner.SetObstacles(obstacles)
 
@@ -302,7 +302,7 @@ func (rs *RobotSystem) initDemoMode() {
 		utils.Debugf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
-	rs.web.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
 		utils.Logf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]))
 	}
@@ -540,7 +540,7 @@ func (rs *RobotSystem) initPathExecutor() {
 // fields. Each closure captures rs, so it always sees the RobotSystem's
 // current state at call time, not at registration time.
 func (rs *RobotSystem) registerWebServerCallbacks() {
-	rs.web.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+	rs.web.webServer.Callbacks.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
 		utils.Debugf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planning.planner.SetObstacles(obstacles)
 
@@ -561,7 +561,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		utils.Debugf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
-	rs.web.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
 		if rs.position.positionEst == nil || !rs.position.positionEst.IsCalibrated() {
 			utils.Logf("Cannot set destination: not calibrated")
 			return
@@ -574,7 +574,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
-	rs.web.webServer.OnDestinationClear = func(robotID int) {
+	rs.web.webServer.Callbacks.OnDestinationClear = func(robotID int) {
 		utils.Logf("Destination cleared for robot %d", robotID)
 		rs.planning.planner.CompletePath(robotID)
 		if rs.io.commandQueue != nil {
@@ -582,7 +582,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		}
 	}
 
-	rs.web.webServer.OnCalibrationComplete = func(calibFile string) {
+	rs.web.webServer.Callbacks.OnCalibrationComplete = func(calibFile string) {
 		utils.Logf("Calibration complete, reloading from %s", calibFile)
 		if rs.position.positionEst != nil {
 			if err := rs.position.positionEst.LoadCalibration(calibFile); err != nil {
@@ -598,7 +598,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		}
 	}
 
-	rs.web.webServer.OnPathsChanged = func() map[int][][2]float64 {
+	rs.web.webServer.Callbacks.OnPathsChanged = func() map[int][][2]float64 {
 		paths := rs.planning.planner.GetPathsWithGoals()
 		for rid, path := range paths {
 			utils.Debugf("  Robot %d: %d waypoints", rid, len(path))
@@ -610,7 +610,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		return paths
 	}
 
-	rs.web.webServer.OnCommand = func(cmdStr string) error {
+	rs.web.webServer.Callbacks.OnCommand = func(cmdStr string) error {
 		if rs.IsEmergencyStopped() {
 			return fmt.Errorf("emergency stop is active")
 		}
@@ -638,7 +638,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		return nil
 	}
 
-	rs.web.webServer.OnModeChange = func(mode string) error {
+	rs.web.webServer.Callbacks.OnModeChange = func(mode string) error {
 		if rs.IsEmergencyStopped() {
 			return fmt.Errorf("cannot change mode while emergency stop is active")
 		}
@@ -646,16 +646,16 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		return nil
 	}
 
-	rs.web.webServer.OnEmergencyStop = func() {
+	rs.web.webServer.Callbacks.OnEmergencyStop = func() {
 		rs.EmergencyStop()
 	}
 
-	rs.web.webServer.OnClearEmergencyStop = func() error {
+	rs.web.webServer.Callbacks.OnClearEmergencyStop = func() error {
 		rs.ClearEmergencyStop()
 		return nil
 	}
 
-	rs.web.webServer.OnGetControlState = func() (string, bool) {
+	rs.web.webServer.Callbacks.OnGetControlState = func() (string, bool) {
 		return rs.GetControlMode().String(), rs.IsEmergencyStopped()
 	}
 }

@@ -750,10 +750,49 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   wired together. No test changes — the existing `BearingToCommand` suite
   passes unchanged, which is the behavior-preservation check for this
   refactor. `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **`WebServer` struct centralizes 4 unrelated responsibilities**: HTTP router,
+- **[FIXED] `WebServer` struct centralizes 4 unrelated responsibilities**: HTTP router,
   broadcast hub, obstacle store (with its own persistence), and calibration-state
   store — plus 13 injected `On*` callback fields used as ad-hoc dependency
   injection, each silently no-op'ing if `Initialize()` forgot to wire it.
+  **Investigation:** confirmed, and understated on both counts. Not 4 but
+  6 independently-locked state clusters (router/lifecycle,
+  broadcast/websocket hub, obstacle store+persistence, calibration store +
+  detected-tags + position estimator + camera name, stats/telemetry +
+  Arduino-connected flag, and a destination store), each with its own
+  dedicated mutex and none sharing a lock across clusters — good news, since
+  it meant the clusters really were independent and didn't need any locking
+  redesigned to split. Not 13 but 16 callback fields (14 with an `On`
+  prefix, plus `ForegroundDebugJPEG`/`ForegroundState`), every one
+  individually nil-checked at its call site, confirming the "silently
+  no-op'ing" complaint exactly. Confirmed two pre-existing unlocked
+  cross-cutting reads (`cameraName`, read by both the calibration cluster
+  and the obstacle store's `GetObstaclesPath`; `positionEstimator`, set by
+  calibration and read by the hub's `BroadcastPaths`) — left as-is, since
+  fixing that lack of synchronization is a correctness change, not a
+  complexity one.
+  **Fix:** applied the same sub-struct pattern already proven on
+  `RobotSystem` (`cmd/robot_system_types.go`, see the god-file tech-debt fix
+  above): split the 6 state clusters into named unexported sub-struct types
+  (`webRouter`, `broadcastHub`, `obstacleStore`, `calibrationStore`,
+  `statsStore`, `destinationStore`) and the 16 callback fields into an
+  exported `WebServerCallbacks` struct, each with a doc comment naming its
+  responsibility; `WebServer` itself is now 7 fields (one per cluster plus
+  `Callbacks`) instead of ~35 flat fields, with a doc comment pointing at
+  each sub-struct. Every exported method kept its exact name and signature
+  — only internal field access changed (e.g. `s.obstaclesMutex` →
+  `s.obstacles.mutex`) — so no call site outside `internal/ui/webserver.go`
+  needed to change for the state-cluster split. The callback grouping does
+  reach outside the package, since those fields are set directly rather
+  than through setter methods: `cmd/main.go` (`registerWebServerCallbacks`,
+  `initDemoMode`) and `cmd/foreground_glue.go` (`initForeground`) now assign
+  through `webServer.Callbacks.OnXxx` instead of `webServer.OnXxx`, a
+  mechanical rename with no logic change. Two white-box tests
+  (`websocket_concurrency_test.go`, `websocket_liveness_test.go`) that
+  reached into the old flat fields directly (`server.clientMutex`,
+  `server.engine`, `server.wsPongWait`, etc.) were updated the same way.
+  No behavior change. `./scripts/build.sh` and `./scripts/test.sh --verbose`
+  pass, including the websocket concurrency/liveness regression tests
+  (findings #6 and #11) and `cmd/demo_autonomy_test.go` unchanged.
 - **`ui/src/composables/useCanvas.ts` is a 1264-line composable** mixing five
   concerns: rendering, a particle animation system, coordinate transforms,
   click/hit-testing, and its own `requestAnimationFrame`/`ResizeObserver`

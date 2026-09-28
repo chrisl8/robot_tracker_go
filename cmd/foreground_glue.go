@@ -137,30 +137,30 @@ func (rs *RobotSystem) initForeground() {
 		}
 	}
 
-	rs.web.webServer.OnForegroundEnabled = func(on bool) {
+	rs.web.webServer.Callbacks.OnForegroundEnabled = func(on bool) {
 		g.enabled.Store(on)
 		if on {
 			g.requestReset()
 		}
 		utils.Logf("Foreground obstacle detection %s", map[bool]string{true: "enabled", false: "disabled"}[on])
 	}
-	rs.web.webServer.OnForegroundApply = func(on bool) {
+	rs.web.webServer.Callbacks.OnForegroundApply = func(on bool) {
 		g.apply.Store(on)
 		utils.Logf("Foreground obstacles steer the planner: %v", on)
 	}
-	rs.web.webServer.OnForegroundReset = func() {
+	rs.web.webServer.Callbacks.OnForegroundReset = func() {
 		g.requestReset()
 		utils.Logf("Foreground background reset requested")
 	}
-	rs.web.webServer.OnForegroundAbsorb = func(x, y int) {
+	rs.web.webServer.Callbacks.OnForegroundAbsorb = func(x, y int) {
 		g.requestAbsorb(x, y)
 		utils.Logf("Foreground absorb requested at pixel (%d,%d)", x, y)
 	}
-	rs.web.webServer.ForegroundDebugJPEG = func() []byte {
+	rs.web.webServer.Callbacks.ForegroundDebugJPEG = func() []byte {
 		g.det.RequestDebug()
 		return g.det.DebugJPEG()
 	}
-	rs.web.webServer.ForegroundState = g.snapshotState
+	rs.web.webServer.Callbacks.ForegroundState = g.snapshotState
 }
 
 // drainCommands applies pending reset/absorb requests to the temporal filter.

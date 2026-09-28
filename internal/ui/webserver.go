@@ -31,49 +31,119 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// WebServer serves the HTTP API, MJPEG stream, and WebSocket overlay feed,
+// and holds several independently-locked pieces of application state that
+// the HTTP handlers read and write. Each state cluster gets its own
+// sub-struct (and its own mutex, unchanged from before this split) rather
+// than living as a flat list of fields, since a newcomer reading "does the
+// obstacle store share a lock with calibration?" should be able to answer
+// that from the struct definition alone:
+//
+//   - router: HTTP/WS/MJPEG server lifecycle (addr, engine, listener).
+//   - hub: the broadcast/WebSocket client registry (see BroadcastOverlay).
+//   - obstacles: the user-placed obstacle list and its file persistence.
+//   - calibration: calibration status, detected AprilTags during
+//     calibration, the camera name, and the position estimator used to
+//     convert pixel obstacle corners to world coordinates.
+//   - stats: FPS/track-count/memory telemetry and the Arduino-connected flag.
+//   - destination: the single pending click-to-drive destination.
+//   - Callbacks: every app-supplied hook (see WebServerCallbacks) — the
+//     seam between this package's HTTP layer and cmd's application logic.
+//
+// Two fields cross these boundaries and are read without the "owning"
+// cluster's lock, exactly as before this split (not introduced by it):
+// calibration.cameraName is also read by the obstacle store's
+// GetObstaclesPath, and calibration.positionEstimator is also read by the
+// hub's BroadcastPaths. Fixing that pre-existing lack of synchronization is
+// a correctness change, out of scope here — see
+// docs/code-review-2026-09-27.md.
 type WebServer struct {
-	addr          string
-	engine        *gin.Engine
-	stream        *mjpegStream
-	clients       map[*websocket.Conn]*sync.Mutex
-	clientMutex   sync.RWMutex
-	isRunning     bool
-	httpServer    *http.Server
-	httpServerMu  sync.Mutex
-	wsPongWait    time.Duration
-	wsPingPeriod  time.Duration
-	wsWriteWait   time.Duration
-	lastTagCount  int
-	lastFPS       float64
-	lastUptimeSec float64
-	lastHostMemMB float64
-	statsMutex    sync.RWMutex
+	router      webRouter
+	hub         broadcastHub
+	obstacles   obstacleStore
+	calibration calibrationStore
+	stats       statsStore
+	destination destinationStore
+	Callbacks   WebServerCallbacks
+}
 
-	calibrationMutex    sync.RWMutex
-	calibrationState    string
-	calibrationMessage  string
-	calibrationFilename string
-	calibrationTagSize  float64
-	cameraName          string
+// webRouter owns the HTTP/WS/MJPEG server's lifecycle: the gin engine, the
+// MJPEG snapshot stream, and the *http.Server started by Start/stopped by Stop.
+type webRouter struct {
+	addr         string
+	engine       *gin.Engine
+	stream       *mjpegStream
+	isRunning    bool
+	httpServer   *http.Server
+	httpServerMu sync.Mutex
+	wsPongWait   time.Duration
+	wsPingPeriod time.Duration
+	wsWriteWait  time.Duration
+}
 
-	arduinoConnected bool
-	arduinoMutex     sync.RWMutex
+// broadcastHub is the registry of connected WebSocket clients that
+// BroadcastOverlay fans messages out to.
+type broadcastHub struct {
+	clients     map[*websocket.Conn]*sync.Mutex
+	clientMutex sync.RWMutex
+}
 
+// obstacleStore holds the user-placed obstacle list and its on-disk path,
+// independent of everything else WebServer tracks.
+type obstacleStore struct {
+	mutex sync.RWMutex
+	list  []planning.Obstacle
+	saved bool
+	path  string
+}
+
+// calibrationStore holds calibration status/progress, the AprilTags
+// detected while the calibration wizard is open, the camera's name, and the
+// position estimator calibration produces — grouped together since
+// calibration is what populates and consumes all of them.
+type calibrationStore struct {
+	mutex      sync.RWMutex
+	state      string
+	message    string
+	filename   string
+	tagSize    float64
+	cameraName string
+
+	detectedTagsMut sync.RWMutex
 	detectedTags    []DetectedTagInfo
 	detectedFrameW  int
 	detectedFrameH  int
 	lastTagPoll     time.Time
-	detectedTagsMut sync.RWMutex
 	lastTagUpdate   time.Time
 
-	obstaclesMutex sync.RWMutex
-	obstacles      []planning.Obstacle
-	obstaclesSaved bool
-	obstaclesPath  string
+	positionEstimator *position.PositionEstimator
+}
 
-	destinationMutex sync.RWMutex
-	destination      DestinationMessage
+// statsStore holds telemetry pushed by the frame loop (FPS, track count,
+// memory) and the Arduino-connected flag shown alongside it.
+type statsStore struct {
+	mutex         sync.RWMutex
+	lastTagCount  int
+	lastFPS       float64
+	lastUptimeSec float64
+	lastHostMemMB float64
 
+	arduinoMutex     sync.RWMutex
+	arduinoConnected bool
+}
+
+// destinationStore holds the single pending click-to-drive destination.
+type destinationStore struct {
+	mutex   sync.RWMutex
+	current DestinationMessage
+}
+
+// WebServerCallbacks are the app-supplied hooks WebServer calls into for
+// side effects it doesn't own (persistence, hardware control, planning).
+// Every field is optional: WebServer nil-checks each one before calling it,
+// so a hook the app never wires (e.g. every foreground/control hook in demo
+// mode — see cmd/main.go's initDemoMode) is a documented no-op, not a bug.
+type WebServerCallbacks struct {
 	OnObstaclesChanged func([]planning.Obstacle)
 
 	// Foreground (temporary obstacle) detector controls, set by the app.
@@ -92,8 +162,7 @@ type WebServer struct {
 	OnClearEmergencyStop  func() error
 	OnGetControlState     func() (string, bool)
 
-	OnPathsChanged    func() map[int][][2]float64
-	positionEstimator *position.PositionEstimator
+	OnPathsChanged func() map[int][][2]float64
 }
 
 type OverlayMessage struct {
@@ -262,14 +331,18 @@ func NewWebServer(addr string) *WebServer {
 	engine.Use(corsMiddleware())
 
 	server := &WebServer{
-		addr:         addr,
-		engine:       engine,
-		stream:       newMJPEGStream(),
-		clients:      make(map[*websocket.Conn]*sync.Mutex),
-		isRunning:    false,
-		wsPongWait:   defaultWSPongWait,
-		wsPingPeriod: defaultWSPingPeriod,
-		wsWriteWait:  defaultWSWriteWait,
+		router: webRouter{
+			addr:         addr,
+			engine:       engine,
+			stream:       newMJPEGStream(),
+			isRunning:    false,
+			wsPongWait:   defaultWSPongWait,
+			wsPingPeriod: defaultWSPingPeriod,
+			wsWriteWait:  defaultWSWriteWait,
+		},
+		hub: broadcastHub{
+			clients: make(map[*websocket.Conn]*sync.Mutex),
+		},
 	}
 
 	server.setupRoutes()
@@ -294,37 +367,37 @@ func (s *WebServer) setupRoutes() {
 	if err != nil {
 		utils.Logf("Warning: Failed to create static FS sub-directory: %v", err)
 	} else {
-		s.engine.GET("/assets/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
-		s.engine.GET("/calibration-tags/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
+		s.router.engine.GET("/assets/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
+		s.router.engine.GET("/calibration-tags/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
 	}
-	s.engine.GET("/", s.handleIndex)
-	s.engine.GET("/stream", s.handleMJPEG)
-	s.engine.GET("/ws", s.handleWebSocket)
-	s.engine.POST("/api/command", s.handleCommand)
-	s.engine.POST("/api/destination", s.handleDestination)
-	s.engine.DELETE("/api/destination", s.handleDestinationClear)
-	s.engine.GET("/api/status", s.handleStatus)
-	s.engine.GET("/api/obstacles", s.handleObstaclesList)
-	s.engine.POST("/api/obstacles", s.handleObstacleAdd)
-	s.engine.DELETE("/api/obstacles/:id", s.handleObstacleDelete)
-	s.engine.PUT("/api/obstacles/:id", s.handleObstacleUpdate)
-	s.engine.POST("/api/obstacles/clear", s.handleObstaclesClear)
-	s.engine.POST("/api/obstacles/save", s.handleObstaclesSave)
-	s.engine.GET("/api/calibration/status", s.handleCalibrationStatus)
-	s.engine.POST("/api/calibration/start", s.handleCalibrationStart)
-	s.engine.GET("/api/calibration/detected-tags", s.handleCalibrationDetectedTags)
-	s.engine.POST("/api/calibration/compute", s.handleCalibrationCompute)
-	s.engine.POST("/api/calibration/cancel", s.handleCalibrationCancel)
-	s.engine.GET("/api/foreground/state", s.handleForegroundState)
-	s.engine.POST("/api/foreground/enabled", s.handleForegroundEnabled)
-	s.engine.POST("/api/foreground/apply", s.handleForegroundApply)
-	s.engine.POST("/api/foreground/reset", s.handleForegroundReset)
-	s.engine.POST("/api/foreground/absorb", s.handleForegroundAbsorb)
-	s.engine.GET("/api/foreground/debug.jpg", s.handleForegroundDebug)
-	s.engine.POST("/api/mode", s.handleSetMode)
-	s.engine.POST("/api/emergency-stop", s.handleEmergencyStop)
-	s.engine.POST("/api/clear-emergency-stop", s.handleClearEmergencyStop)
-	s.engine.GET("/api/control-state", s.handleControlState)
+	s.router.engine.GET("/", s.handleIndex)
+	s.router.engine.GET("/stream", s.handleMJPEG)
+	s.router.engine.GET("/ws", s.handleWebSocket)
+	s.router.engine.POST("/api/command", s.handleCommand)
+	s.router.engine.POST("/api/destination", s.handleDestination)
+	s.router.engine.DELETE("/api/destination", s.handleDestinationClear)
+	s.router.engine.GET("/api/status", s.handleStatus)
+	s.router.engine.GET("/api/obstacles", s.handleObstaclesList)
+	s.router.engine.POST("/api/obstacles", s.handleObstacleAdd)
+	s.router.engine.DELETE("/api/obstacles/:id", s.handleObstacleDelete)
+	s.router.engine.PUT("/api/obstacles/:id", s.handleObstacleUpdate)
+	s.router.engine.POST("/api/obstacles/clear", s.handleObstaclesClear)
+	s.router.engine.POST("/api/obstacles/save", s.handleObstaclesSave)
+	s.router.engine.GET("/api/calibration/status", s.handleCalibrationStatus)
+	s.router.engine.POST("/api/calibration/start", s.handleCalibrationStart)
+	s.router.engine.GET("/api/calibration/detected-tags", s.handleCalibrationDetectedTags)
+	s.router.engine.POST("/api/calibration/compute", s.handleCalibrationCompute)
+	s.router.engine.POST("/api/calibration/cancel", s.handleCalibrationCancel)
+	s.router.engine.GET("/api/foreground/state", s.handleForegroundState)
+	s.router.engine.POST("/api/foreground/enabled", s.handleForegroundEnabled)
+	s.router.engine.POST("/api/foreground/apply", s.handleForegroundApply)
+	s.router.engine.POST("/api/foreground/reset", s.handleForegroundReset)
+	s.router.engine.POST("/api/foreground/absorb", s.handleForegroundAbsorb)
+	s.router.engine.GET("/api/foreground/debug.jpg", s.handleForegroundDebug)
+	s.router.engine.POST("/api/mode", s.handleSetMode)
+	s.router.engine.POST("/api/emergency-stop", s.handleEmergencyStop)
+	s.router.engine.POST("/api/clear-emergency-stop", s.handleClearEmergencyStop)
+	s.router.engine.GET("/api/control-state", s.handleControlState)
 }
 
 func (s *WebServer) handleIndex(c *gin.Context) {
@@ -340,7 +413,7 @@ func (s *WebServer) handleIndex(c *gin.Context) {
 }
 
 func (s *WebServer) handleMJPEG(c *gin.Context) {
-	s.stream.serveHTTP(c.Writer, c.Request)
+	s.router.stream.serveHTTP(c.Writer, c.Request)
 }
 
 func (s *WebServer) handleWebSocket(c *gin.Context) {
@@ -352,20 +425,20 @@ func (s *WebServer) handleWebSocket(c *gin.Context) {
 	// A client that vanishes without a clean TCP close (sleep, NAT timeout,
 	// pulled network cable) never makes ReadMessage return an error on its
 	// own — without a deadline it just blocks forever, leaking this
-	// connection's goroutine and its s.clients entry, while BroadcastOverlay
+	// connection's goroutine and its s.hub.clients entry, while BroadcastOverlay
 	// keeps trying to write to it every frame. SetReadDeadline plus a pong
 	// handler that renews it turns silence into a timeout error, and
 	// wsPinger below is what solicits those pongs.
 	conn.SetReadLimit(wsMaxMessageSize)
-	_ = conn.SetReadDeadline(time.Now().Add(s.wsPongWait))
+	_ = conn.SetReadDeadline(time.Now().Add(s.router.wsPongWait))
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(s.wsPongWait))
+		return conn.SetReadDeadline(time.Now().Add(s.router.wsPongWait))
 	})
 
 	mu := &sync.Mutex{}
-	s.clientMutex.Lock()
-	s.clients[conn] = mu
-	s.clientMutex.Unlock()
+	s.hub.clientMutex.Lock()
+	s.hub.clients[conn] = mu
+	s.hub.clientMutex.Unlock()
 
 	go s.wsReader(conn)
 	go s.wsPinger(conn, mu)
@@ -374,9 +447,9 @@ func (s *WebServer) handleWebSocket(c *gin.Context) {
 func (s *WebServer) wsReader(conn *websocket.Conn) {
 	defer func() {
 		_ = conn.Close()
-		s.clientMutex.Lock()
-		delete(s.clients, conn)
-		s.clientMutex.Unlock()
+		s.hub.clientMutex.Lock()
+		delete(s.hub.clients, conn)
+		s.hub.clientMutex.Unlock()
 	}()
 
 	for {
@@ -396,27 +469,27 @@ func (s *WebServer) wsReader(conn *websocket.Conn) {
 // expiring on an otherwise-idle-but-alive client. It shares mu with
 // BroadcastOverlay so writes to this connection are never interleaved
 // (gorilla/websocket panics if two goroutines write to the same connection
-// concurrently), and it exits once wsReader has removed conn from s.clients.
+// concurrently), and it exits once wsReader has removed conn from s.hub.clients.
 func (s *WebServer) wsPinger(conn *websocket.Conn, mu *sync.Mutex) {
-	ticker := time.NewTicker(s.wsPingPeriod)
+	ticker := time.NewTicker(s.router.wsPingPeriod)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s.clientMutex.RLock()
-		_, stillConnected := s.clients[conn]
-		s.clientMutex.RUnlock()
+		s.hub.clientMutex.RLock()
+		_, stillConnected := s.hub.clients[conn]
+		s.hub.clientMutex.RUnlock()
 		if !stillConnected {
 			return
 		}
 
 		mu.Lock()
-		_ = conn.SetWriteDeadline(time.Now().Add(s.wsWriteWait))
+		_ = conn.SetWriteDeadline(time.Now().Add(s.router.wsWriteWait))
 		err := conn.WriteMessage(websocket.PingMessage, nil)
 		mu.Unlock()
 		if err != nil {
 			// The write failed (or blocked past its deadline); close so
 			// wsReader's blocked ReadMessage unblocks with an error and
-			// cleans up s.clients.
+			// cleans up s.hub.clients.
 			_ = conn.Close()
 			return
 		}
@@ -437,22 +510,22 @@ func (s *WebServer) broadcastCommand(cmd string) {
 // concurrently), so each connection's writes are serialized with its own
 // mutex while the client list itself is only read-locked.
 func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
-	s.clientMutex.RLock()
-	clients := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
-	for conn, mu := range s.clients {
+	s.hub.clientMutex.RLock()
+	clients := make(map[*websocket.Conn]*sync.Mutex, len(s.hub.clients))
+	for conn, mu := range s.hub.clients {
 		clients[conn] = mu
 	}
-	s.clientMutex.RUnlock()
+	s.hub.clientMutex.RUnlock()
 
 	for conn, mu := range clients {
 		mu.Lock()
-		_ = conn.SetWriteDeadline(time.Now().Add(s.wsWriteWait))
+		_ = conn.SetWriteDeadline(time.Now().Add(s.router.wsWriteWait))
 		err := conn.WriteJSON(msg)
 		mu.Unlock()
 		if err != nil {
 			// Don't leave a connection that just failed to write sitting
 			// around until the next ping cycle notices it's dead — close it
-			// now so wsReader unblocks and cleans up s.clients.
+			// now so wsReader unblocks and cleans up s.hub.clients.
 			_ = conn.Close()
 		}
 	}
@@ -469,8 +542,8 @@ func (s *WebServer) BroadcastTempObstacles(msg TempObstaclesMessage) {
 
 func (s *WebServer) handleForegroundState(c *gin.Context) {
 	state := ForegroundState{}
-	if s.ForegroundState != nil {
-		state = s.ForegroundState()
+	if s.Callbacks.ForegroundState != nil {
+		state = s.Callbacks.ForegroundState()
 	}
 	c.JSON(http.StatusOK, state)
 }
@@ -483,8 +556,8 @@ func (s *WebServer) handleForegroundEnabled(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"enabled\": true|false}"})
 		return
 	}
-	if s.OnForegroundEnabled != nil {
-		s.OnForegroundEnabled(*req.Enabled)
+	if s.Callbacks.OnForegroundEnabled != nil {
+		s.Callbacks.OnForegroundEnabled(*req.Enabled)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "enabled": *req.Enabled})
 }
@@ -497,15 +570,15 @@ func (s *WebServer) handleForegroundApply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"apply\": true|false}"})
 		return
 	}
-	if s.OnForegroundApply != nil {
-		s.OnForegroundApply(*req.Apply)
+	if s.Callbacks.OnForegroundApply != nil {
+		s.Callbacks.OnForegroundApply(*req.Apply)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "apply": *req.Apply})
 }
 
 func (s *WebServer) handleForegroundReset(c *gin.Context) {
-	if s.OnForegroundReset != nil {
-		s.OnForegroundReset()
+	if s.Callbacks.OnForegroundReset != nil {
+		s.Callbacks.OnForegroundReset()
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
@@ -519,8 +592,8 @@ func (s *WebServer) handleForegroundAbsorb(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be {\"x\": number, \"y\": number}"})
 		return
 	}
-	if s.OnForegroundAbsorb != nil {
-		s.OnForegroundAbsorb(int(*req.X), int(*req.Y))
+	if s.Callbacks.OnForegroundAbsorb != nil {
+		s.Callbacks.OnForegroundAbsorb(int(*req.X), int(*req.Y))
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
@@ -529,8 +602,8 @@ func (s *WebServer) handleForegroundAbsorb(c *gin.Context) {
 // the detector render it for the next couple of seconds.
 func (s *WebServer) handleForegroundDebug(c *gin.Context) {
 	var jpeg []byte
-	if s.ForegroundDebugJPEG != nil {
-		jpeg = s.ForegroundDebugJPEG()
+	if s.Callbacks.ForegroundDebugJPEG != nil {
+		jpeg = s.Callbacks.ForegroundDebugJPEG()
 	}
 	if len(jpeg) == 0 {
 		c.Status(http.StatusNoContent)
@@ -541,11 +614,11 @@ func (s *WebServer) handleForegroundDebug(c *gin.Context) {
 }
 
 func (s *WebServer) BroadcastObstacles() {
-	s.obstaclesMutex.RLock()
-	defer s.obstaclesMutex.RUnlock()
+	s.obstacles.mutex.RLock()
+	defer s.obstacles.mutex.RUnlock()
 
-	obstacles := make([]ObstacleResponse, 0, len(s.obstacles))
-	for _, obs := range s.obstacles {
+	obstacles := make([]ObstacleResponse, 0, len(s.obstacles.list))
+	for _, obs := range s.obstacles.list {
 		obstacles = append(obstacles, ObstacleResponse{
 			ID:               obs.Name,
 			Name:             obs.Name,
@@ -568,18 +641,18 @@ func (s *WebServer) BroadcastObstacles() {
 
 // notifyObstaclesChanged broadcasts the current obstacle list to WebSocket
 // clients and, if OnObstaclesChanged is set, invokes it with a locked
-// snapshot of s.obstacles. Callers must call this only after releasing
+// snapshot of s.obstacles.list. Callers must call this only after releasing
 // obstaclesMutex: BroadcastObstacles takes its own RLock (so calling this
 // while still holding the write lock would deadlock), and OnObstaclesChanged
 // is arbitrary application code that must not run while any lock is held.
 func (s *WebServer) notifyObstaclesChanged() {
 	s.BroadcastObstacles()
 
-	if s.OnObstaclesChanged != nil {
-		s.obstaclesMutex.RLock()
-		obstacles := s.obstacles
-		s.obstaclesMutex.RUnlock()
-		s.OnObstaclesChanged(obstacles)
+	if s.Callbacks.OnObstaclesChanged != nil {
+		s.obstacles.mutex.RLock()
+		obstacles := s.obstacles.list
+		s.obstacles.mutex.RUnlock()
+		s.Callbacks.OnObstaclesChanged(obstacles)
 	}
 }
 
@@ -639,8 +712,8 @@ func (s *WebServer) handleCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if s.OnCommand != nil {
-		if err := s.OnCommand(req.Command); err != nil {
+	if s.Callbacks.OnCommand != nil {
+		if err := s.Callbacks.OnCommand(req.Command); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
@@ -655,9 +728,9 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		return
 	}
 
-	s.obstaclesMutex.RLock()
-	obstacles := s.obstacles
-	s.obstaclesMutex.RUnlock()
+	s.obstacles.mutex.RLock()
+	obstacles := s.obstacles.list
+	s.obstacles.mutex.RUnlock()
 
 	if len(obstacles) > 0 {
 		destX := float64(req.X)
@@ -677,31 +750,31 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		}
 	}
 
-	s.destinationMutex.Lock()
-	s.destination = DestinationMessage{
+	s.destination.mutex.Lock()
+	s.destination.current = DestinationMessage{
 		RobotID: req.RobotID,
 		X:       req.X,
 		Y:       req.Y,
 		Valid:   true,
 	}
-	s.destinationMutex.Unlock()
+	s.destination.mutex.Unlock()
 
-	if s.OnDestinationSet != nil {
-		s.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)})
+	if s.Callbacks.OnDestinationSet != nil {
+		s.Callbacks.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)})
 	}
 
 	s.BroadcastOverlay(OverlayMessage{
 		Type:        "destination",
-		Destination: &s.destination,
+		Destination: &s.destination.current,
 	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": req})
 }
 
 func (s *WebServer) ClearDestination(robotID int) {
-	s.destinationMutex.Lock()
-	s.destination = DestinationMessage{Valid: false}
-	s.destinationMutex.Unlock()
+	s.destination.mutex.Lock()
+	s.destination.current = DestinationMessage{Valid: false}
+	s.destination.mutex.Unlock()
 
 	cleared := DestinationMessage{RobotID: robotID, Valid: false}
 	s.BroadcastOverlay(OverlayMessage{
@@ -721,24 +794,24 @@ func (s *WebServer) handleDestinationClear(c *gin.Context) {
 
 	s.ClearDestination(req.RobotID)
 
-	if s.OnDestinationClear != nil {
-		s.OnDestinationClear(req.RobotID)
+	if s.Callbacks.OnDestinationClear != nil {
+		s.Callbacks.OnDestinationClear(req.RobotID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "robot_id": req.RobotID})
 }
 
 func (s *WebServer) handleStatus(c *gin.Context) {
-	s.statsMutex.RLock()
-	tagCount := s.lastTagCount
-	fps := s.lastFPS
-	uptimeSec := s.lastUptimeSec
-	hostMemMB := s.lastHostMemMB
-	s.statsMutex.RUnlock()
+	s.stats.mutex.RLock()
+	tagCount := s.stats.lastTagCount
+	fps := s.stats.lastFPS
+	uptimeSec := s.stats.lastUptimeSec
+	hostMemMB := s.stats.lastHostMemMB
+	s.stats.mutex.RUnlock()
 
-	s.arduinoMutex.RLock()
-	connected := s.arduinoConnected
-	s.arduinoMutex.RUnlock()
+	s.stats.arduinoMutex.RLock()
+	connected := s.stats.arduinoConnected
+	s.stats.arduinoMutex.RUnlock()
 
 	state := "Disconnected"
 	if connected {
@@ -746,7 +819,7 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"connected":    s.isRunning,
+		"connected":    s.router.isRunning,
 		"fps":          fps,
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
@@ -757,16 +830,16 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 }
 
 func (s *WebServer) SetCameraName(name string) {
-	s.cameraName = name
+	s.calibration.cameraName = name
 }
 
 func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize float64) {
-	s.calibrationMutex.Lock()
-	s.calibrationState = state
-	s.calibrationMessage = message
-	s.calibrationFilename = filename
-	s.calibrationTagSize = tagSize
-	s.calibrationMutex.Unlock()
+	s.calibration.mutex.Lock()
+	s.calibration.state = state
+	s.calibration.message = message
+	s.calibration.filename = filename
+	s.calibration.tagSize = tagSize
+	s.calibration.mutex.Unlock()
 
 	s.BroadcastOverlay(OverlayMessage{
 		Type: "calibration",
@@ -780,13 +853,13 @@ func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize
 }
 
 func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
-	s.positionEstimator = pe
+	s.calibration.positionEstimator = pe
 }
 
 func (s *WebServer) pixelCornersToWorld(pixelTL, pixelBR [2]int) ([2]float64, [2]float64) {
-	if s.positionEstimator != nil && s.positionEstimator.IsCalibrated() {
-		wTL := s.positionEstimator.PixelToWorld(pixelTL[0], pixelTL[1])
-		wBR := s.positionEstimator.PixelToWorld(pixelBR[0], pixelBR[1])
+	if s.calibration.positionEstimator != nil && s.calibration.positionEstimator.IsCalibrated() {
+		wTL := s.calibration.positionEstimator.PixelToWorld(pixelTL[0], pixelTL[1])
+		wBR := s.calibration.positionEstimator.PixelToWorld(pixelBR[0], pixelBR[1])
 		worldTL := [2]float64{wTL.X, wTL.Y}
 		worldBR := [2]float64{wBR.X, wBR.Y}
 		// Normalize so TopLeft has min coords and BottomRight has max coords
@@ -804,16 +877,16 @@ func (s *WebServer) pixelCornersToWorld(pixelTL, pixelBR [2]int) ([2]float64, [2
 }
 
 func (s *WebServer) BroadcastPaths() {
-	if s.OnPathsChanged == nil {
+	if s.Callbacks.OnPathsChanged == nil {
 		utils.Debugf("BroadcastPaths: OnPathsChanged is nil, skipping")
 		return
 	}
-	if s.positionEstimator == nil {
+	if s.calibration.positionEstimator == nil {
 		utils.Debugf("BroadcastPaths: positionEstimator is nil, skipping")
 		return
 	}
 
-	paths := s.OnPathsChanged()
+	paths := s.Callbacks.OnPathsChanged()
 	if len(paths) == 0 {
 		s.BroadcastOverlay(OverlayMessage{
 			Type:  "paths",
@@ -831,7 +904,7 @@ func (s *WebServer) BroadcastPaths() {
 
 		pixels := make([][2]int, len(path))
 		for i, wp := range path {
-			px, py := s.positionEstimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
+			px, py := s.calibration.positionEstimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
 			pixels[i] = [2]int{px, py}
 		}
 
@@ -860,12 +933,12 @@ type CalibrationStatusMessage struct {
 }
 
 func (s *WebServer) handleCalibrationStatus(c *gin.Context) {
-	s.calibrationMutex.RLock()
-	state := s.calibrationState
-	message := s.calibrationMessage
-	filename := s.calibrationFilename
-	tagSize := s.calibrationTagSize
-	s.calibrationMutex.RUnlock()
+	s.calibration.mutex.RLock()
+	state := s.calibration.state
+	message := s.calibration.message
+	filename := s.calibration.filename
+	tagSize := s.calibration.tagSize
+	s.calibration.mutex.RUnlock()
 
 	resp := gin.H{
 		"state":              state,
@@ -874,7 +947,7 @@ func (s *WebServer) handleCalibrationStatus(c *gin.Context) {
 		"tagSize":            tagSize,
 		"resolutionMismatch": false,
 	}
-	if pe := s.positionEstimator; pe != nil {
+	if pe := s.calibration.positionEstimator; pe != nil {
 		resp["resolutionMismatch"] = pe.ResolutionMismatch()
 		if w, h, ok := pe.CalibratedResolution(); ok {
 			resp["calibratedResolution"] = [2]int{w, h}
@@ -918,12 +991,12 @@ type CalibrationDetectedTagsResponse struct {
 }
 
 func (s *WebServer) UpdateDetectedTags(tags []DetectedTagInfo, frameWidth, frameHeight int) {
-	s.detectedTagsMut.Lock()
-	s.detectedTags = tags
-	s.detectedFrameW = frameWidth
-	s.detectedFrameH = frameHeight
-	s.lastTagUpdate = time.Now()
-	s.detectedTagsMut.Unlock()
+	s.calibration.detectedTagsMut.Lock()
+	s.calibration.detectedTags = tags
+	s.calibration.detectedFrameW = frameWidth
+	s.calibration.detectedFrameH = frameHeight
+	s.calibration.lastTagUpdate = time.Now()
+	s.calibration.detectedTagsMut.Unlock()
 }
 
 // calibrationPollWindow is how recently the calibration wizard must have
@@ -935,23 +1008,23 @@ const calibrationPollWindow = 3 * time.Second
 // detection overlay so the user sees only the clean camera view. Deriving
 // this from polling means it clears itself if the browser goes away.
 func (s *WebServer) CalibrationViewActive() bool {
-	s.detectedTagsMut.RLock()
-	defer s.detectedTagsMut.RUnlock()
-	return !s.lastTagPoll.IsZero() && time.Since(s.lastTagPoll) < calibrationPollWindow
+	s.calibration.detectedTagsMut.RLock()
+	defer s.calibration.detectedTagsMut.RUnlock()
+	return !s.calibration.lastTagPoll.IsZero() && time.Since(s.calibration.lastTagPoll) < calibrationPollWindow
 }
 
 func (s *WebServer) handleCalibrationDetectedTags(c *gin.Context) {
-	s.detectedTagsMut.Lock()
-	s.lastTagPoll = time.Now()
-	s.detectedTagsMut.Unlock()
+	s.calibration.detectedTagsMut.Lock()
+	s.calibration.lastTagPoll = time.Now()
+	s.calibration.detectedTagsMut.Unlock()
 
-	s.detectedTagsMut.RLock()
-	tags := s.detectedTags
-	if time.Since(s.lastTagUpdate) > 2*time.Second {
+	s.calibration.detectedTagsMut.RLock()
+	tags := s.calibration.detectedTags
+	if time.Since(s.calibration.lastTagUpdate) > 2*time.Second {
 		tags = nil
 	}
-	width, height := s.detectedFrameW, s.detectedFrameH
-	s.detectedTagsMut.RUnlock()
+	width, height := s.calibration.detectedFrameW, s.calibration.detectedFrameH
+	s.calibration.detectedTagsMut.RUnlock()
 
 	if tags == nil {
 		tags = []DetectedTagInfo{}
@@ -1030,9 +1103,9 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 		return
 	}
 
-	s.detectedTagsMut.RLock()
-	frameW, frameH := s.detectedFrameW, s.detectedFrameH
-	s.detectedTagsMut.RUnlock()
+	s.calibration.detectedTagsMut.RLock()
+	frameW, frameH := s.calibration.detectedFrameW, s.calibration.detectedFrameH
+	s.calibration.detectedTagsMut.RUnlock()
 	if frameW <= 0 || frameH <= 0 {
 		c.JSON(http.StatusBadRequest, CalibrationComputeResponse{State: "error", Error: "no camera frame has been seen yet"})
 		return
@@ -1041,16 +1114,16 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 	utils.Logf("Homography fit: rms=%.2fcm max=%.2fcm quality=%.2fcm rating=%s H=%v",
 		fit.RMSCm, fit.MaxCm, fit.QualityCm, fit.Rating, fit.Homography.H)
 
-	cameraFile := GetCalibrationFilename(s.cameraName)
-	cfg := position.NewCalibrationConfig(s.cameraName, frameW, frameH, fit, time.Now())
+	cameraFile := GetCalibrationFilename(s.calibration.cameraName)
+	cfg := position.NewCalibrationConfig(s.calibration.cameraName, frameW, frameH, fit, time.Now())
 	if err := position.SaveCalibration(cameraFile, cfg); err != nil {
 		utils.Logf("Failed to save calibration: %v", err)
 		c.JSON(http.StatusInternalServerError, CalibrationComputeResponse{State: "error", Error: err.Error()})
 		return
 	}
 
-	if s.OnCalibrationComplete != nil {
-		s.OnCalibrationComplete(cameraFile)
+	if s.Callbacks.OnCalibrationComplete != nil {
+		s.Callbacks.OnCalibrationComplete(cameraFile)
 	}
 
 	message := fmt.Sprintf("Calibration saved: %.1f cm average error (%s).", fit.RMSCm, fit.Rating)
@@ -1128,15 +1201,15 @@ func sanitizeCameraName(name string) string {
 }
 
 func (s *WebServer) Start() {
-	s.isRunning = true
+	s.router.isRunning = true
 	srv := &http.Server{
-		Addr:              s.addr,
-		Handler:           s.engine,
+		Addr:              s.router.addr,
+		Handler:           s.router.engine,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	s.httpServerMu.Lock()
-	s.httpServer = srv
-	s.httpServerMu.Unlock()
+	s.router.httpServerMu.Lock()
+	s.router.httpServer = srv
+	s.router.httpServerMu.Unlock()
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			utils.Logf("HTTP server error: %v", err)
@@ -1148,10 +1221,10 @@ func (s *WebServer) Start() {
 // waiting up to 5s for in-flight requests (including open WebSocket/MJPEG
 // streams) to finish before forcing the listener closed.
 func (s *WebServer) Stop() {
-	s.isRunning = false
-	s.httpServerMu.Lock()
-	srv := s.httpServer
-	s.httpServerMu.Unlock()
+	s.router.isRunning = false
+	s.router.httpServerMu.Lock()
+	srv := s.router.httpServer
+	s.router.httpServerMu.Unlock()
 	if srv == nil {
 		return
 	}
@@ -1171,26 +1244,26 @@ func (s *WebServer) PushFrame(img image.Image) {
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
 		return
 	}
-	s.stream.updateJPEG(buf.Bytes())
+	s.router.stream.updateJPEG(buf.Bytes())
 }
 
 func (s *WebServer) PushRawJPEG(jpegData []byte) {
 	if len(jpegData) == 0 {
 		return
 	}
-	s.stream.updateJPEG(jpegData)
+	s.router.stream.updateJPEG(jpegData)
 }
 
 func (s *WebServer) UpdateStats(tagCount int) {
-	s.statsMutex.Lock()
-	s.lastTagCount = tagCount
-	s.statsMutex.Unlock()
+	s.stats.mutex.Lock()
+	s.stats.lastTagCount = tagCount
+	s.stats.mutex.Unlock()
 }
 
 func (s *WebServer) SetArduinoConnected(connected bool) {
-	s.arduinoMutex.Lock()
-	s.arduinoConnected = connected
-	s.arduinoMutex.Unlock()
+	s.stats.arduinoMutex.Lock()
+	s.stats.arduinoConnected = connected
+	s.stats.arduinoMutex.Unlock()
 }
 
 func (s *WebServer) BroadcastStatus(trackCount int, fps float64, uptimeSec float64) {
@@ -1205,9 +1278,9 @@ func (s *WebServer) BroadcastCameraStalled(uptimeSec, frameAgeSec float64) {
 }
 
 func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec float64, stalled bool) {
-	s.arduinoMutex.RLock()
-	connected := s.arduinoConnected
-	s.arduinoMutex.RUnlock()
+	s.stats.arduinoMutex.RLock()
+	connected := s.stats.arduinoConnected
+	s.stats.arduinoMutex.RUnlock()
 
 	state := "Disconnected"
 	if connected {
@@ -1218,16 +1291,16 @@ func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec 
 	runtime.ReadMemStats(&memStats)
 	hostMemMB := float64(memStats.Alloc) / 1024 / 1024
 
-	s.statsMutex.Lock()
-	s.lastFPS = fps
-	s.lastUptimeSec = uptimeSec
-	s.lastHostMemMB = hostMemMB
-	s.statsMutex.Unlock()
+	s.stats.mutex.Lock()
+	s.stats.lastFPS = fps
+	s.stats.lastUptimeSec = uptimeSec
+	s.stats.lastHostMemMB = hostMemMB
+	s.stats.mutex.Unlock()
 
 	s.BroadcastOverlay(OverlayMessage{
 		Type: "status",
 		Status: &StatusMessage{
-			Connected:    s.isRunning,
+			Connected:    s.router.isRunning,
 			FPS:          fps,
 			RobotCount:   trackCount,
 			ArduinoState: state,
@@ -1246,22 +1319,22 @@ func (s *WebServer) handleCalibrationCancel(c *gin.Context) {
 }
 
 func (s *WebServer) GetObstaclesPath() string {
-	return ResolveObstaclesPath(s.obstaclesPath, s.cameraName)
+	return ResolveObstaclesPath(s.obstacles.path, s.calibration.cameraName)
 }
 
 // SetObstaclesPath sets the configured obstacles-file override (from
 // ObstaclesConfig.GetPath()) that GetObstaclesPath/ResolveObstaclesPath
 // consult before falling back to the per-camera default.
 func (s *WebServer) SetObstaclesPath(path string) {
-	s.obstaclesPath = path
+	s.obstacles.path = path
 }
 
 func (s *WebServer) handleObstaclesList(c *gin.Context) {
-	s.obstaclesMutex.RLock()
-	defer s.obstaclesMutex.RUnlock()
+	s.obstacles.mutex.RLock()
+	defer s.obstacles.mutex.RUnlock()
 
-	obstacles := make([]ObstacleResponse, 0, len(s.obstacles))
-	for _, obs := range s.obstacles {
+	obstacles := make([]ObstacleResponse, 0, len(s.obstacles.list))
+	for _, obs := range s.obstacles.list {
 		obstacles = append(obstacles, ObstacleResponse{
 			ID:               obs.Name,
 			Name:             obs.Name,
@@ -1276,7 +1349,7 @@ func (s *WebServer) handleObstaclesList(c *gin.Context) {
 	c.JSON(http.StatusOK, ObstaclesListResponse{
 		Obstacles: obstacles,
 		Count:     len(obstacles),
-		Saved:     s.obstaclesSaved,
+		Saved:     s.obstacles.saved,
 	})
 }
 
@@ -1287,11 +1360,11 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 		return
 	}
 
-	s.obstaclesMutex.Lock()
+	s.obstacles.mutex.Lock()
 
 	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
 
-	newObs := planning.NewRectObstacle(fmt.Sprintf("obstacle_%d", len(s.obstacles)+1), worldTL, worldBR)
+	newObs := planning.NewRectObstacle(fmt.Sprintf("obstacle_%d", len(s.obstacles.list)+1), worldTL, worldBR)
 	newObs.PixelsTopLeft = req.PixelTopLeft
 	newObs.PixelsBottomRight = req.PixelBottomRight
 
@@ -1299,33 +1372,33 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 		newObs.Name = req.Name
 	}
 
-	s.obstacles = append(s.obstacles, newObs)
-	s.obstaclesSaved = false
+	s.obstacles.list = append(s.obstacles.list, newObs)
+	s.obstacles.saved = false
 
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Unlock()
 	s.notifyObstaclesChanged()
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": len(s.obstacles)})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": len(s.obstacles.list)})
 }
 
 func (s *WebServer) handleObstacleDelete(c *gin.Context) {
 	id := c.Param("id")
 
-	s.obstaclesMutex.Lock()
+	s.obstacles.mutex.Lock()
 
-	newObs := make([]planning.Obstacle, 0, len(s.obstacles))
-	for _, obs := range s.obstacles {
+	newObs := make([]planning.Obstacle, 0, len(s.obstacles.list))
+	for _, obs := range s.obstacles.list {
 		if obs.Name != id {
 			newObs = append(newObs, obs)
 		}
 	}
-	s.obstacles = newObs
-	s.obstaclesSaved = false
+	s.obstacles.list = newObs
+	s.obstacles.saved = false
 
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Unlock()
 	s.notifyObstaclesChanged()
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": len(s.obstacles)})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": len(s.obstacles.list)})
 }
 
 func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
@@ -1336,34 +1409,34 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 		return
 	}
 
-	s.obstaclesMutex.Lock()
+	s.obstacles.mutex.Lock()
 
 	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
 
-	for i, obs := range s.obstacles {
+	for i, obs := range s.obstacles.list {
 		if obs.Name == id {
 			updated := planning.NewRectObstacle(id, worldTL, worldBR)
 			updated.PixelsTopLeft = req.PixelTopLeft
 			updated.PixelsBottomRight = req.PixelBottomRight
-			s.obstacles[i] = updated
+			s.obstacles.list[i] = updated
 			break
 		}
 	}
-	s.obstaclesSaved = false
+	s.obstacles.saved = false
 
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Unlock()
 	s.notifyObstaclesChanged()
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
 }
 
 func (s *WebServer) handleObstaclesClear(c *gin.Context) {
-	s.obstaclesMutex.Lock()
+	s.obstacles.mutex.Lock()
 
-	s.obstacles = make([]planning.Obstacle, 0)
-	s.obstaclesSaved = false
+	s.obstacles.list = make([]planning.Obstacle, 0)
+	s.obstacles.saved = false
 
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Unlock()
 	s.notifyObstaclesChanged()
 
 	// Persist cleared state to disk so obstacles don't return on restart
@@ -1379,17 +1452,17 @@ func (s *WebServer) handleObstaclesClear(c *gin.Context) {
 		return
 	}
 
-	s.obstaclesMutex.Lock()
-	s.obstaclesSaved = true
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Lock()
+	s.obstacles.saved = true
+	s.obstacles.mutex.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "count": 0})
 }
 
 func (s *WebServer) handleObstaclesSave(c *gin.Context) {
-	s.obstaclesMutex.RLock()
-	obstacles := s.obstacles
-	s.obstaclesMutex.RUnlock()
+	s.obstacles.mutex.RLock()
+	obstacles := s.obstacles.list
+	s.obstacles.mutex.RUnlock()
 
 	path := s.GetObstaclesPath()
 	dir := filepath.Dir(path)
@@ -1404,9 +1477,9 @@ func (s *WebServer) handleObstaclesSave(c *gin.Context) {
 		return
 	}
 
-	s.obstaclesMutex.Lock()
-	s.obstaclesSaved = true
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Lock()
+	s.obstacles.saved = true
+	s.obstacles.mutex.Unlock()
 
 	s.BroadcastObstacles()
 
@@ -1461,25 +1534,25 @@ func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstac
 }
 
 func (s *WebServer) GetObstacles() []planning.Obstacle {
-	s.obstaclesMutex.RLock()
-	defer s.obstaclesMutex.RUnlock()
-	return s.obstacles
+	s.obstacles.mutex.RLock()
+	defer s.obstacles.mutex.RUnlock()
+	return s.obstacles.list
 }
 
 func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
-	s.obstaclesMutex.Lock()
-	s.obstacles = obstacles
-	s.obstaclesMutex.Unlock()
+	s.obstacles.mutex.Lock()
+	s.obstacles.list = obstacles
+	s.obstacles.mutex.Unlock()
 
-	if s.OnObstaclesChanged != nil {
-		s.OnObstaclesChanged(obstacles)
+	if s.Callbacks.OnObstaclesChanged != nil {
+		s.Callbacks.OnObstaclesChanged(obstacles)
 	}
 }
 
 func (s *WebServer) GetAllObstacles() []planning.Obstacle {
-	s.obstaclesMutex.RLock()
-	defer s.obstaclesMutex.RUnlock()
-	return s.obstacles
+	s.obstacles.mutex.RLock()
+	defer s.obstacles.mutex.RUnlock()
+	return s.obstacles.list
 }
 
 type ModeRequest struct {
@@ -1501,8 +1574,8 @@ func (s *WebServer) handleSetMode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mode, must be hold/manual/autonomous"})
 		return
 	}
-	if s.OnModeChange != nil {
-		if err := s.OnModeChange(req.Mode); err != nil {
+	if s.Callbacks.OnModeChange != nil {
+		if err := s.Callbacks.OnModeChange(req.Mode); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
@@ -1511,15 +1584,15 @@ func (s *WebServer) handleSetMode(c *gin.Context) {
 }
 
 func (s *WebServer) handleEmergencyStop(c *gin.Context) {
-	if s.OnEmergencyStop != nil {
-		s.OnEmergencyStop()
+	if s.Callbacks.OnEmergencyStop != nil {
+		s.Callbacks.OnEmergencyStop()
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "emergency_stopped": true})
 }
 
 func (s *WebServer) handleClearEmergencyStop(c *gin.Context) {
-	if s.OnClearEmergencyStop != nil {
-		if err := s.OnClearEmergencyStop(); err != nil {
+	if s.Callbacks.OnClearEmergencyStop != nil {
+		if err := s.Callbacks.OnClearEmergencyStop(); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
@@ -1530,8 +1603,8 @@ func (s *WebServer) handleClearEmergencyStop(c *gin.Context) {
 func (s *WebServer) handleControlState(c *gin.Context) {
 	mode := "hold"
 	eStopped := false
-	if s.OnGetControlState != nil {
-		mode, eStopped = s.OnGetControlState()
+	if s.Callbacks.OnGetControlState != nil {
+		mode, eStopped = s.Callbacks.OnGetControlState()
 	}
 	c.JSON(http.StatusOK, ControlStateResponse{
 		Mode:             mode,

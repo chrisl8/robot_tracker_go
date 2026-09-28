@@ -21,7 +21,7 @@ import (
 // real client connections and fails if any of them panics.
 func TestBroadcastOverlay_ConcurrentCallersDoNotPanic(t *testing.T) {
 	server := NewWebServer(":0")
-	httpServer := httptest.NewServer(server.engine)
+	httpServer := httptest.NewServer(server.router.engine)
 	defer httpServer.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws"
@@ -47,9 +47,9 @@ func TestBroadcastOverlay_ConcurrentCallersDoNotPanic(t *testing.T) {
 	// Let the server register all the clients before hammering it.
 	deadline := time.Now().Add(time.Second)
 	for {
-		server.clientMutex.RLock()
-		n := len(server.clients)
-		server.clientMutex.RUnlock()
+		server.hub.clientMutex.RLock()
+		n := len(server.hub.clients)
+		server.hub.clientMutex.RUnlock()
 		if n == numClients || time.Now().After(deadline) {
 			break
 		}

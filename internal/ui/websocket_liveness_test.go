@@ -25,10 +25,10 @@ func TestWebServer_SilentlyDeadClientIsCleanedUp(t *testing.T) {
 	// Shrink this server's liveness timers so the test doesn't wait out real
 	// minute-scale timeouts. These are per-server fields (not shared package
 	// vars) specifically so this doesn't race another test's WebServer.
-	server.wsPongWait = 150 * time.Millisecond
-	server.wsPingPeriod = (server.wsPongWait * 9) / 10
-	server.wsWriteWait = 50 * time.Millisecond
-	httpServer := httptest.NewServer(server.engine)
+	server.router.wsPongWait = 150 * time.Millisecond
+	server.router.wsPingPeriod = (server.router.wsPongWait * 9) / 10
+	server.router.wsWriteWait = 50 * time.Millisecond
+	httpServer := httptest.NewServer(server.router.engine)
 	defer httpServer.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws"
@@ -44,9 +44,9 @@ func TestWebServer_SilentlyDeadClientIsCleanedUp(t *testing.T) {
 	// Wait for the server to register the connection.
 	deadline := time.Now().Add(time.Second)
 	for {
-		server.clientMutex.RLock()
-		n := len(server.clients)
-		server.clientMutex.RUnlock()
+		server.hub.clientMutex.RLock()
+		n := len(server.hub.clients)
+		server.hub.clientMutex.RUnlock()
 		if n == 1 {
 			break
 		}
@@ -60,9 +60,9 @@ func TestWebServer_SilentlyDeadClientIsCleanedUp(t *testing.T) {
 	// read deadline should expire and clean up the connection on its own.
 	deadline = time.Now().Add(2 * time.Second)
 	for {
-		server.clientMutex.RLock()
-		n := len(server.clients)
-		server.clientMutex.RUnlock()
+		server.hub.clientMutex.RLock()
+		n := len(server.hub.clients)
+		server.hub.clientMutex.RUnlock()
 		if n == 0 {
 			return
 		}
