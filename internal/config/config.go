@@ -275,6 +275,10 @@ type ObstaclesConfig struct {
 	DisplayColor    string  `yaml:"display_color"`
 }
 
+// GetPath returns the raw configured obstacles-file override (File, falling
+// back to the deprecated Path), or "" if neither is set. It does no
+// existence checking and no per-camera fallback -- ui.ResolveObstaclesPath is
+// what turns this into an actual usable path.
 func (c *ObstaclesConfig) GetPath() string {
 	if c.File != "" {
 		return c.File

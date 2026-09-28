@@ -562,9 +562,52 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   logic — `Clear` now reads the (already-empty) `s.obstacles` through the
   helper instead of passing a separate literal. No behavior change.
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **Obstacle-file path resolution logic spread across three places**
+- **[FIXED] Obstacle-file path resolution logic spread across three places**
   (`webserver.go`, `main.go:loadStaticObstacles`, `config.go`'s
   `ObstaclesConfig.GetPath()`), each with its own fallback chain.
+  **Investigation:** understated — there were actually **four** independent
+  resolvers, not three: `ObstaclesConfig.GetPath()`
+  (`internal/config/config.go`, just exposes the raw configured override, no
+  fallback logic of its own); `WebServer.GetObstaclesPath()`
+  (`internal/ui/webserver.go`, used by the save/clear handlers) — a
+  dead `s.obstaclesPath` override (its setter had zero callers) → camera-aware
+  `config/obstacles_<camera>.yaml` → hardcoded `config/obstacles.yaml`, and it
+  never consulted `cfg.Obstacles.File` at all; `loadStaticObstacles`
+  (`cmd/main.go`) — a three-tier chain (`cfg.Obstacles.GetPath()` gated by
+  `os.Stat`, then `webServer.GetObstaclesPath()`, then a third,
+  independently hardcoded `"config/obstacles.yaml"` literal); and a fourth,
+  uncited resolver, `initPositionEstimator` (`cmd/main.go`), which called
+  `cfg.Obstacles.GetPath()` directly with no fallback at all. Confirmed a real,
+  currently-masked bug: the shipped `config/tracking_config.yaml` sets
+  `obstacles.file: "config/obstacles.yaml"`, but that file has never existed
+  on disk — the real, actively-used file is the per-camera
+  `config/obstacles_Camera_0.yaml`. Loading at startup only worked by
+  accident (the `os.Stat` miss fell through to the camera-aware webserver
+  path); the web UI's save/clear handlers ignored the configured override
+  entirely, working only because nothing had ever pointed it at a path that
+  exists; and `initPositionEstimator`'s obstacle load silently never fired —
+  harmless only because `PositionEstimator.GetObstacles()`/`AddObstacle`/
+  `ClearObstacles` have zero callers anywhere in production code today (dead
+  state, not a live bug, but the same duplicated-fallback seam that caused
+  bug #18).
+  **Fix:** added two exported functions to `internal/ui/webserver.go`,
+  alongside the existing `GetCalibrationFilename`/`GetForegroundStateFilename`
+  per-camera-filename helpers: `GetObstaclesFilename(cameraName)` (the
+  per-camera default) and `ResolveObstaclesPath(configuredPath, cameraName)`
+  (the single source of truth: an explicitly configured path wins only if it
+  actually exists on disk, otherwise falls back to the per-camera default).
+  All four call sites now go through it: `WebServer.GetObstaclesPath()`,
+  `loadStaticObstacles`, and `initPositionEstimator` were rewritten to call
+  `ResolveObstaclesPath` instead of hand-rolling their own chains, and
+  `Initialize()` now wires `cfg.Obstacles.GetPath()` into the web server via
+  `SetObstaclesPath` (previously dead code) right after constructing it, so
+  save/clear finally honor the same configured override that loading does.
+  No on-disk file naming or YAML schema changes; verified this is a
+  no-observable-behavior-change on the current machine (all four call sites
+  still resolve to `config/obstacles_Camera_0.yaml`, exactly as before).
+  Added `TestGetObstaclesFilename` and `TestResolveObstaclesPath`
+  (`internal/ui/filenames_test.go`), covering all four resolution tiers.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **Magic numbers scattered and inconsistent across planning files** — e.g.
   `dist < 0.5` appears with different meanings in `local.go` and `coordinator.go`;
   avoidance-strength/nudge constants (`0.1`, `0.3`, `0.8`) aren't named or shared

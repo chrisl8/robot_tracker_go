@@ -365,6 +365,11 @@ func (rs *RobotSystem) Initialize() error {
 	rs.initPathExecutor()
 
 	rs.web.webServer = ui.NewWebServer(":9086")
+	// Wire the configured obstacles-file override through to the web UI's
+	// save/clear handlers so they honor the same override that loading does
+	// (see ui.ResolveObstaclesPath); previously GetObstaclesPath() never
+	// consulted cfg.Obstacles at all.
+	rs.web.webServer.SetObstaclesPath(rs.cfg.Obstacles.GetPath())
 	rs.registerWebServerCallbacks()
 	rs.applyCalibrationStateToWebServer(calibrationPath)
 	rs.initForeground()
@@ -443,10 +448,7 @@ func (rs *RobotSystem) initCamera() {
 
 // initPositionEstimator sets up pixel<->world calibration from calibrationPath.
 func (rs *RobotSystem) initPositionEstimator(calibrationPath string) {
-	obstaclesPath := ""
-	if rs.cfg != nil && rs.cfg.Obstacles.GetPath() != "" {
-		obstaclesPath = rs.cfg.Obstacles.GetPath()
-	}
+	obstaclesPath := ui.ResolveObstaclesPath(rs.cfg.Obstacles.GetPath(), rs.cameraDisplayName())
 	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
 	if err != nil {
 		utils.Logf("Warning: Position estimator initialization failed: %v", err)
@@ -678,27 +680,14 @@ func (rs *RobotSystem) applyCalibrationStateToWebServer(calibrationPath string) 
 }
 
 func (rs *RobotSystem) loadStaticObstacles() {
-	obstaclesPath := ""
-	if rs.cfg != nil && rs.cfg.Obstacles.GetPath() != "" {
-		configPath := rs.cfg.Obstacles.GetPath()
-		if _, err := os.Stat(configPath); err == nil {
-			obstaclesPath = configPath
-			utils.Logf("Obstacles path from config: %s", obstaclesPath)
-		} else {
-			utils.Logf("Config obstacles file not found: %s", configPath)
-		}
+	configuredPath := ""
+	if rs.cfg != nil {
+		configuredPath = rs.cfg.Obstacles.GetPath()
 	}
-
-	if obstaclesPath == "" && rs.web.webServer != nil {
-		obstaclesPath = rs.web.webServer.GetObstaclesPath()
-		utils.Logf("Obstacles path from webserver: %s", obstaclesPath)
-	}
-	if obstaclesPath == "" {
-		obstaclesPath = "config/obstacles.yaml"
-		utils.Logf("Using default obstacles path: %s", obstaclesPath)
-	}
+	obstaclesPath := ui.ResolveObstaclesPath(configuredPath, rs.cameraDisplayName())
 
 	utils.Logf("Loading obstacles from: %s", obstaclesPath)
+	// #nosec G304
 	data, err := os.ReadFile(obstaclesPath)
 	if err != nil {
 		utils.Logf("No obstacles file found at %s", obstaclesPath)
