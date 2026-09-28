@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -107,17 +108,21 @@ func TestPlannerToControllerPipeline(t *testing.T) {
 	planner.AddRobot(0, [2]float64{0, 0}, 0.18)
 	planner.SetGoal(0, [2]float64{1.0, 0.0})
 
-	commands := planner.ComputeAllCommands()
-	if commands == nil {
-		t.Fatal("ComputeAllCommands returned nil")
+	// Mirror the live pipeline (cmd/main.go): a waypoint from the planner,
+	// turned into a bearing, turned into a command by the executor.
+	// (ComputeAllCommands/the velocity-obstacle path used to be exercised
+	// here, but it has no callers in production - see code review tech-debt
+	// "Dead second collision-avoidance/coordination system".)
+	waypoint, hasWaypoint := planner.GetNextWaypoint(0)
+	if !hasWaypoint {
+		t.Fatal("expected a waypoint after SetGoal")
 	}
 
-	if vel, exists := commands[0]; exists {
-		cmd := executor.VelocityToCommand(vel[0], vel[1])
-		t.Logf("Robot 0 velocity: (%.2f, %.2f), command: %c", vel[0], vel[1], cmd)
-	} else {
-		t.Log("No command for robot 0 (expected if no goal set)")
-	}
+	dx := waypoint[0] - 0
+	dy := waypoint[1] - 0
+	bearingToWaypoint := math.Atan2(dy, dx)
+	cmd := executor.BearingToCommand(0, bearingToWaypoint, 0)
+	t.Logf("Robot 0 waypoint: (%.2f, %.2f), bearing: %.2f, command: %c", waypoint[0], waypoint[1], bearingToWaypoint, cmd)
 }
 
 func TestFullPipelineIntegration(t *testing.T) {
@@ -173,18 +178,18 @@ func TestFullPipelineIntegration(t *testing.T) {
 	trackingDets := convertFusedToTracking(detectionResult.FusedDetections)
 	trackingResult := tracker.Update(trackingDets, timestamp, 1)
 
+	robotCount := 0
 	for _, track := range trackingResult.Tracks {
 		if track.TagID != nil {
 			planner.AddRobot(*track.TagID, [2]float64{0, 0}, 0.18)
+			robotCount++
 		}
 	}
 
-	commands := planner.ComputeAllCommands()
-
-	t.Logf("Pipeline test: detection=%d, tracking=%d, planning commands=%d",
+	t.Logf("Pipeline test: detection=%d, tracking=%d, robots registered=%d",
 		len(detectionResult.FusedDetections),
 		len(trackingResult.Tracks),
-		len(commands))
+		robotCount)
 }
 
 func convertFusedToTracking(fused []detection.FusedDetection) []tracking.Detection {

@@ -293,7 +293,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   Arduino. Added `cmd/demo_autonomy_test.go` (regression test that fails against
   the old code, plus a guard test). No behavior change other than the demo-mode
   fix itself; `./scripts/build.sh` and `./scripts/test.sh` pass throughout.
-- **Dead second collision-avoidance/coordination system.** `Coordinator.
+- **[FIXED] Dead second collision-avoidance/coordination system.** `Coordinator.
   ComputeCommands`/`ResolveConflicts`/`willCollide`/`adjustForConflict`/
   `AssignGoals` (`internal/planning/coordinator.go`) are never called from
   `cmd/main.go` — the real pipeline uses `PlanPath` + `ComputeVelocityWithDynamicObstacles`
@@ -301,6 +301,40 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   conflict resolution) is exercised only by unit tests and is a trap: it could be
   "fixed" without ever affecting production, or re-wired in without realizing it
   conflicts with the live VO logic (and reintroduces bug #14).
+  **Investigation:** confirmed, and the dead chain runs one level deeper than
+  described — `Planner.ComputeAllCommands`/`ResolveConflicts` (the only callers
+  of the `Coordinator` methods above) were themselves never called from
+  `cmd/main.go` either; `AssignGoals` had zero callers even in tests. The
+  finding's own premise needed a correction, though: the live pipeline does
+  **not** use `ComputeVelocityWithDynamicObstacles` — that function (and its
+  sibling `ComputeVelocity`) also has zero callers anywhere. Since the
+  bearing-based-steering rewrite (`f6edb54`), `cmd/main.go` drives robots via
+  `PlanPath` → waypoints → `AdvancePastWaypoints`/`GetNextWaypoint` → bearing
+  math → `controller.BearingToCommand` — none of the velocity-obstacle
+  machinery is in the production path. Fixing that separate pair of dead
+  `ComputeVelocity*` entry points is out of scope here; it's already tracked
+  as its own tech-debt bullet below ("Three near-duplicate compute velocity
+  entry points"). Also confirmed `Coordinator` itself is **not** entirely
+  dead: its `robots`/`goals`/`obstacles` state and the plain accessor methods
+  (`AddRobot`, `SetGoal`, `GetRobotState`, `UpdateRobots`, etc.) are `Planner`'s
+  only storage for per-robot state and are exercised on every real request
+  through `cmd/main.go`.
+  **Fix:** removed only the dead priority-ordered conflict-resolution logic —
+  `Coordinator.ComputeCommands`, `getRobotsByPriority`, `ResolveConflicts`,
+  `willCollide`, `adjustForConflict`, `AssignGoals`, the `coincidentEpsilon`
+  constant, and the `priorities`/`localPlanner`/`collisionDetector` fields that
+  existed only to support it (`collisionDetector` was never even read once
+  assigned). `Coordinator` is kept, now with a doc comment describing its
+  narrower, accurate role as a shared per-robot state store. `NewCoordinator`
+  no longer takes constructor args it didn't need for that role.
+  `Planner.ComputeAllCommands`/`ResolveConflicts` (the dead wrappers) were
+  removed too. Deleted `coordinator_test.go`, which tested only the
+  now-removed `adjustForConflict` (the bug #14 NaN-guard regression tests) and
+  had zero coverage of anything still in the codebase. Two integration tests
+  in `internal/integration_test.go` that called the removed
+  `Planner.ComputeAllCommands` were rewritten to exercise the actual live
+  pipeline (`GetNextWaypoint` + bearing math + `BearingToCommand`) instead.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **Three near-duplicate "compute velocity" entry points** in
   `internal/planning/local.go` (`ComputeVelocity`, `ComputeVelocityWithObstacles`,
   `ComputeVelocityToWaypoint`) — two of the three appear unused in production.

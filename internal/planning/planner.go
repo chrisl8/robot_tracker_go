@@ -62,7 +62,7 @@ func NewPlanner(config *PlannerConfig) *Planner {
 		planner.collisionDetector = NewCollisionDetector(0)
 	}
 
-	planner.coordinator = NewCoordinator(planner.localPlanner, planner.collisionDetector)
+	planner.coordinator = NewCoordinator()
 
 	return planner
 }
@@ -213,18 +213,6 @@ func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 	} else {
 		utils.Debugf("SetGoal: robot %d NOT in planner yet, goal stored for later",robotID)
 	}
-}
-
-func (p *Planner) ComputeAllCommands() map[int][2]float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.coordinator.ComputeCommands()
-}
-
-func (p *Planner) ResolveConflicts(commands map[int][2]float64) map[int][2]float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.coordinator.ResolveConflicts(commands)
 }
 
 func (p *Planner) UpdateRobotState(robotID int, position [2]float64, velocity [2]float64) {

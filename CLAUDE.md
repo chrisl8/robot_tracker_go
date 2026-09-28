@@ -43,7 +43,7 @@ The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems, 
 - **`internal/detection/`** — AprilTag (robot ID) detection, fused into `FusedDetection`s; obstacles come from the background-subtraction foreground detector, not this package
 - **`internal/tracking/`** — ByteTrack multi-object tracker with Kalman filter; outputs `Track` objects with world positions
 - **`internal/position/`** — Homography calibration maps pixel↔world coordinates; saved to `config/calibration_<camera>.yaml`
-- **`internal/planning/`** — Three-layer: A\* global path, velocity obstacle local planner, multi-robot `Coordinator`
+- **`internal/planning/`** — A\* global path planning; `Coordinator` is a shared per-robot position/velocity/goal state store used by `Planner` (not a second command/collision-avoidance system — that dead code was removed, see `docs/code-review-2026-09-27.md`); the actual live steering is bearing-based (`cmd/main.go` → `controller.BearingToCommand`), not the velocity-obstacle local planner
 - **`internal/controller/`** — Arduino serial at 9600 baud; single ASCII commands (F/B/L/R/S + `\r\n`); `CommandQueue` + `PathExecutor`
 - **`internal/ui/`** — Gin HTTP server; MJPEG stream at `/stream`; WebSocket at `/ws` for real-time overlay; REST API for calibration/obstacles/goals
 - **`ui/src/`** — Vue 3 + TypeScript frontend; Pinia stores (`robotStore`, `obstacleStore`, `uiStore`); canvas overlay renders tracks/paths
