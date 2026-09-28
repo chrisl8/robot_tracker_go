@@ -124,8 +124,8 @@ func (g *foregroundGlue) snapshotState() ui.ForegroundState {
 // initForeground creates the detector and wires the UI controls.
 func (rs *RobotSystem) initForeground() {
 	settings := rs.cfg.EffectiveForeground()
-	rs.fg = newForegroundGlue(settings)
-	g := rs.fg
+	rs.detection.fg = newForegroundGlue(settings)
+	g := rs.detection.fg
 	utils.Logf("Foreground obstacle detection: enabled=%v steering_planner=%v", g.enabled.Load(), g.apply.Load())
 
 	if settings.PersistBackground {
@@ -137,30 +137,30 @@ func (rs *RobotSystem) initForeground() {
 		}
 	}
 
-	rs.webServer.OnForegroundEnabled = func(on bool) {
+	rs.web.webServer.OnForegroundEnabled = func(on bool) {
 		g.enabled.Store(on)
 		if on {
 			g.requestReset()
 		}
 		utils.Logf("Foreground obstacle detection %s", map[bool]string{true: "enabled", false: "disabled"}[on])
 	}
-	rs.webServer.OnForegroundApply = func(on bool) {
+	rs.web.webServer.OnForegroundApply = func(on bool) {
 		g.apply.Store(on)
 		utils.Logf("Foreground obstacles steer the planner: %v", on)
 	}
-	rs.webServer.OnForegroundReset = func() {
+	rs.web.webServer.OnForegroundReset = func() {
 		g.requestReset()
 		utils.Logf("Foreground background reset requested")
 	}
-	rs.webServer.OnForegroundAbsorb = func(x, y int) {
+	rs.web.webServer.OnForegroundAbsorb = func(x, y int) {
 		g.requestAbsorb(x, y)
 		utils.Logf("Foreground absorb requested at pixel (%d,%d)", x, y)
 	}
-	rs.webServer.ForegroundDebugJPEG = func() []byte {
+	rs.web.webServer.ForegroundDebugJPEG = func() []byte {
 		g.det.RequestDebug()
 		return g.det.DebugJPEG()
 	}
-	rs.webServer.ForegroundState = g.snapshotState
+	rs.web.webServer.ForegroundState = g.snapshotState
 }
 
 // drainCommands applies pending reset/absorb requests to the temporal filter.
@@ -188,11 +188,11 @@ func (g *foregroundGlue) drainCommands(est *position.PositionEstimator) {
 // processForeground runs one frame through the foreground pipeline and, when
 // enabled, publishes the resulting temporary obstacles to the planner and UI.
 func (rs *RobotSystem) processForeground(frame []byte, width, height int, now time.Time, result *detection.DetectionResult) {
-	g := rs.fg
+	g := rs.detection.fg
 	if g == nil {
 		return
 	}
-	est := rs.positionEst
+	est := rs.position.positionEst
 	g.drainCommands(est)
 
 	calibrated := est != nil && est.IsCalibrated()
@@ -201,7 +201,7 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 		return
 	}
 
-	suspended := rs.webServer != nil && rs.webServer.CalibrationViewActive()
+	suspended := rs.web.webServer != nil && rs.web.webServer.CalibrationViewActive()
 	if suspended {
 		// Tags are lying on the floor during calibration: stop detecting and
 		// relearn afterwards.
@@ -246,7 +246,7 @@ func (rs *RobotSystem) processForeground(frame []byte, width, height int, now ti
 // every robot (at its detected tag, or its last position for a few seconds
 // after the tag is lost) and the user's static obstacles.
 func (rs *RobotSystem) buildForegroundMasks(now time.Time, result *detection.DetectionResult, toWorld detection.PixelToWorldFunc) detection.ForegroundMasks {
-	g := rs.fg
+	g := rs.detection.fg
 	var masks detection.ForegroundMasks
 
 	seen := make(map[int]bool)
@@ -275,9 +275,9 @@ func (rs *RobotSystem) buildForegroundMasks(now time.Time, result *detection.Det
 		masks.Robots = append(masks.Robots, detection.RobotDisc(toWorld, s.x, s.y, s.diam, margin))
 	}
 
-	if rs.webServer != nil {
+	if rs.web.webServer != nil {
 		pad := g.settings.StaticMarginPx
-		for _, obs := range rs.webServer.GetObstacles() {
+		for _, obs := range rs.web.webServer.GetObstacles() {
 			masks.Statics = append(masks.Statics, image.Rect(
 				obs.PixelsTopLeft[0]-pad, obs.PixelsTopLeft[1]-pad,
 				obs.PixelsBottomRight[0]+pad, obs.PixelsBottomRight[1]+pad))
@@ -291,8 +291,8 @@ func (rs *RobotSystem) buildForegroundMasks(now time.Time, result *detection.Det
 // is cheap when nothing changed; the UI message is sent on change and as a
 // heartbeat.
 func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.TrackedBox, warming, guarded, enabled bool, shadowSuppressed int) {
-	g := rs.fg
-	est := rs.positionEst
+	g := rs.detection.fg
+	est := rs.position.positionEst
 
 	obstacles := make([]planning.Obstacle, 0, len(tracked))
 	msgs := make([]ui.TempObstacleResponse, 0, len(tracked))
@@ -330,9 +330,9 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 
 	applied := g.apply.Load() && enabled
 	if applied {
-		rs.planner.SetDynamicObstacles(obstacles)
+		rs.planning.planner.SetDynamicObstacles(obstacles)
 	} else if g.lastApplied {
-		rs.planner.SetDynamicObstacles(nil)
+		rs.planning.planner.SetDynamicObstacles(nil)
 	}
 	g.lastApplied = applied
 
@@ -345,9 +345,9 @@ func (rs *RobotSystem) publishTempObstacles(now time.Time, tracked []detection.T
 	g.state = ui.ForegroundState{Warming: warming, Guarded: guarded, Count: len(msgs), ShadowSuppressed: shadowSuppressed}
 	g.stateMu.Unlock()
 
-	if rs.webServer != nil && (sig != g.lastSig || now.Sub(g.lastSent) >= tempObstacleHeartbeat) {
+	if rs.web.webServer != nil && (sig != g.lastSig || now.Sub(g.lastSent) >= tempObstacleHeartbeat) {
 		g.lastSig, g.lastSent = sig, now
-		rs.webServer.BroadcastTempObstacles(ui.TempObstaclesMessage{
+		rs.web.webServer.BroadcastTempObstacles(ui.TempObstaclesMessage{
 			Obstacles: msgs, Applied: applied, Warming: warming, Guarded: guarded, Enabled: enabled,
 		})
 	}

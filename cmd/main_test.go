@@ -192,13 +192,13 @@ func TestDemoModeNeverUsesTheRealCalibrationFile(t *testing.T) {
 // the test instead of only showing up under real shutdown timing.
 func TestRobotSystem_Stop_IsIdempotent(t *testing.T) {
 	rs := NewRobotSystem(nil)
-	rs.watchdogStop = make(chan struct{})
+	rs.stats.watchdogStop = make(chan struct{})
 
 	rs.Stop()
 	rs.Stop() // must not panic (e.g. double close of watchdogStop)
 
 	rs = NewRobotSystem(nil)
-	rs.watchdogStop = make(chan struct{})
+	rs.stats.watchdogStop = make(chan struct{})
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {

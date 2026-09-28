@@ -15,8 +15,6 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -70,130 +68,121 @@ func ParseControlMode(s string) ControlMode {
 // or overwrite the real camera's calibration.
 const demoCameraName = "demo"
 
+// RobotSystem owns and orchestrates every subsystem in the tracking/control
+// pipeline. Its fields are grouped into named sub-structs (declared in
+// robot_system_types.go) by the concern that owns them:
+//
+//   - capture   — camera capture
+//   - detection — AprilTag + foreground/obstacle detection
+//   - tracking  — multi-object tracker
+//   - planning  — path planner, current goal
+//   - obstacles — static/dynamic obstacle lists
+//   - position  — pixel<->world calibration
+//   - io        — Arduino serial, command queue, path executor
+//   - web       — HTTP/WebSocket/MJPEG server
+//   - control   — operator control mode + e-stop
+//   - heading   — per-robot heading smoothing
+//   - stats     — frame timing, watchdog, perf window
+//
+// Initialize() sets each group up via its own init<Group>() method, in the
+// order listed above (see Initialize() for the exact call sequence).
 type RobotSystem struct {
-	demoMode            bool
-	cfg                 *config.Config
-	cam                 camera.Camera
-	detectionPipe       *detection.DetectionPipeline
-	tracker             tracking.Tracker
-	planner             *planning.Planner
-	positionEst         *position.PositionEstimator
-	arduino             *controller.ArduinoController
-	commandQueue        *controller.CommandQueue
-	pathExecutor        *controller.PathExecutor
-	webServer           *ui.WebServer
-	cameraRunning       bool
-	frameNum            int
-	DynamicObstacles    []*planning.DynamicObstacle
-	StaticObstacles     []planning.Obstacle
-	CurrentRobotID      int
-	CurrentGoal         [2]float64
-	waypointThreshold   float64
-	controlMode         ControlMode
-	emergencyStopped    bool
-	controlMu           sync.RWMutex
-	lastHeading         map[int]float64
-	headingDelta        map[int]float64
-	smoothedHeading     map[int]float64
-	headingRejectCount  map[int]int
-	headingLostCount    map[int]int
-	robotCommands       map[int]string // tag_id -> current motion state
-	lastCommandTime     time.Time
-	trackingLostTimeout time.Duration
-	lastFrameTime       time.Time
-	lastStatusBroadcast time.Time
-	lastFrameNanos      atomic.Int64
-	watchdogOnce        sync.Once
-	watchdogStopOnce    sync.Once
-	watchdogStop        chan struct{}
-	stopOnce            sync.Once
-	perf                perfWindow
-	fg                  *foregroundGlue
-	lastCPUSeconds      float64
-	lastCPUAt           time.Time
-	lastOffenderLog     time.Time
-	smoothedFPS         float64
-	startTime           time.Time
-	cameraConfig        *camera.CameraConfig // stored for retry if initial open fails
-	lastReplanTime      map[int]time.Time    // robotID -> last proximity replan time
-	lastRobotWorldPos   map[int][2]float64   // robotID -> last world position, for velocity estimation
-	lastRobotPosTime    map[int]float64      // robotID -> track timestamp of lastRobotWorldPos
+	demoMode bool
+	cfg      *config.Config
+
+	capture   cameraSubsystem
+	detection detectionSubsystem
+	tracking  trackingSubsystem
+	planning  planningSubsystem
+	obstacles obstaclesSubsystem
+	position  positionSubsystem
+	io        controlIOSubsystem
+	web       webSubsystem
+	control   controlStateSubsystem
+	heading   headingSubsystem
+	stats     frameTimingSubsystem
 }
 
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
 	return &RobotSystem{
-		cfg:                cfg,
-		cameraRunning:      false,
-		frameNum:           0,
-		CurrentGoal:        [2]float64{0, 0},
-		lastHeading:        make(map[int]float64),
-		headingDelta:       make(map[int]float64),
-		smoothedHeading:    make(map[int]float64),
-		headingRejectCount: make(map[int]int),
-		headingLostCount:   make(map[int]int),
-		robotCommands:      make(map[int]string),
-		lastReplanTime:     make(map[int]time.Time),
-		lastRobotWorldPos:  make(map[int][2]float64),
-		lastRobotPosTime:   make(map[int]float64),
-		startTime:          time.Now(),
+		cfg: cfg,
+		planning: planningSubsystem{
+			CurrentGoal:    [2]float64{0, 0},
+			lastReplanTime: make(map[int]time.Time),
+		},
+		position: positionSubsystem{
+			lastRobotWorldPos: make(map[int][2]float64),
+			lastRobotPosTime:  make(map[int]float64),
+		},
+		io: controlIOSubsystem{
+			robotCommands: make(map[int]string),
+		},
+		heading: headingSubsystem{
+			lastHeading:        make(map[int]float64),
+			headingDelta:       make(map[int]float64),
+			smoothedHeading:    make(map[int]float64),
+			headingRejectCount: make(map[int]int),
+			headingLostCount:   make(map[int]int),
+		},
+		stats: frameTimingSubsystem{startTime: time.Now()},
 	}
 }
 
 func (rs *RobotSystem) GetControlMode() ControlMode {
-	rs.controlMu.RLock()
-	defer rs.controlMu.RUnlock()
-	return rs.controlMode
+	rs.control.controlMu.RLock()
+	defer rs.control.controlMu.RUnlock()
+	return rs.control.controlMode
 }
 
 func (rs *RobotSystem) SetControlMode(mode ControlMode) {
-	rs.controlMu.Lock()
-	defer rs.controlMu.Unlock()
-	if rs.emergencyStopped {
+	rs.control.controlMu.Lock()
+	defer rs.control.controlMu.Unlock()
+	if rs.control.emergencyStopped {
 		return
 	}
-	prev := rs.controlMode
-	rs.controlMode = mode
+	prev := rs.control.controlMode
+	rs.control.controlMode = mode
 	utils.Logf("Control mode changed to: %s", mode)
 
 	// When leaving Manual or Autonomous, clear active command and stop the robot
 	if prev != mode && (prev == ControlModeManual || prev == ControlModeAutonomous) {
-		if rs.commandQueue != nil {
-			rs.commandQueue.ClearActiveCommand()
-			rs.commandQueue.Enqueue(controller.CommandStop)
+		if rs.io.commandQueue != nil {
+			rs.io.commandQueue.ClearActiveCommand()
+			rs.io.commandQueue.Enqueue(controller.CommandStop)
 		}
 	}
 }
 
 func (rs *RobotSystem) IsEmergencyStopped() bool {
-	rs.controlMu.RLock()
-	defer rs.controlMu.RUnlock()
-	return rs.emergencyStopped
+	rs.control.controlMu.RLock()
+	defer rs.control.controlMu.RUnlock()
+	return rs.control.emergencyStopped
 }
 
 func (rs *RobotSystem) EmergencyStop() {
-	rs.controlMu.Lock()
-	rs.emergencyStopped = true
-	rs.controlMode = ControlModeIdle
-	rs.controlMu.Unlock()
+	rs.control.controlMu.Lock()
+	rs.control.emergencyStopped = true
+	rs.control.controlMode = ControlModeIdle
+	rs.control.controlMu.Unlock()
 
 	// Send stop directly to Arduino, bypassing queue for reliability
-	if rs.arduino != nil {
-		_ = rs.arduino.SendCommand(controller.CommandStop)
+	if rs.io.arduino != nil {
+		_ = rs.io.arduino.SendCommand(controller.CommandStop)
 	}
-	if rs.commandQueue != nil {
-		rs.commandQueue.EmergencyStop()
+	if rs.io.commandQueue != nil {
+		rs.io.commandQueue.EmergencyStop()
 	}
 	utils.Logf("EMERGENCY STOP activated")
 }
 
 func (rs *RobotSystem) ClearEmergencyStop() {
-	rs.controlMu.Lock()
-	rs.emergencyStopped = false
-	rs.controlMu.Unlock()
+	rs.control.controlMu.Lock()
+	rs.control.emergencyStopped = false
+	rs.control.controlMu.Unlock()
 
 	// Restart the command queue so it can accept commands again
-	if rs.commandQueue != nil {
-		rs.commandQueue.Start()
+	if rs.io.commandQueue != nil {
+		rs.io.commandQueue.Start()
 	}
 	utils.Logf("Emergency stop cleared")
 }
@@ -280,21 +269,21 @@ func getWebUIURLs(port string) string {
 }
 
 func (rs *RobotSystem) initDemoMode() {
-	rs.webServer = ui.NewWebServer(":9086")
+	rs.web.webServer = ui.NewWebServer(":9086")
 
 	tagConfig := detection.AprilTagConfig{
 		Family:       "tag36h11",
 		QuadDecimate: 2.0,
 	}
-	rs.detectionPipe = detection.NewDetectionPipeline(tagConfig)
+	rs.detection.detectionPipe = detection.NewDetectionPipeline(tagConfig)
 	utils.Logf("Demo mode: Detection pipeline initialized")
 
-	rs.webServer.Start()
+	rs.web.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
 
-	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+	rs.web.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
 		utils.Debugf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
-		rs.planner.SetObstacles(obstacles)
+		rs.planning.planner.SetObstacles(obstacles)
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
@@ -309,11 +298,11 @@ func (rs *RobotSystem) initDemoMode() {
 				Clearance:        0.05,
 			}
 		}
-		rs.detectionPipe.SetObstacles(detectionObstacles)
+		rs.detection.detectionPipe.SetObstacles(detectionObstacles)
 		utils.Debugf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
-	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+	rs.web.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
 		utils.Logf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]))
 	}
@@ -326,11 +315,11 @@ func (rs *RobotSystem) cameraDisplayName() string {
 	if rs.demoMode {
 		return demoCameraName
 	}
-	if rs.cam != nil {
-		return rs.cam.GetName()
+	if rs.capture.cam != nil {
+		return rs.capture.cam.GetName()
 	}
-	if rs.cameraConfig != nil {
-		return camera.DisplayName(rs.cameraConfig.URL, rs.cameraConfig.CameraID)
+	if rs.capture.cameraConfig != nil {
+		return camera.DisplayName(rs.capture.cameraConfig.URL, rs.capture.cameraConfig.CameraID)
 	}
 	return ""
 }
@@ -340,10 +329,10 @@ func (rs *RobotSystem) cameraDisplayName() string {
 // readout keeps refreshing about once a second even when the frame rate is
 // very low, which is exactly when the UI needs to warn about it.
 func (rs *RobotSystem) statusBroadcastDue() bool {
-	if time.Since(rs.lastStatusBroadcast) < time.Second {
+	if time.Since(rs.stats.lastStatusBroadcast) < time.Second {
 		return false
 	}
-	rs.lastStatusBroadcast = time.Now()
+	rs.stats.lastStatusBroadcast = time.Now()
 	return true
 }
 
@@ -353,7 +342,7 @@ func (rs *RobotSystem) Initialize() error {
 		QuadDecimate: rs.cfg.AprilTags.QuadDecimate,
 	}
 
-	rs.detectionPipe = detection.NewDetectionPipeline(tagConfig)
+	rs.detection.detectionPipe = detection.NewDetectionPipeline(tagConfig)
 	utils.Logf("Detection pipeline initialized")
 
 	trackConfig := &tracking.ByteTrackConfig{
@@ -364,7 +353,7 @@ func (rs *RobotSystem) Initialize() error {
 		MinBoxArea:  rs.cfg.Tracking.MinBoxArea,
 		MOT20:       rs.cfg.Tracking.MOT20,
 	}
-	rs.tracker = tracking.NewByteTrack(trackConfig)
+	rs.tracking.tracker = tracking.NewByteTrack(trackConfig)
 	utils.Logf("ByteTrack initialized")
 
 	plannerConfig := &planning.PlannerConfig{
@@ -372,7 +361,7 @@ func (rs *RobotSystem) Initialize() error {
 		VelocityObstacleConfig: nil,
 		CollisionMargin:        0.08,
 	}
-	rs.planner = planning.NewPlanner(plannerConfig)
+	rs.planning.planner = planning.NewPlanner(plannerConfig)
 	utils.Logf("Planner initialized")
 
 	if primaryCam := rs.cfg.GetPrimaryCamera(); primaryCam != nil {
@@ -385,14 +374,14 @@ func (rs *RobotSystem) Initialize() error {
 			Height:   primaryCam.Height,
 			FPS:      primaryCam.FPS,
 		}
-		rs.cameraConfig = &camConfig
+		rs.capture.cameraConfig = &camConfig
 		cam, err := camera.NewCamera(camConfig)
 		if err != nil {
 			utils.Logf("Warning: Could not initialize camera: %v (will retry)", err)
-			rs.cam = nil
+			rs.capture.cam = nil
 		} else {
-			rs.cam = cam
-			utils.Logf("Camera initialized: %s", rs.cam.GetName())
+			rs.capture.cam = cam
+			utils.Logf("Camera initialized: %s", rs.capture.cam.GetName())
 		}
 	} else {
 		utils.Logf("No camera configured, using demo mode")
@@ -410,9 +399,9 @@ func (rs *RobotSystem) Initialize() error {
 	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
 	if err != nil {
 		utils.Logf("Warning: Position estimator initialization failed: %v", err)
-		rs.positionEst = nil
+		rs.position.positionEst = nil
 	} else {
-		rs.positionEst = posEst
+		rs.position.positionEst = posEst
 		utils.Logf("Position estimator initialized")
 	}
 
@@ -431,60 +420,60 @@ func (rs *RobotSystem) Initialize() error {
 		commandIntervalMs = int(rs.cfg.Controller.CommandInterval * 1000)
 	}
 
-	rs.arduino = controller.NewArduinoController(serialPort, serialBaud)
+	rs.io.arduino = controller.NewArduinoController(serialPort, serialBaud)
 	if controllerEnabled {
-		if err := rs.arduino.Connect(); err != nil {
+		if err := rs.io.arduino.Connect(); err != nil {
 			utils.Logf("Warning: Could not connect to Arduino: %v", err)
 		} else {
-			utils.Logf("Connected to Arduino on %s at %d baud", rs.arduino.GetPort(), serialBaud)
+			utils.Logf("Connected to Arduino on %s at %d baud", rs.io.arduino.GetPort(), serialBaud)
 		}
 	} else {
 		utils.Logf("Controller disabled in config, skipping Arduino connection")
 	}
 
-	rs.commandQueue = controller.NewCommandQueue(rs.arduino, commandIntervalMs)
-	rs.commandQueue.Start()
-	if rs.arduino.IsConnected() {
+	rs.io.commandQueue = controller.NewCommandQueue(rs.io.arduino, commandIntervalMs)
+	rs.io.commandQueue.Start()
+	if rs.io.arduino.IsConnected() {
 		utils.Logf("Command queue started (Arduino connected)")
 	} else {
 		utils.Logf("WARNING: Command queue started but Arduino is NOT connected — commands will fail")
 	}
 
 	if rs.cfg != nil && rs.cfg.PathExecution.MaxSpeed > 0 {
-		rs.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
-		rs.waypointThreshold = rs.cfg.PathExecution.WaypointThreshold
+		rs.io.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
+		rs.io.waypointThreshold = rs.cfg.PathExecution.WaypointThreshold
 		if rs.cfg.PathExecution.SpinThresholdDeg > 0 {
-			rs.pathExecutor.SpinThresholdDeg = rs.cfg.PathExecution.SpinThresholdDeg
+			rs.io.pathExecutor.SpinThresholdDeg = rs.cfg.PathExecution.SpinThresholdDeg
 		}
 		if rs.cfg.PathExecution.BurstFrames > 0 {
-			rs.pathExecutor.BurstFrames = rs.cfg.PathExecution.BurstFrames
+			rs.io.pathExecutor.BurstFrames = rs.cfg.PathExecution.BurstFrames
 		}
 		if rs.cfg.PathExecution.MaxWaitFrames > 0 {
-			rs.pathExecutor.MaxWaitFrames = rs.cfg.PathExecution.MaxWaitFrames
+			rs.io.pathExecutor.MaxWaitFrames = rs.cfg.PathExecution.MaxWaitFrames
 		}
 		if rs.cfg.PathExecution.ForwardThresholdDeg > 0 {
-			rs.pathExecutor.ForwardThresholdDeg = rs.cfg.PathExecution.ForwardThresholdDeg
+			rs.io.pathExecutor.ForwardThresholdDeg = rs.cfg.PathExecution.ForwardThresholdDeg
 		}
 	} else {
-		rs.pathExecutor = controller.NewPathExecutor(0.15, 0.5)
-		rs.waypointThreshold = 0.1
+		rs.io.pathExecutor = controller.NewPathExecutor(0.15, 0.5)
+		rs.io.waypointThreshold = 0.1
 	}
-	rs.trackingLostTimeout = 3 * time.Second
+	rs.io.trackingLostTimeout = 3 * time.Second
 	if rs.cfg != nil && rs.cfg.PathExecution.TrackingLostTimeoutS > 0 {
-		rs.trackingLostTimeout = time.Duration(rs.cfg.PathExecution.TrackingLostTimeoutS * float64(time.Second))
+		rs.io.trackingLostTimeout = time.Duration(rs.cfg.PathExecution.TrackingLostTimeoutS * float64(time.Second))
 	}
 	utils.Logf("Path executor: speed=%.3f turn=%.3f waypoint=%.3f tracking_timeout=%.1fs",
-		rs.pathExecutor.MaxSpeed(), rs.pathExecutor.TurnSpeed(), rs.waypointThreshold,
-		rs.trackingLostTimeout.Seconds())
+		rs.io.pathExecutor.MaxSpeed(), rs.io.pathExecutor.TurnSpeed(), rs.io.waypointThreshold,
+		rs.io.trackingLostTimeout.Seconds())
 	utils.Logf("Path executor: spin=%.1f° burst=%d wait=%d forward=%.1f°",
-		rs.pathExecutor.SpinThresholdDeg, rs.pathExecutor.BurstFrames, rs.pathExecutor.MaxWaitFrames,
-		rs.pathExecutor.ForwardThresholdDeg)
+		rs.io.pathExecutor.SpinThresholdDeg, rs.io.pathExecutor.BurstFrames, rs.io.pathExecutor.MaxWaitFrames,
+		rs.io.pathExecutor.ForwardThresholdDeg)
 
-	rs.webServer = ui.NewWebServer(":9086")
+	rs.web.webServer = ui.NewWebServer(":9086")
 
-	rs.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
+	rs.web.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
 		utils.Debugf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
-		rs.planner.SetObstacles(obstacles)
+		rs.planning.planner.SetObstacles(obstacles)
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
@@ -499,49 +488,49 @@ func (rs *RobotSystem) Initialize() error {
 				Clearance:        0.05,
 			}
 		}
-		rs.detectionPipe.SetObstacles(detectionObstacles)
+		rs.detection.detectionPipe.SetObstacles(detectionObstacles)
 		utils.Debugf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
-	rs.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
-		if rs.positionEst == nil || !rs.positionEst.IsCalibrated() {
+	rs.web.webServer.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+		if rs.position.positionEst == nil || !rs.position.positionEst.IsCalibrated() {
 			utils.Logf("Cannot set destination: not calibrated")
 			return
 		}
-		worldPos := rs.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
+		worldPos := rs.position.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
 		utils.Debugf("DEST: pixel(%d,%d) -> world(%.2f,%.2f) BEFORE SetGoal",
 			int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
-		rs.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
+		rs.planning.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 	}
 
-	rs.webServer.OnDestinationClear = func(robotID int) {
+	rs.web.webServer.OnDestinationClear = func(robotID int) {
 		utils.Logf("Destination cleared for robot %d", robotID)
-		rs.planner.CompletePath(robotID)
-		if rs.commandQueue != nil {
-			rs.commandQueue.Enqueue(controller.CommandStop)
+		rs.planning.planner.CompletePath(robotID)
+		if rs.io.commandQueue != nil {
+			rs.io.commandQueue.Enqueue(controller.CommandStop)
 		}
 	}
 
-	rs.webServer.OnCalibrationComplete = func(calibFile string) {
+	rs.web.webServer.OnCalibrationComplete = func(calibFile string) {
 		utils.Logf("Calibration complete, reloading from %s", calibFile)
-		if rs.positionEst != nil {
-			if err := rs.positionEst.LoadCalibration(calibFile); err != nil {
+		if rs.position.positionEst != nil {
+			if err := rs.position.positionEst.LoadCalibration(calibFile); err != nil {
 				utils.Logf("Failed to reload calibration: %v", err)
 				return
 			}
-			rs.webServer.SetPositionEstimator(rs.positionEst)
-			utils.Logf("Calibration reloaded: IsCalibrated=%v", rs.positionEst.IsCalibrated())
-			if rs.fg != nil {
+			rs.web.webServer.SetPositionEstimator(rs.position.positionEst)
+			utils.Logf("Calibration reloaded: IsCalibrated=%v", rs.position.positionEst.IsCalibrated())
+			if rs.detection.fg != nil {
 				// The floor mapping changed: relearn the background and forget obstacles.
-				rs.fg.requestReset()
+				rs.detection.fg.requestReset()
 			}
 		}
 	}
 
-	rs.webServer.OnPathsChanged = func() map[int][][2]float64 {
-		paths := rs.planner.GetPathsWithGoals()
+	rs.web.webServer.OnPathsChanged = func() map[int][][2]float64 {
+		paths := rs.planning.planner.GetPathsWithGoals()
 		for rid, path := range paths {
 			utils.Debugf("  Robot %d: %d waypoints", rid, len(path))
 			if len(path) > 0 {
@@ -552,7 +541,7 @@ func (rs *RobotSystem) Initialize() error {
 		return paths
 	}
 
-	rs.webServer.OnCommand = func(cmdStr string) error {
+	rs.web.webServer.OnCommand = func(cmdStr string) error {
 		if rs.IsEmergencyStopped() {
 			return fmt.Errorf("emergency stop is active")
 		}
@@ -574,13 +563,13 @@ func (rs *RobotSystem) Initialize() error {
 		default:
 			return fmt.Errorf("unknown command: %s", cmdStr)
 		}
-		if rs.commandQueue != nil {
-			rs.commandQueue.Enqueue(cmd)
+		if rs.io.commandQueue != nil {
+			rs.io.commandQueue.Enqueue(cmd)
 		}
 		return nil
 	}
 
-	rs.webServer.OnModeChange = func(mode string) error {
+	rs.web.webServer.OnModeChange = func(mode string) error {
 		if rs.IsEmergencyStopped() {
 			return fmt.Errorf("cannot change mode while emergency stop is active")
 		}
@@ -588,35 +577,35 @@ func (rs *RobotSystem) Initialize() error {
 		return nil
 	}
 
-	rs.webServer.OnEmergencyStop = func() {
+	rs.web.webServer.OnEmergencyStop = func() {
 		rs.EmergencyStop()
 	}
 
-	rs.webServer.OnClearEmergencyStop = func() error {
+	rs.web.webServer.OnClearEmergencyStop = func() error {
 		rs.ClearEmergencyStop()
 		return nil
 	}
 
-	rs.webServer.OnGetControlState = func() (string, bool) {
+	rs.web.webServer.OnGetControlState = func() (string, bool) {
 		return rs.GetControlMode().String(), rs.IsEmergencyStopped()
 	}
 
 	if name := rs.cameraDisplayName(); name != "" {
-		rs.webServer.SetCameraName(name)
+		rs.web.webServer.SetCameraName(name)
 	}
-	if rs.positionEst != nil && rs.positionEst.IsCalibrated() {
-		rs.webServer.SetPositionEstimator(rs.positionEst)
+	if rs.position.positionEst != nil && rs.position.positionEst.IsCalibrated() {
+		rs.web.webServer.SetPositionEstimator(rs.position.positionEst)
 		utils.Debugf("PATH VIS: PositionEstimator set on WebServer (calibrated=%v)",
-			rs.positionEst.IsCalibrated())
-		rs.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
+			rs.position.positionEst.IsCalibrated())
+		rs.web.webServer.SetCalibrationState("calibrated", "Calibration loaded", calibrationPath, 0.15)
 		utils.Logf("Calibration loaded from %s", calibrationPath)
 	} else {
 		utils.Debugf("PATH VIS: WARNING - PositionEstimator NOT set! IsCalibrated()=%v",
-			rs.positionEst != nil && rs.positionEst.IsCalibrated())
+			rs.position.positionEst != nil && rs.position.positionEst.IsCalibrated())
 	}
 	rs.initForeground()
 
-	rs.webServer.Start()
+	rs.web.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
 
 	rs.loadStaticObstacles()
@@ -636,8 +625,8 @@ func (rs *RobotSystem) loadStaticObstacles() {
 		}
 	}
 
-	if obstaclesPath == "" && rs.webServer != nil {
-		obstaclesPath = rs.webServer.GetObstaclesPath()
+	if obstaclesPath == "" && rs.web.webServer != nil {
+		obstaclesPath = rs.web.webServer.GetObstaclesPath()
 		utils.Logf("Obstacles path from webserver: %s", obstaclesPath)
 	}
 	if obstaclesPath == "" {
@@ -718,12 +707,12 @@ func (rs *RobotSystem) loadStaticObstacles() {
 		staticObs := planning.NewRectObstacle(name, worldTL, worldBR)
 		staticObs.PixelsTopLeft = pixelsTL
 		staticObs.PixelsBottomRight = pixelsBR
-		rs.StaticObstacles = append(rs.StaticObstacles, staticObs)
+		rs.obstacles.StaticObstacles = append(rs.obstacles.StaticObstacles, staticObs)
 	}
 
-	if len(rs.StaticObstacles) > 0 {
-		utils.Logf("Loaded %d static obstacles from %s, calling SetObstacles", len(rs.StaticObstacles), obstaclesPath)
-		rs.webServer.SetObstacles(rs.StaticObstacles)
+	if len(rs.obstacles.StaticObstacles) > 0 {
+		utils.Logf("Loaded %d static obstacles from %s, calling SetObstacles", len(rs.obstacles.StaticObstacles), obstaclesPath)
+		rs.web.webServer.SetObstacles(rs.obstacles.StaticObstacles)
 	}
 }
 
@@ -746,7 +735,7 @@ func toFloat64(v interface{}) float64 {
 // This handles the macOS case where TCC permission is granted after the process starts
 // (e.g., the user clicks "Allow" on the camera permission dialog).
 func (rs *RobotSystem) tryOpenCamera(maxDuration time.Duration) error {
-	if rs.cameraConfig == nil {
+	if rs.capture.cameraConfig == nil {
 		return fmt.Errorf("no camera configuration available")
 	}
 	backoff := 2 * time.Second
@@ -754,10 +743,10 @@ func (rs *RobotSystem) tryOpenCamera(maxDuration time.Duration) error {
 	deadline := time.Now().Add(maxDuration)
 
 	for {
-		cam, err := camera.NewCamera(*rs.cameraConfig)
+		cam, err := camera.NewCamera(*rs.capture.cameraConfig)
 		if err == nil {
-			rs.cam = cam
-			utils.Logf("Camera initialized: %s", rs.cam.GetName())
+			rs.capture.cam = cam
+			utils.Logf("Camera initialized: %s", rs.capture.cam.GetName())
 			return nil
 		}
 
@@ -778,18 +767,18 @@ func (rs *RobotSystem) tryOpenCamera(maxDuration time.Duration) error {
 
 func (rs *RobotSystem) StartCamera() error {
 	utils.Logf("Starting camera...")
-	if rs.cam == nil {
+	if rs.capture.cam == nil {
 		utils.Logf("No camera available")
-		rs.cameraRunning = false
+		rs.capture.cameraRunning = false
 		return nil
 	}
-	if err := rs.cam.Start(); err != nil {
+	if err := rs.capture.cam.Start(); err != nil {
 		utils.Logf("Failed to start camera: %v", err)
-		rs.cameraRunning = false
+		rs.capture.cameraRunning = false
 		return err
 	}
-	rs.cameraRunning = true
-	utils.Logf("Camera started: %s", rs.cam.GetName())
+	rs.capture.cameraRunning = true
+	utils.Logf("Camera started: %s", rs.capture.cam.GetName())
 	if !rs.demoMode {
 		rs.startFrameWatchdog()
 	}
@@ -810,7 +799,7 @@ const (
 // frame rate is low it also names the busiest other processes (rate-limited),
 // so a slowdown caused by something else on the machine identifies itself.
 func (rs *RobotSystem) logPerf() {
-	s := rs.perf.TakeSummary(time.Now())
+	s := rs.stats.perf.TakeSummary(time.Now())
 
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -819,21 +808,21 @@ func (rs *RobotSystem) logPerf() {
 
 	now := time.Now()
 	cpu := processCPUSeconds()
-	if wall := now.Sub(rs.lastCPUAt).Seconds(); wall > 0 && rs.lastCPUSeconds > 0 {
-		line += fmt.Sprintf(" proc_cpu=%.1fcores", (cpu-rs.lastCPUSeconds)/wall)
+	if wall := now.Sub(rs.stats.lastCPUAt).Seconds(); wall > 0 && rs.stats.lastCPUSeconds > 0 {
+		line += fmt.Sprintf(" proc_cpu=%.1fcores", (cpu-rs.stats.lastCPUSeconds)/wall)
 	}
-	rs.lastCPUSeconds, rs.lastCPUAt = cpu, now
+	rs.stats.lastCPUSeconds, rs.stats.lastCPUAt = cpu, now
 
-	if rs.fg != nil && rs.fg.enabled.Load() {
-		line += rs.fg.perfSummary()
+	if rs.detection.fg != nil && rs.detection.fg.enabled.Load() {
+		line += rs.detection.fg.perfSummary()
 	}
 	if load, ok := systemLoadAverage(); ok {
 		line += fmt.Sprintf(" load1=%.2f", load)
 	}
-	if s.FPS < lowFPSForOffenders && time.Since(rs.lastOffenderLog) > offenderLogEvery {
+	if s.FPS < lowFPSForOffenders && time.Since(rs.stats.lastOffenderLog) > offenderLogEvery {
 		if top := topCPUProcesses(4); len(top) > 0 {
 			line += " LOW_FPS busiest_processes=" + strings.Join(top, ",")
-			rs.lastOffenderLog = now
+			rs.stats.lastOffenderLog = now
 		}
 	}
 	utils.Log(line)
@@ -847,12 +836,12 @@ const frameStallThreshold = 2 * time.Second
 // processed. The normal status update rides on the frame loop, so without this
 // a dead camera would leave the UI silently showing the last good FPS.
 func (rs *RobotSystem) startFrameWatchdog() {
-	rs.watchdogOnce.Do(func() {
-		rs.watchdogStop = make(chan struct{})
-		stop := rs.watchdogStop
-		rs.perf.TakeSummary(time.Now()) // start the first window now
-		rs.lastCPUAt = time.Now()
-		rs.lastCPUSeconds = processCPUSeconds()
+	rs.stats.watchdogOnce.Do(func() {
+		rs.stats.watchdogStop = make(chan struct{})
+		stop := rs.stats.watchdogStop
+		rs.stats.perf.TakeSummary(time.Now()) // start the first window now
+		rs.stats.lastCPUAt = time.Now()
+		rs.stats.lastCPUSeconds = processCPUSeconds()
 		go func() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
@@ -866,12 +855,12 @@ func (rs *RobotSystem) startFrameWatchdog() {
 					if ticks%perfLogEveryTicks == 0 {
 						rs.logPerf()
 					}
-					last := rs.startTime
-					if n := rs.lastFrameNanos.Load(); n != 0 {
+					last := rs.stats.startTime
+					if n := rs.stats.lastFrameNanos.Load(); n != 0 {
 						last = time.Unix(0, n)
 					}
-					if age := time.Since(last); age > frameStallThreshold && rs.webServer != nil {
-						rs.webServer.BroadcastCameraStalled(time.Since(rs.startTime).Seconds(), age.Seconds())
+					if age := time.Since(last); age > frameStallThreshold && rs.web.webServer != nil {
+						rs.web.webServer.BroadcastCameraStalled(time.Since(rs.stats.startTime).Seconds(), age.Seconds())
 					}
 				}
 			}
@@ -887,38 +876,38 @@ func (rs *RobotSystem) startFrameWatchdog() {
 // process-exit timing, so a future refactor (e.g. removing the os.Exit) can't
 // reintroduce a double-close panic.
 func (rs *RobotSystem) Stop() {
-	rs.stopOnce.Do(func() {
+	rs.stats.stopOnce.Do(func() {
 		utils.Logf("Stopping system...")
-		rs.watchdogStopOnce.Do(func() {
-			if rs.watchdogStop != nil {
-				close(rs.watchdogStop)
+		rs.stats.watchdogStopOnce.Do(func() {
+			if rs.stats.watchdogStop != nil {
+				close(rs.stats.watchdogStop)
 			}
 		})
-		if rs.fg != nil {
+		if rs.detection.fg != nil {
 			// A final, blocking save so a clean shutdown never has to wait for
 			// the next periodic save to capture the current background. Done
 			// before anything stops producing frames, so it captures live state.
-			rs.fg.det.SaveNow()
+			rs.detection.fg.det.SaveNow()
 		}
-		rs.cameraRunning = false
-		if rs.cam != nil {
-			rs.cam.Stop()
+		rs.capture.cameraRunning = false
+		if rs.capture.cam != nil {
+			rs.capture.cam.Stop()
 		}
-		if rs.fg != nil {
+		if rs.detection.fg != nil {
 			// Release the detector's OpenCV resources (previously never done on
 			// shutdown, leaking them). This comes after cameraRunning is false and
 			// the camera itself is stopped, so the frame loop is no longer calling
 			// into the detector by the time its Mats are closed.
-			rs.fg.det.Close()
+			rs.detection.fg.det.Close()
 		}
-		if rs.commandQueue != nil {
-			rs.commandQueue.Stop()
+		if rs.io.commandQueue != nil {
+			rs.io.commandQueue.Stop()
 		}
-		if rs.arduino != nil {
-			_ = rs.arduino.Disconnect()
+		if rs.io.arduino != nil {
+			_ = rs.io.arduino.Disconnect()
 		}
-		if rs.webServer != nil {
-			rs.webServer.Stop()
+		if rs.web.webServer != nil {
+			rs.web.webServer.Stop()
 		}
 		utils.Logf("System stopped")
 	})
@@ -950,25 +939,25 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		return
 	}
 
-	rs.frameNum++
+	rs.stats.frameNum++
 	frameStart := time.Now()
-	rs.lastFrameNanos.Store(frameStart.UnixNano())
+	rs.stats.lastFrameNanos.Store(frameStart.UnixNano())
 	timestamp := float64(frameStart.UnixNano()) / 1e9
 
 	// Compute smoothed FPS via exponential moving average
-	if !rs.lastFrameTime.IsZero() {
-		dt := frameStart.Sub(rs.lastFrameTime).Seconds()
+	if !rs.stats.lastFrameTime.IsZero() {
+		dt := frameStart.Sub(rs.stats.lastFrameTime).Seconds()
 		if dt > 0 {
 			instantFPS := 1.0 / dt
 			alpha := 0.1 // EMA smoothing factor
-			if rs.smoothedFPS == 0 {
-				rs.smoothedFPS = instantFPS
+			if rs.stats.smoothedFPS == 0 {
+				rs.stats.smoothedFPS = instantFPS
 			} else {
-				rs.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.smoothedFPS
+				rs.stats.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.stats.smoothedFPS
 			}
 		}
 	}
-	rs.lastFrameTime = frameStart
+	rs.stats.lastFrameTime = frameStart
 
 	bounds := img.Bounds()
 	width := bounds.Max.X - bounds.Min.X
@@ -981,31 +970,31 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	}
 	_ = ok
 
-	if rs.positionEst != nil {
-		rs.positionEst.SetFrameSize(width, height)
+	if rs.position.positionEst != nil {
+		rs.position.positionEst.SetFrameSize(width, height)
 	}
 
-	detectionResult := rs.detectionPipe.Detect(frameData, width, height, timestamp, rs.frameNum)
+	detectionResult := rs.detection.detectionPipe.Detect(frameData, width, height, timestamp, rs.stats.frameNum)
 	detectTime := time.Since(frameStart)
 
 	rs.processForeground(frameData, width, height, frameStart, detectionResult)
 
 	trackingDetections := rs.convertFusedToTrackingDetections(detectionResult.FusedDetections)
-	trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+	trackingResult := rs.tracking.tracker.Update(trackingDetections, timestamp, rs.stats.frameNum)
 
 	for i := range trackingResult.Tracks {
 		track := &trackingResult.Tracks[i]
 		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
-			rs.CurrentRobotID = *track.TagID
-			if rs.positionEst != nil {
+			rs.planning.CurrentRobotID = *track.TagID
+			if rs.position.positionEst != nil {
 				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-				worldPos := rs.positionEst.PixelToWorld(px, py)
-				rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+				worldPos := rs.position.positionEst.PixelToWorld(px, py)
+				rs.position.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 				robotDiameter := 0.30 // fallback
 				if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
 					// Compute pixel radius by projecting world-space footprint through homography
 					worldRadius := robotConfig.Diameter / 2
-					edgePx, edgePy := rs.positionEst.WorldToPixel(position.Point2D{
+					edgePx, edgePy := rs.position.positionEst.WorldToPixel(position.Point2D{
 						X: worldPos.X + worldRadius, Y: worldPos.Y,
 					})
 					dxR := float64(edgePx - px)
@@ -1014,7 +1003,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 					robotDiameter = robotConfig.Diameter
 					// Apply center offset if configured (compensates for tag-to-robot-center distance / parallax)
 					if robotConfig.CenterOffsetX != 0 || robotConfig.CenterOffsetY != 0 {
-						if heading, ok := rs.lastHeading[*track.TagID]; ok {
+						if heading, ok := rs.heading.lastHeading[*track.TagID]; ok {
 							cosH := math.Cos(heading)
 							sinH := math.Sin(heading)
 							worldPos.X += robotConfig.CenterOffsetX*cosH - robotConfig.CenterOffsetY*sinH
@@ -1023,37 +1012,37 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 					}
 				}
 				track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
-				rs.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
+				rs.planning.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
 
 				rs.computeTrackHeading(track, detectionResult.Tags)
 				utils.Debugf("TRACKPOS: robot=%d pos=(%.3f,%.3f) heading=%.1f° tagSeen=%v cmd=%s",
 					*track.TagID, worldPos.X, worldPos.Y, track.Heading*180/math.Pi,
-					rs.headingLostCount[*track.TagID] == 0, rs.robotCommands[*track.TagID])
+					rs.heading.headingLostCount[*track.TagID] == 0, rs.io.robotCommands[*track.TagID])
 			}
 		}
 	}
 
-	rs.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots, rs.robotCommands)
+	rs.web.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots, rs.io.robotCommands)
 
 	rs.executeAutonomousControl(trackingResult.Tracks)
 
-	if rs.webServer.CalibrationViewActive() {
+	if rs.web.webServer.CalibrationViewActive() {
 		// Calibration wizard open: send the clean camera view, no detection overlay.
 		if img != nil {
-			rs.webServer.PushFrame(img)
+			rs.web.webServer.PushFrame(img)
 		}
-	} else if overlay := rs.detectionPipe.DrawResults(frameData, width, height, detectionResult); len(overlay) > 0 && len(overlay) < width*height*3 {
-		rs.webServer.PushRawJPEG(overlay)
+	} else if overlay := rs.detection.detectionPipe.DrawResults(frameData, width, height, detectionResult); len(overlay) > 0 && len(overlay) < width*height*3 {
+		rs.web.webServer.PushRawJPEG(overlay)
 	} else if img != nil {
-		rs.webServer.PushFrame(img)
+		rs.web.webServer.PushFrame(img)
 	}
 
-	rs.webServer.UpdateStats(len(detectionResult.Tags))
+	rs.web.webServer.UpdateStats(len(detectionResult.Tags))
 
 	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 	if rs.statusBroadcastDue() {
-		rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
-		rs.webServer.BroadcastStatus(len(trackingResult.Tracks), rs.smoothedFPS, time.Since(rs.startTime).Seconds())
+		rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
+		rs.web.webServer.BroadcastStatus(len(trackingResult.Tracks), rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
 	}
 
 	detectedTags := make([]ui.DetectedTagInfo, 0, len(detectionResult.Tags))
@@ -1064,21 +1053,21 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 			Corners: tag.Corners,
 		})
 	}
-	rs.webServer.UpdateDetectedTags(detectedTags, width, height)
+	rs.web.webServer.UpdateDetectedTags(detectedTags, width, height)
 
-	if rs.frameNum%10 == 0 && rs.webServer != nil {
-		paths := rs.planner.GetPaths()
+	if rs.stats.frameNum%10 == 0 && rs.web.webServer != nil {
+		paths := rs.planning.planner.GetPaths()
 		totalWaypoints := 0
 		for _, path := range paths {
 			totalWaypoints += len(path)
 		}
-		rs.webServer.BroadcastPaths()
+		rs.web.webServer.BroadcastPaths()
 	}
 
 	frameTotal := time.Since(frameStart)
-	rs.perf.Record(frameTotal, detectTime, frameTotal-detectTime)
+	rs.stats.perf.Record(frameTotal, detectTime, frameTotal-detectTime)
 
-	if rs.frameNum%30 == 0 {
+	if rs.stats.frameNum%30 == 0 {
 		hasConfirmedRobot := false
 		for _, track := range trackingResult.Tracks {
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
@@ -1115,8 +1104,8 @@ func (rs *RobotSystem) computeTrackHeading(track *tracking.Track, tags []detecti
 		botMidY := (tag.Corners[2][1] + tag.Corners[3][1]) / 2
 		topMidX := (tag.Corners[0][0] + tag.Corners[1][0]) / 2
 		topMidY := (tag.Corners[0][1] + tag.Corners[1][1]) / 2
-		wBot = rs.positionEst.PixelToWorldFloat(botMidX, botMidY)
-		wTop = rs.positionEst.PixelToWorldFloat(topMidX, topMidY)
+		wBot = rs.position.positionEst.PixelToWorldFloat(botMidX, botMidY)
+		wTop = rs.position.positionEst.PixelToWorldFloat(topMidX, topMidY)
 		track.Heading = math.Atan2(wTop.Y-wBot.Y, wTop.X-wBot.X)
 
 		// Apply configurable mounting offset
@@ -1136,19 +1125,19 @@ func (rs *RobotSystem) computeTrackHeading(track *tracking.Track, tags []detecti
 
 	// Track heading delta (angular velocity) and cache heading
 	if !tagFound {
-		if cached, ok := rs.lastHeading[tagID]; ok {
+		if cached, ok := rs.heading.lastHeading[tagID]; ok {
 			track.Heading = cached
 			utils.Debugf("HEADING: tag %d using cached heading=%.2f°", tagID, cached*180/math.Pi)
 		}
-		rs.headingDelta[tagID] = 0
-		rs.headingLostCount[tagID]++
-		if rs.headingLostCount[tagID] > 5 {
-			delete(rs.smoothedHeading, tagID)
-			delete(rs.headingRejectCount, tagID)
+		rs.heading.headingDelta[tagID] = 0
+		rs.heading.headingLostCount[tagID]++
+		if rs.heading.headingLostCount[tagID] > 5 {
+			delete(rs.heading.smoothedHeading, tagID)
+			delete(rs.heading.headingRejectCount, tagID)
 		}
 	} else {
-		rs.headingLostCount[tagID] = 0
-		if prev, ok := rs.lastHeading[tagID]; ok {
+		rs.heading.headingLostCount[tagID] = 0
+		if prev, ok := rs.heading.lastHeading[tagID]; ok {
 			delta := track.Heading - prev
 			delta = normalizeAngle(delta)
 			if math.Abs(delta) > 15*math.Pi/180 {
@@ -1160,11 +1149,11 @@ func (rs *RobotSystem) computeTrackHeading(track *tracking.Track, tags []detecti
 					track.Corners[2][0], track.Corners[2][1],
 					track.Corners[3][0], track.Corners[3][1])
 			}
-			rs.headingDelta[tagID] = delta
+			rs.heading.headingDelta[tagID] = delta
 		} else {
-			rs.headingDelta[tagID] = 0
+			rs.heading.headingDelta[tagID] = 0
 		}
-		rs.lastHeading[tagID] = track.Heading
+		rs.heading.lastHeading[tagID] = track.Heading
 	}
 }
 
@@ -1181,9 +1170,9 @@ func normalizeAngle(a float64) float64 {
 
 // applyHeadingSmoothing applies angle-aware EMA smoothing with outlier rejection.
 func (rs *RobotSystem) applyHeadingSmoothing(track *tracking.Track, tagID int) {
-	prev, ok := rs.smoothedHeading[tagID]
+	prev, ok := rs.heading.smoothedHeading[tagID]
 	if !ok {
-		rs.smoothedHeading[tagID] = track.Heading
+		rs.heading.smoothedHeading[tagID] = track.Heading
 		return
 	}
 
@@ -1197,24 +1186,24 @@ func (rs *RobotSystem) applyHeadingSmoothing(track *tracking.Track, tagID int) {
 	maxRate := rs.cfg.Position.HeadingMaxRateDeg * math.Pi / 180
 	if maxRate > 0 && math.Abs(diff) > maxRate {
 		// Measurement too far from smoothed — likely noise, reject it
-		rs.headingRejectCount[tagID]++
+		rs.heading.headingRejectCount[tagID]++
 		utils.Debugf("HEADING REJECT: tag %d raw=%.1f° smoothed=%.1f° diff=%.1f° count=%d",
-			tagID, track.Heading*180/math.Pi, prev*180/math.Pi, diff*180/math.Pi, rs.headingRejectCount[tagID])
-		if rs.headingRejectCount[tagID] >= 10 {
+			tagID, track.Heading*180/math.Pi, prev*180/math.Pi, diff*180/math.Pi, rs.heading.headingRejectCount[tagID])
+		if rs.heading.headingRejectCount[tagID] >= 10 {
 			// Too many consecutive rejections — accept with EMA to converge
 			track.Heading = normalizeAngle(prev + alpha*diff)
 			utils.Debugf("HEADING RESET: tag %d after 10 rejections, converging to %.1f°",
 				tagID, track.Heading*180/math.Pi)
-			rs.headingRejectCount[tagID] = 0
+			rs.heading.headingRejectCount[tagID] = 0
 		} else {
 			track.Heading = prev // keep previous smoothed heading
 		}
 	} else {
 		// Reasonable change — apply EMA
 		track.Heading = normalizeAngle(prev + alpha*diff)
-		rs.headingRejectCount[tagID] = 0
+		rs.heading.headingRejectCount[tagID] = 0
 	}
-	rs.smoothedHeading[tagID] = track.Heading
+	rs.heading.smoothedHeading[tagID] = track.Heading
 }
 
 // estimateRobotVelocity computes a robot's world-frame velocity (m/s) from the
@@ -1223,11 +1212,11 @@ func (rs *RobotSystem) applyHeadingSmoothing(track *tracking.Track, tagID int) {
 // the position/timestamp for next time. A too-small or non-positive dt (first
 // sighting, duplicate frame, clock oddity) yields zero rather than a spike.
 func (rs *RobotSystem) estimateRobotVelocity(robotID int, worldPos [2]float64, timestamp float64) [2]float64 {
-	prevPos, hadPrev := rs.lastRobotWorldPos[robotID]
-	prevTime, hadTime := rs.lastRobotPosTime[robotID]
+	prevPos, hadPrev := rs.position.lastRobotWorldPos[robotID]
+	prevTime, hadTime := rs.position.lastRobotPosTime[robotID]
 
-	rs.lastRobotWorldPos[robotID] = worldPos
-	rs.lastRobotPosTime[robotID] = timestamp
+	rs.position.lastRobotWorldPos[robotID] = worldPos
+	rs.position.lastRobotPosTime[robotID] = timestamp
 
 	if !hadPrev || !hadTime {
 		return [2]float64{0, 0}
@@ -1259,70 +1248,70 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 
 		robotID := *track.TagID
 
-		if _, hasPath := rs.planner.GetNextWaypoint(robotID); hasPath {
-			if rs.positionEst == nil {
+		if _, hasPath := rs.planning.planner.GetNextWaypoint(robotID); hasPath {
+			if rs.position.positionEst == nil {
 				continue
 			}
 
 			px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-			worldPos := rs.positionEst.PixelToWorld(px, py)
+			worldPos := rs.position.positionEst.PixelToWorld(px, py)
 
 			// Stop and replan when dangerously close to an obstacle
-			if clearance := rs.planner.GetClearance(robotID); clearance < 0.08 {
+			if clearance := rs.planning.planner.GetClearance(robotID); clearance < 0.08 {
 				utils.Logf("PROXIMITY WARNING: Robot %d clearance=%.3fm — stopping and replanning", robotID, clearance)
-				if rs.commandQueue != nil {
-					rs.commandQueue.Enqueue(controller.CommandStop)
+				if rs.io.commandQueue != nil {
+					rs.io.commandQueue.Enqueue(controller.CommandStop)
 					commandIssued = true
 				}
-				rs.robotCommands[robotID] = "stopped"
+				rs.io.robotCommands[robotID] = "stopped"
 				// Replan at most once every 3 seconds to avoid thrashing
-				if lastReplan, ok := rs.lastReplanTime[robotID]; !ok || time.Since(lastReplan) > 3*time.Second {
-					if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
-						rs.planner.ClearPathOnly(robotID)
+				if lastReplan, ok := rs.planning.lastReplanTime[robotID]; !ok || time.Since(lastReplan) > 3*time.Second {
+					if goal, hasGoal := rs.planning.planner.GetGoal(robotID); hasGoal {
+						rs.planning.planner.ClearPathOnly(robotID)
 						pos := [2]float64{worldPos.X, worldPos.Y}
-						if newPath, ok := rs.planner.PlanPath(robotID, pos, goal); ok {
-							rs.planner.SetPath(robotID, newPath)
+						if newPath, ok := rs.planning.planner.PlanPath(robotID, pos, goal); ok {
+							rs.planning.planner.SetPath(robotID, newPath)
 							utils.Logf("Robot %d replanned: %d waypoints from (%.2f,%.2f)", robotID, len(newPath), pos[0], pos[1])
 						} else {
 							utils.Logf("Robot %d replan FAILED from (%.2f,%.2f) to (%.2f,%.2f)", robotID, pos[0], pos[1], goal[0], goal[1])
 						}
-						rs.lastReplanTime[robotID] = time.Now()
+						rs.planning.lastReplanTime[robotID] = time.Now()
 					}
 				}
 				continue
 			}
 
 			// Check if robot is close to final destination
-			if goal, hasGoal := rs.planner.GetGoal(robotID); hasGoal {
+			if goal, hasGoal := rs.planning.planner.GetGoal(robotID); hasGoal {
 				dx := worldPos.X - goal[0]
 				dy := worldPos.Y - goal[1]
 				distToGoal := math.Sqrt(dx*dx + dy*dy)
-				if distToGoal < rs.waypointThreshold {
-					rs.planner.CompletePath(robotID)
-					rs.webServer.ClearDestination(robotID)
+				if distToGoal < rs.io.waypointThreshold {
+					rs.planning.planner.CompletePath(robotID)
+					rs.web.webServer.ClearDestination(robotID)
 					utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
-					if rs.commandQueue != nil {
-						rs.commandQueue.Enqueue(controller.CommandStop)
+					if rs.io.commandQueue != nil {
+						rs.io.commandQueue.Enqueue(controller.CommandStop)
 						commandIssued = true
 					}
-					rs.robotCommands[robotID] = "stopped"
+					rs.io.robotCommands[robotID] = "stopped"
 					continue
 				}
 			}
 
 			// Advance past any reached or overshot waypoints
-			if !rs.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.waypointThreshold) {
+			if !rs.planning.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.io.waypointThreshold) {
 				utils.Logf("Robot %d reached final waypoint, stopping", robotID)
-				if rs.commandQueue != nil {
-					rs.commandQueue.Enqueue(controller.CommandStop)
+				if rs.io.commandQueue != nil {
+					rs.io.commandQueue.Enqueue(controller.CommandStop)
 					commandIssued = true
 				}
-				rs.robotCommands[robotID] = "stopped"
+				rs.io.robotCommands[robotID] = "stopped"
 				continue
 			}
 
 			// Get updated waypoint after advancing
-			waypoint, stillHasPath := rs.planner.GetNextWaypoint(robotID)
+			waypoint, stillHasPath := rs.planning.planner.GetNextWaypoint(robotID)
 			if !stillHasPath {
 				continue
 			}
@@ -1332,37 +1321,37 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 			dy := waypoint[1] - worldPos.Y
 			bearingToWaypoint := math.Atan2(dy, dx)
 
-			if rs.pathExecutor != nil && rs.commandQueue != nil {
-				delta := rs.headingDelta[robotID]
-				cmd := rs.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
-				rs.commandQueue.Enqueue(cmd)
+			if rs.io.pathExecutor != nil && rs.io.commandQueue != nil {
+				delta := rs.heading.headingDelta[robotID]
+				cmd := rs.io.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
+				rs.io.commandQueue.Enqueue(cmd)
 				commandIssued = true
 				switch cmd {
 				case controller.CommandForward:
-					rs.robotCommands[robotID] = "forward"
+					rs.io.robotCommands[robotID] = "forward"
 				case controller.CommandBackward:
-					rs.robotCommands[robotID] = "backward"
+					rs.io.robotCommands[robotID] = "backward"
 				case controller.CommandLeft:
-					rs.robotCommands[robotID] = "rotating_left"
+					rs.io.robotCommands[robotID] = "rotating_left"
 				case controller.CommandRight:
-					rs.robotCommands[robotID] = "rotating_right"
+					rs.io.robotCommands[robotID] = "rotating_right"
 				case controller.CommandStop:
-					rs.robotCommands[robotID] = "stopped"
+					rs.io.robotCommands[robotID] = "stopped"
 				}
 			}
 
 			velocity := rs.estimateRobotVelocity(robotID, [2]float64{worldPos.X, worldPos.Y}, track.Timestamp)
-			rs.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y}, velocity)
-		} else if rs.commandQueue != nil && rs.commandQueue.IsRunning() {
-			rs.commandQueue.ClearActiveCommand()
+			rs.planning.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y}, velocity)
+		} else if rs.io.commandQueue != nil && rs.io.commandQueue.IsRunning() {
+			rs.io.commandQueue.ClearActiveCommand()
 		}
 	}
 
 	// Safety: stop re-sending stale commands when tracking is lost for too long.
 	if commandIssued {
-		rs.lastCommandTime = time.Now()
-	} else if rs.commandQueue != nil && time.Since(rs.lastCommandTime) > rs.trackingLostTimeout {
-		rs.commandQueue.ClearActiveCommand()
+		rs.io.lastCommandTime = time.Now()
+	} else if rs.io.commandQueue != nil && time.Since(rs.io.lastCommandTime) > rs.io.trackingLostTimeout {
+		rs.io.commandQueue.ClearActiveCommand()
 	}
 }
 
@@ -1605,24 +1594,24 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		return
 	}
 
-	rs.frameNum++
+	rs.stats.frameNum++
 	frameStart := time.Now()
 	timestamp := float64(frameStart.UnixNano()) / 1e9
 
 	// Compute smoothed FPS via exponential moving average
-	if !rs.lastFrameTime.IsZero() {
-		dt := frameStart.Sub(rs.lastFrameTime).Seconds()
+	if !rs.stats.lastFrameTime.IsZero() {
+		dt := frameStart.Sub(rs.stats.lastFrameTime).Seconds()
 		if dt > 0 {
 			instantFPS := 1.0 / dt
 			alpha := 0.1
-			if rs.smoothedFPS == 0 {
-				rs.smoothedFPS = instantFPS
+			if rs.stats.smoothedFPS == 0 {
+				rs.stats.smoothedFPS = instantFPS
 			} else {
-				rs.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.smoothedFPS
+				rs.stats.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.stats.smoothedFPS
 			}
 		}
 	}
-	rs.lastFrameTime = frameStart
+	rs.stats.lastFrameTime = frameStart
 
 	width := img.Rect.Max.X
 	height := img.Rect.Max.Y
@@ -1631,7 +1620,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		Tags:            demoTags,
 		FusedDetections: []detection.FusedDetection{},
 		Timestamp:       timestamp,
-		FrameIdx:        rs.frameNum,
+		FrameIdx:        rs.stats.frameNum,
 	}
 
 	for _, tag := range demoTags {
@@ -1652,22 +1641,22 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		})
 	}
 
-	if rs.tracker != nil {
+	if rs.tracking.tracker != nil {
 		trackingDetections := rs.convertFusedToTrackingDetections(result.FusedDetections)
-		trackingResult := rs.tracker.Update(trackingDetections, timestamp, rs.frameNum)
+		trackingResult := rs.tracking.tracker.Update(trackingDetections, timestamp, rs.stats.frameNum)
 
 		for i := range trackingResult.Tracks {
 			track := &trackingResult.Tracks[i]
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
-				rs.CurrentRobotID = *track.TagID
-				if rs.positionEst != nil {
+				rs.planning.CurrentRobotID = *track.TagID
+				if rs.position.positionEst != nil {
 					px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-					worldPos := rs.positionEst.PixelToWorld(px, py)
-					rs.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+					worldPos := rs.position.positionEst.PixelToWorld(px, py)
+					rs.position.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 					track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
 					if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
 						worldRadius := robotConfig.Diameter / 2
-						edgePx, edgePy := rs.positionEst.WorldToPixel(position.Point2D{
+						edgePx, edgePy := rs.position.positionEst.WorldToPixel(position.Point2D{
 							X: worldPos.X + worldRadius, Y: worldPos.Y,
 						})
 						dxR := float64(edgePx - px)
@@ -1682,32 +1671,32 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		if rs.cfg != nil {
 			robots = rs.cfg.Robots
 		}
-		rs.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.robotCommands)
+		rs.web.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.io.robotCommands)
 	}
 
-	if rs.detectionPipe != nil && rs.webServer != nil && rs.webServer.CalibrationViewActive() {
-		rs.webServer.PushFrame(img)
-	} else if rs.detectionPipe != nil && rs.webServer != nil {
-		overlay := rs.detectionPipe.DrawResults(img.Pix, width, height, result)
+	if rs.detection.detectionPipe != nil && rs.web.webServer != nil && rs.web.webServer.CalibrationViewActive() {
+		rs.web.webServer.PushFrame(img)
+	} else if rs.detection.detectionPipe != nil && rs.web.webServer != nil {
+		overlay := rs.detection.detectionPipe.DrawResults(img.Pix, width, height, result)
 		if overlay != nil {
 			overlayImg := decodeToImage(overlay, width, height)
 			if overlayImg != nil {
-				rs.webServer.PushFrame(overlayImg)
+				rs.web.webServer.PushFrame(overlayImg)
 			} else {
-				rs.webServer.PushFrame(img)
+				rs.web.webServer.PushFrame(img)
 			}
 		} else {
-			rs.webServer.PushFrame(img)
+			rs.web.webServer.PushFrame(img)
 		}
 	}
 
-	if rs.webServer != nil {
-		rs.webServer.UpdateStats(len(demoTags))
+	if rs.web.webServer != nil {
+		rs.web.webServer.UpdateStats(len(demoTags))
 
 		// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 		if rs.statusBroadcastDue() {
-			rs.webServer.SetArduinoConnected(rs.arduino != nil && rs.arduino.IsConnected())
-			rs.webServer.BroadcastStatus(len(demoTags), rs.smoothedFPS, time.Since(rs.startTime).Seconds())
+			rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
+			rs.web.webServer.BroadcastStatus(len(demoTags), rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
 		}
 
 		detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
@@ -1719,7 +1708,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 			})
 		}
 		detectedTags = append(detectedTags, demoCalibrationTagInfos(width, height)...)
-		rs.webServer.UpdateDetectedTags(detectedTags, width, height)
+		rs.web.webServer.UpdateDetectedTags(detectedTags, width, height)
 	}
 }
 
@@ -1798,7 +1787,7 @@ func main() {
 
 	// If camera isn't available yet (e.g., macOS permission dialog pending),
 	// retry with backoff before falling back to demo mode.
-	if rs.cam == nil && !*demoMode && rs.cameraConfig != nil {
+	if rs.capture.cam == nil && !*demoMode && rs.capture.cameraConfig != nil {
 		utils.Log("Camera not available at startup, retrying (waiting for permission?)...")
 		if err := rs.tryOpenCamera(2 * time.Minute); err != nil {
 			utils.Logf("Camera unavailable after retries: %v, falling back to demo mode", err)
@@ -1806,12 +1795,12 @@ func main() {
 		}
 	}
 	// If camera still isn't available and not in demo mode, fall back
-	if rs.cam == nil && !*demoMode {
+	if rs.capture.cam == nil && !*demoMode {
 		utils.Log("No camera available, falling back to demo mode")
 		*demoMode = true
 	}
 
-	if rs.cam != nil && !*demoMode {
+	if rs.capture.cam != nil && !*demoMode {
 		utils.Log("Starting real camera capture...")
 		if err := rs.StartCamera(); err != nil {
 			utils.Logf("Failed to start camera: %v, falling back to demo mode", err)
@@ -1822,12 +1811,12 @@ func main() {
 			frameFailures := 0
 			minFrameInterval := time.Second / time.Duration(rs.cfg.EffectiveMaxFPS())
 			utils.Logf("Processing capped at %d fps", rs.cfg.EffectiveMaxFPS())
-			for rs.cameraRunning {
+			for rs.capture.cameraRunning {
 				startTime := time.Now()
-				frame, err := rs.cam.GetFrame()
+				frame, err := rs.capture.cam.GetFrame()
 				if err != nil {
 					frameFailures++
-					rs.perf.RecordCameraFailure()
+					rs.stats.perf.RecordCameraFailure()
 					if frameFailures == 1 || frameFailures%50 == 0 {
 						utils.Logf("Failed to get frame (%d in a row): %v", frameFailures, err)
 					}
@@ -1862,8 +1851,8 @@ func main() {
 		// Also covers falling back to demo because the camera never opened:
 		// calibrating on synthetic frames must not overwrite the real file.
 		rs.demoMode = true
-		if rs.webServer != nil {
-			rs.webServer.SetCameraName(demoCameraName)
+		if rs.web.webServer != nil {
+			rs.web.webServer.SetCameraName(demoCameraName)
 		}
 	}
 
@@ -1897,7 +1886,7 @@ func main() {
 
 		for _, cmd := range testCommands {
 			utils.Logf("Sending command: %c", cmd)
-			rs.commandQueue.Enqueue(cmd)
+			rs.io.commandQueue.Enqueue(cmd)
 			vel := executor.CommandToVelocity(cmd)
 			utils.Logf("  Velocity: (%.2f, %.2f)", vel.VX, vel.VY)
 		}

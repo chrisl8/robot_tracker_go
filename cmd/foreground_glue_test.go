@@ -47,9 +47,11 @@ func newFGRig(t *testing.T, apply bool) *fgRig {
 	cfg := &config.Config{Foreground: config.ForegroundConfig{
 		WarmupSec: 1, AppearMs: 200, VanishMs: 400, ApplyToPlanner: &apply, Enabled: &on,
 	}}
-	rs := &RobotSystem{cfg: cfg, planner: planning.NewPlanner(nil), positionEst: est}
-	rs.fg = newForegroundGlue(cfg.EffectiveForeground())
-	t.Cleanup(rs.fg.det.Close)
+	rs := &RobotSystem{cfg: cfg}
+	rs.planning.planner = planning.NewPlanner(nil)
+	rs.position.positionEst = est
+	rs.detection.fg = newForegroundGlue(cfg.EffectiveForeground())
+	t.Cleanup(rs.detection.fg.det.Close)
 	return &fgRig{rs: rs, rng: rand.New(rand.NewSource(1)), now: time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)}
 }
 
@@ -99,58 +101,58 @@ func (r *fgRig) run(n int, tags ...detection.AprilTag) {
 func TestProcessForeground_PublishesAfterItPersistsAndClearsWhenRemoved(t *testing.T) {
 	r := newFGRig(t, false)
 	r.run(30) // warm up on an empty floor
-	if got := r.rs.fg.snapshotState(); got.Warming || got.Count != 0 {
+	if got := r.rs.detection.fg.snapshotState(); got.Warming || got.Count != 0 {
 		t.Fatalf("empty floor: %+v", got)
 	}
 
 	r.obj = &[4]int{300, 150, 360, 210} // 60x60 px = 0.6 x 0.6 m
 	r.step()
-	if got := r.rs.fg.snapshotState().Count; got != 0 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 0 {
 		t.Errorf("an object seen for one frame published %d obstacles; it must persist first", got)
 	}
 	r.run(8)
-	st := r.rs.fg.snapshotState()
+	st := r.rs.detection.fg.snapshotState()
 	if st.Count != 1 {
 		t.Fatalf("persisting object: %d obstacles, want 1", st.Count)
 	}
-	box := r.rs.fg.published[0].Box
+	box := r.rs.detection.fg.published[0].Box
 	if w, h := box.Width(), box.Height(); w < 0.5 || w > 0.8 || h < 0.5 || h > 0.8 {
 		t.Errorf("obstacle is %.2f x %.2f m, want about 0.6 x 0.6", w, h)
 	}
 
 	r.obj = nil
 	r.run(3)
-	if got := r.rs.fg.snapshotState().Count; got != 1 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 1 {
 		t.Errorf("obstacle dropped after a moment (%d); it should linger for vanish_ms", got)
 	}
 	r.run(10)
-	if got := r.rs.fg.snapshotState().Count; got != 0 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 0 {
 		t.Errorf("obstacle still present after it left (%d)", got)
 	}
 }
 
 func TestProcessForeground_ShadowModeDoesNotSteerUntilApplied(t *testing.T) {
 	r := newFGRig(t, false)
-	r.rs.planner.AddRobot(1, [2]float64{3.0, 1.8}, 0.30)
+	r.rs.planning.planner.AddRobot(1, [2]float64{3.0, 1.8}, 0.30)
 	r.run(30)
 	r.obj = &[4]int{300, 150, 360, 210}
 	r.run(10)
-	if r.rs.fg.snapshotState().Count != 1 {
+	if r.rs.detection.fg.snapshotState().Count != 1 {
 		t.Fatal("expected the obstacle to be detected")
 	}
-	if c := r.rs.planner.GetClearance(1); c < 1e9 {
+	if c := r.rs.planning.planner.GetClearance(1); c < 1e9 {
 		t.Errorf("shadow mode leaked an obstacle into the planner (clearance %.2f)", c)
 	}
 
-	r.rs.fg.apply.Store(true)
+	r.rs.detection.fg.apply.Store(true)
 	r.step()
-	if c := r.rs.planner.GetClearance(1); c > 1e9 {
+	if c := r.rs.planning.planner.GetClearance(1); c > 1e9 {
 		t.Error("with steering on, the planner should know about the obstacle")
 	}
 
-	r.rs.fg.apply.Store(false)
+	r.rs.detection.fg.apply.Store(false)
 	r.step()
-	if c := r.rs.planner.GetClearance(1); c < 1e9 {
+	if c := r.rs.planning.planner.GetClearance(1); c < 1e9 {
 		t.Errorf("turning steering off should clear the planner's obstacles (clearance %.2f)", c)
 	}
 }
@@ -163,13 +165,13 @@ func TestProcessForeground_RobotTagMaskHidesTheRobot(t *testing.T) {
 	r.obj = &[4]int{300, 150, 340, 190}
 	tag := detection.AprilTag{TagID: 1, CenterX: 320, CenterY: 170}
 	r.run(10, tag)
-	if got := r.rs.fg.snapshotState().Count; got != 0 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 0 {
 		t.Errorf("a robot with a detected tag became %d obstacles", got)
 	}
 
 	// Its tag drops out for a moment: the last position stays masked.
 	r.run(10)
-	if got := r.rs.fg.snapshotState().Count; got != 0 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 0 {
 		t.Errorf("a robot whose tag was just lost became %d obstacles", got)
 	}
 }
@@ -180,7 +182,7 @@ func TestProcessForeground_CalibrationTagsAreNotRobots(t *testing.T) {
 	r.obj = &[4]int{300, 150, 360, 210}
 	// Tag 100 is a calibration tag lying on the floor, not a robot to mask.
 	r.run(10, detection.AprilTag{TagID: 100, CenterX: 330, CenterY: 180})
-	if got := r.rs.fg.snapshotState().Count; got != 1 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 1 {
 		t.Errorf("an object next to a calibration tag: %d obstacles, want 1", got)
 	}
 }
@@ -190,13 +192,13 @@ func TestProcessForeground_DisabledOrUncalibratedPublishesNothing(t *testing.T) 
 	r.run(30)
 	r.obj = &[4]int{300, 150, 360, 210}
 	r.run(10)
-	if r.rs.fg.snapshotState().Count != 1 {
+	if r.rs.detection.fg.snapshotState().Count != 1 {
 		t.Fatal("expected an obstacle")
 	}
 
-	r.rs.fg.enabled.Store(false)
+	r.rs.detection.fg.enabled.Store(false)
 	r.step()
-	if got := r.rs.fg.snapshotState(); got.Count != 0 || got.Enabled {
+	if got := r.rs.detection.fg.snapshotState(); got.Count != 0 || got.Enabled {
 		t.Errorf("disabled detector state: %+v", got)
 	}
 }
@@ -206,24 +208,24 @@ func TestProcessForeground_ResetRelearnsAndAbsorbRemoves(t *testing.T) {
 	r.run(30)
 	r.obj = &[4]int{300, 150, 360, 210}
 	r.run(10)
-	if r.rs.fg.snapshotState().Count != 1 {
+	if r.rs.detection.fg.snapshotState().Count != 1 {
 		t.Fatal("expected an obstacle")
 	}
 
-	r.rs.fg.requestAbsorb(330, 180)
+	r.rs.detection.fg.requestAbsorb(330, 180)
 	r.run(6)
-	if got := r.rs.fg.snapshotState().Count; got != 0 {
+	if got := r.rs.detection.fg.snapshotState().Count; got != 0 {
 		t.Errorf("absorbed object still an obstacle (%d)", got)
 	}
 
 	r.obj = &[4]int{100, 60, 160, 120}
 	r.run(10)
-	if r.rs.fg.snapshotState().Count != 1 {
+	if r.rs.detection.fg.snapshotState().Count != 1 {
 		t.Fatal("expected a second obstacle")
 	}
-	r.rs.fg.requestReset()
+	r.rs.detection.fg.requestReset()
 	r.step()
-	if got := r.rs.fg.snapshotState(); got.Count != 0 {
+	if got := r.rs.detection.fg.snapshotState(); got.Count != 0 {
 		t.Errorf("after reset: %+v", got)
 	}
 }
@@ -242,11 +244,11 @@ func TestProcessForeground_TightOrientedObstacleReachesThePlanner(t *testing.T) 
 	r.rot = &rotRect{cx: 320, cy: 180, halfLen: 25, halfWidth: 5, angleDeg: 45}
 	r.run(10)
 
-	got := r.rs.fg.snapshotState()
+	got := r.rs.detection.fg.snapshotState()
 	if got.Count != 1 {
 		t.Fatalf("expected 1 tracked obstacle, got %+v", got)
 	}
-	tracked := r.rs.fg.published[0]
+	tracked := r.rs.detection.fg.published[0]
 
 	// The published Quad must be genuinely oriented, not a degenerate
 	// axis-aligned rectangle: an axis-aligned quad has only two distinct X
@@ -260,7 +262,7 @@ func TestProcessForeground_TightOrientedObstacleReachesThePlanner(t *testing.T) 
 		t.Fatalf("published Quad looks axis-aligned, want an oriented (45 degree) box: %v", tracked.Quad)
 	}
 
-	r.rs.planner.AddRobot(1, [2]float64{0, 0}, 0.1)
+	r.rs.planning.planner.AddRobot(1, [2]float64{0, 0}, 0.1)
 
 	// A point on the stick's true diagonal axis, just past its tip: clearly
 	// clear of the real 10 px-wide stick, but well inside the AABB a
@@ -268,15 +270,15 @@ func TestProcessForeground_TightOrientedObstacleReachesThePlanner(t *testing.T) 
 	// 25 px / 100 px/m = 0.25 m from centre (3.2, 1.8), so its AABB spans
 	// roughly +-0.18m on each axis around the centre once rotated 45deg).
 	clearPoint := [2]float64{3.2 + 0.05, 1.8 - 0.30} // near the AABB edge, off the stick's axis
-	r.rs.planner.UpdateRobotState(1, clearPoint, [2]float64{0, 0})
-	if c := r.rs.planner.GetClearance(1); c < 0.02 {
+	r.rs.planning.planner.UpdateRobotState(1, clearPoint, [2]float64{0, 0})
+	if c := r.rs.planning.planner.GetClearance(1); c < 0.02 {
 		t.Errorf("point %v should be clear of the real stick shape, clearance = %.3fm", clearPoint, c)
 	}
 
 	// Sanity: a point actually on the stick's axis is correctly blocked.
 	onStick := [2]float64{3.2, 1.8}
-	r.rs.planner.UpdateRobotState(1, onStick, [2]float64{0, 0})
-	if c := r.rs.planner.GetClearance(1); c > 0 {
+	r.rs.planning.planner.UpdateRobotState(1, onStick, [2]float64{0, 0})
+	if c := r.rs.planning.planner.GetClearance(1); c > 0 {
 		t.Errorf("point %v is on the real stick, want clearance <= 0, got %.3fm", onStick, c)
 	}
 }
