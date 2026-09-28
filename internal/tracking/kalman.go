@@ -1,5 +1,18 @@
 package tracking
 
+// KalmanFilter is a constant-velocity Kalman filter over state vector
+// x = [x, y, vx, vy] (2D position + velocity). It's used by ByteTrack to
+// predict a track's bbox center forward in time for IoU-based matching
+// against new detections (see predictAllTracks in bytetrack.go); the
+// filter's own velocity state (x[2], x[3]) is not read by anything outside
+// that matching step — real robot velocity for navigation/control is
+// computed independently in cmd/main.go's estimateRobotVelocity, directly
+// from track timestamps.
+//
+// Predict takes dt (elapsed seconds) explicitly rather than assuming a
+// fixed frame period, since camera frame timing varies (FPS drops, CPU
+// spikes). Callers must pass the real elapsed time since the previous
+// Predict/Update, not a constant.
 type KalmanFilter struct {
 	x           [4]float64
 	P           [4][4]float64
@@ -38,10 +51,10 @@ func NewKalmanFilter() *KalmanFilter {
 	kf.R[0][0] = 1.0
 	kf.R[1][1] = 1.0
 
+	// F[0][2] and F[1][3] (the dt-dependent velocity->position terms) are
+	// set on each Predict call instead of here, since dt varies per call.
 	kf.F[0][0] = 1
-	kf.F[0][2] = 1
 	kf.F[1][1] = 1
-	kf.F[1][3] = 1
 	kf.F[2][2] = 1
 	kf.F[3][3] = 1
 
@@ -64,10 +77,22 @@ func (kf *KalmanFilter) Initialize(x, y, cx, cy float64) {
 	kf.initialized = true
 }
 
-func (kf *KalmanFilter) Predict() [4]float64 {
+// Predict advances the filter's state by dt seconds using the
+// constant-velocity model (position += velocity * dt) and grows the
+// covariance by process noise scaled linearly by dt. dt must be the actual
+// elapsed seconds since the previous Predict/Update call — see the
+// KalmanFilter doc comment. The dt-scaled Q here is a simplified
+// approximation (not a fully discretized white-noise-acceleration model);
+// Q itself was already an uncalibrated identity guess, so this keeps the
+// same character while at least making uncertainty growth track elapsed
+// time instead of a fixed per-call amount.
+func (kf *KalmanFilter) Predict(dt float64) [4]float64 {
 	if !kf.initialized {
 		return kf.x
 	}
+
+	kf.F[0][2] = dt
+	kf.F[1][3] = dt
 
 	xNew := [4]float64{}
 	for i := 0; i < 4; i++ {
@@ -88,7 +113,7 @@ func (kf *KalmanFilter) Predict() [4]float64 {
 	}
 	for i := 0; i < 4; i++ {
 		for j := 0; j < 4; j++ {
-			PNew[i][j] += kf.Q[i][j]
+			PNew[i][j] += kf.Q[i][j] * dt
 		}
 	}
 

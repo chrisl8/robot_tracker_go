@@ -655,9 +655,62 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   (`internal/tracking/kalman_test.go`) that fail against the old code and
   pass with the fix. `./scripts/build.sh` and `./scripts/test.sh --verbose`
   pass.
-- **No `dt` handling in the Kalman filter** — constant-velocity model assumes
-  `dt = 1` implicitly; variable frame timing (drops, latency) silently produces
-  wrong velocity/covariance estimates with no documentation of the assumption.
+- **[FIXED] No `dt` handling in the Kalman filter** — constant-velocity model
+  assumes `dt = 1` implicitly; variable frame timing (drops, latency) silently
+  produces wrong velocity/covariance estimates with no documentation of the
+  assumption.
+  **Investigation:** confirmed on the code facts — `internal/tracking/kalman.go`'s
+  `NewKalmanFilter()` hardcoded the state-transition matrix `F` (`F[0][2]=1`,
+  `F[1][3]=1`) and process noise `Q` (`diag(1,1,1,1)`) for an implicit unit time
+  step, and `Predict()` took no `dt` argument at all.
+  `internal/tracking/bytetrack.go`'s `predictAllTracks` called `tt.kf.Predict()`
+  for every live track once per `ByteTrack.Update()` call (i.e. once per real
+  camera frame) with no regard for actual elapsed time — even though
+  `ByteTrack.Update(detections []Detection, timestamp float64, frameIdx int)`
+  already receives a real `time.Now()`-derived timestamp from `cmd/main.go`, it
+  was never threaded down to `Predict`. Unlike several other findings in this
+  doc, this one is confirmed **live, hot-path code**: `Predict()` runs every
+  frame for every active track, not an unreferenced code path.
+  However, the severity was overstated: the KF's own velocity state
+  (`x[2]`/`x[3]`) is read nowhere outside `predictAllTracks` itself — the
+  predicted bbox exists only to help same-call IoU matching against new
+  detections and is immediately overwritten once a match is found. The
+  velocity actually used for navigation/control
+  (`estimateRobotVelocity`, `cmd/main.go:1304`) computes its own correct `dt`
+  from track timestamps completely independently of the Kalman filter, so
+  "wrong velocity/covariance estimates" never reached robot behavior in
+  practice — the real, live consequence is a latent data-association
+  robustness gap (worse IoU-match quality) during camera FPS drops.
+  **Fix:** threaded real elapsed time through instead of just documenting the
+  assumption, since the code is live and the fix is small. `KalmanFilter.Predict`
+  is now `Predict(dt float64) [4]float64`: it sets `F[0][2]`/`F[1][3]` to `dt`
+  each call (instead of a hardcoded `1` baked into `NewKalmanFilter`) so
+  position advances by `velocity * dt`, and scales the process noise added to
+  `P` by `dt` so uncertainty grows with elapsed time rather than a fixed
+  per-call amount (a linear approximation, not a fully discretized noise
+  model — `Q` was already an uncalibrated identity guess with no prior
+  physical basis). `ByteTrack` gained `lastTimestamp`/`hasLastTimestamp` fields
+  and a `predictDt(timestamp)` helper that computes the real elapsed seconds
+  since the last predict, falling back to `1.0` (the filter's original
+  behavior) on the first frame or if the delta is non-positive (backward
+  clock/duplicate timestamp) — mirroring the existing defensive pattern in
+  `estimateRobotVelocity`. `predictAllTracks()` is now `predictAllTracks(dt
+  float64)`; `Update()` computes `dt` and updates `lastTimestamp` only on the
+  real-detections path where predict actually runs, so a run of no-detection
+  frames (`updateWithoutDetections`, which never predicts) correctly makes the
+  next real predict use the full elapsed gap instead of understating it.
+  Added `TestKalmanFilter_Predict_ScalesPositionByDt` and
+  `TestKalmanFilter_Predict_ScalesProcessNoiseByDt`
+  (`internal/tracking/kalman_test.go`), plus
+  `TestByteTrack_PredictDt_FirstCallDefaultsToOne`,
+  `TestByteTrack_PredictDt_UsesElapsedTimeSinceLastUpdate`,
+  `TestByteTrack_PredictDt_NonPositiveDeltaFallsBackToOne`, and
+  `TestByteTrack_PredictAllTracks_UsesGivenDt`
+  (`internal/tracking/bytetrack_test.go`), the last of which fails against the
+  old no-`dt` `Predict()` and passes with the fix. All existing `Predict()`
+  call sites in `kalman_test.go` were updated to `Predict(1.0)`, reproducing
+  the old hardcoded behavior exactly, so every prior assertion is unchanged.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 
 ---
 

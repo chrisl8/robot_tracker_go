@@ -14,6 +14,13 @@ type ByteTrack struct {
 	tracks      map[int]*TrackedTrack
 	nextTrackID int
 	frameCount  int
+
+	// lastTimestamp/hasLastTimestamp track when predictAllTracks last ran,
+	// so the next Update can compute the real elapsed dt for the Kalman
+	// filters instead of assuming a fixed frame period. Only updated on the
+	// Update path that actually predicts (see predictDt).
+	lastTimestamp    float64
+	hasLastTimestamp bool
 }
 
 type TrackedTrack struct {
@@ -64,7 +71,10 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 		}
 	}
 
-	t.predictAllTracks()
+	dt := t.predictDt(timestamp)
+	t.predictAllTracks(dt)
+	t.lastTimestamp = timestamp
+	t.hasLastTimestamp = true
 
 	// Age all tracks — matched tracks get reset to 0 below
 	for _, tt := range t.tracks {
@@ -120,9 +130,29 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 	return t.buildTrackingResult(timestamp, frameIdx, len(detections))
 }
 
-func (t *ByteTrack) predictAllTracks() {
+// predictDt returns the elapsed seconds to use for this frame's Kalman
+// predict step, computed from the real timestamp the caller passed to
+// Update (see cmd/main.go's frameStart-based timestamps), rather than
+// assuming a fixed frame period. Falls back to 1.0 (the filter's original
+// hardcoded assumption) on the very first frame, or if the computed delta
+// is non-positive (clock went backward or a duplicate timestamp), so a
+// track is never predicted with an invalid dt. Note this is only called
+// from the real-detections path in Update — updateWithoutDetections
+// intentionally skips prediction and never advances lastTimestamp, so a run
+// of no-detection frames correctly makes the next real predict use the full
+// elapsed gap rather than understating it.
+func (t *ByteTrack) predictDt(timestamp float64) float64 {
+	if t.hasLastTimestamp {
+		if d := timestamp - t.lastTimestamp; d > 0 {
+			return d
+		}
+	}
+	return 1.0
+}
+
+func (t *ByteTrack) predictAllTracks(dt float64) {
 	for _, tt := range t.tracks {
-		state := tt.kf.Predict()
+		state := tt.kf.Predict(dt)
 		// Update track bbox with predicted position for matching
 		w := tt.track.Bbox[2] - tt.track.Bbox[0]
 		h := tt.track.Bbox[3] - tt.track.Bbox[1]

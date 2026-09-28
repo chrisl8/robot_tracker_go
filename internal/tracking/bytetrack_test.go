@@ -252,6 +252,65 @@ func TestByteTrack_Update_Timestamp(t *testing.T) {
 	}
 }
 
+func TestByteTrack_PredictDt_FirstCallDefaultsToOne(t *testing.T) {
+	bt := NewByteTrack(nil)
+
+	if dt := bt.predictDt(12345.0); dt != 1.0 {
+		t.Errorf("predictDt before any Update = %f, want 1.0", dt)
+	}
+}
+
+func TestByteTrack_PredictDt_UsesElapsedTimeSinceLastUpdate(t *testing.T) {
+	bt := NewByteTrack(nil)
+	bt.Update([]Detection{{Bbox: [4]int{0, 0, 100, 100}, Confidence: 0.9}}, 1000.0, 1)
+
+	// Simulate a frame drop / latency spike: the next real frame arrives 5
+	// seconds later, not the ~1 frame period a hardcoded dt=1 would assume.
+	if dt := bt.predictDt(1005.0); dt != 5.0 {
+		t.Errorf("predictDt after a 5s gap = %f, want 5.0", dt)
+	}
+}
+
+func TestByteTrack_PredictDt_NonPositiveDeltaFallsBackToOne(t *testing.T) {
+	bt := NewByteTrack(nil)
+	bt.Update([]Detection{{Bbox: [4]int{0, 0, 100, 100}, Confidence: 0.9}}, 1000.0, 1)
+
+	if dt := bt.predictDt(1000.0); dt != 1.0 {
+		t.Errorf("predictDt with a duplicate timestamp = %f, want 1.0 fallback", dt)
+	}
+	if dt := bt.predictDt(999.0); dt != 1.0 {
+		t.Errorf("predictDt with a backward-moving clock = %f, want 1.0 fallback", dt)
+	}
+}
+
+// TestByteTrack_PredictAllTracks_UsesGivenDt is a regression test for the
+// bug where predictAllTracks called kf.Predict() with no dt (implicit
+// dt=1), so a track's predicted position never reflected real elapsed time
+// between frames. It bypasses the Kalman filter's own (separately tracked,
+// and not the subject of this test) velocity estimation by setting a known
+// velocity directly via Initialize, isolating dt handling in
+// predictAllTracks/Predict.
+func TestByteTrack_PredictAllTracks_UsesGivenDt(t *testing.T) {
+	bt := NewByteTrack(nil)
+	bt.Update([]Detection{{Bbox: [4]int{0, 0, 100, 100}, Confidence: 0.9}}, 1000.0, 1)
+
+	var tt *TrackedTrack
+	for _, v := range bt.tracks {
+		tt = v
+	}
+	if tt == nil {
+		t.Fatal("expected a track to exist after Update")
+	}
+	tt.kf.Initialize(50, 50, 10, 0) // position (50,50), vx=10/s
+
+	bt.predictAllTracks(2.0)
+
+	state := tt.kf.GetState()
+	if state[0] != 70 {
+		t.Errorf("predictAllTracks(2.0) with vx=10 => x[0]=%f, want 70 (50 + 10*2)", state[0])
+	}
+}
+
 func TestByteTrackConfig_Default(t *testing.T) {
 	config := &ByteTrackConfig{
 		TrackThresh: 0.5,

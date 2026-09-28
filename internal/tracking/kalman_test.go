@@ -52,7 +52,7 @@ func TestKalmanFilter_Initialize_SetsCovariance(t *testing.T) {
 
 func TestKalmanFilter_Predict_NotInitialized(t *testing.T) {
 	kf := NewKalmanFilter()
-	state := kf.Predict()
+	state := kf.Predict(1.0)
 
 	for i := 0; i < 4; i++ {
 		if state[i] != 0 {
@@ -65,7 +65,7 @@ func TestKalmanFilter_Predict_Initialized(t *testing.T) {
 	kf := NewKalmanFilter()
 	kf.Initialize(100, 200, 5, 10)
 
-	state := kf.Predict()
+	state := kf.Predict(1.0)
 
 	if state[0] != 105 {
 		t.Errorf("After one predict, x[0] = %f, want 105", state[0])
@@ -141,7 +141,7 @@ func TestKalmanFilter_PredictUpdate(t *testing.T) {
 
 	kf.Initialize(0, 0, 1, 1)
 
-	kf.Predict()
+	kf.Predict(1.0)
 	state1 := kf.Update([2]float64{100, 100})
 
 	if state1[0] < 0 || state1[0] > 100 {
@@ -224,9 +224,9 @@ func TestKalmanFilter_MultiplePredicts(t *testing.T) {
 	kf.Initialize(0, 0, 1, 1)
 
 	state0 := kf.GetState()
-	state1 := kf.Predict()
-	state2 := kf.Predict()
-	state3 := kf.Predict()
+	state1 := kf.Predict(1.0)
+	state2 := kf.Predict(1.0)
+	state3 := kf.Predict(1.0)
 
 	if state1[0] != state0[0]+1 {
 		t.Error("First predict should add velocity")
@@ -239,11 +239,53 @@ func TestKalmanFilter_MultiplePredicts(t *testing.T) {
 	}
 }
 
+func TestKalmanFilter_Predict_ScalesPositionByDt(t *testing.T) {
+	kf := NewKalmanFilter()
+	kf.Initialize(0, 0, 5, 10)
+
+	stateHalf := kf.Predict(0.5)
+	if stateHalf[0] != 2.5 {
+		t.Errorf("With dt=0.5 and vx=5, x[0] = %f, want 2.5", stateHalf[0])
+	}
+	if stateHalf[1] != 5 {
+		t.Errorf("With dt=0.5 and vy=10, x[1] = %f, want 5", stateHalf[1])
+	}
+
+	kf2 := NewKalmanFilter()
+	kf2.Initialize(0, 0, 5, 10)
+	stateDouble := kf2.Predict(2.0)
+	if stateDouble[0] != 10 {
+		t.Errorf("With dt=2 and vx=5, x[0] = %f, want 10", stateDouble[0])
+	}
+	if stateDouble[1] != 20 {
+		t.Errorf("With dt=2 and vy=10, x[1] = %f, want 20", stateDouble[1])
+	}
+}
+
+func TestKalmanFilter_Predict_ScalesProcessNoiseByDt(t *testing.T) {
+	kfSmall := NewKalmanFilter()
+	kfSmall.Initialize(0, 0, 1, 1)
+	kfSmall.Predict(1.0)
+	covSmall := kfSmall.GetCovariance()
+
+	kfLarge := NewKalmanFilter()
+	kfLarge.Initialize(0, 0, 1, 1)
+	kfLarge.Predict(2.0)
+	covLarge := kfLarge.GetCovariance()
+
+	for i := 0; i < 4; i++ {
+		if covLarge[i][i] <= covSmall[i][i] {
+			t.Errorf("Predict with larger dt should add more process noise: covLarge[%d][%d]=%f, covSmall[%d][%d]=%f",
+				i, i, covLarge[i][i], i, i, covSmall[i][i])
+		}
+	}
+}
+
 func TestKalmanFilter_ZeroVelocity(t *testing.T) {
 	kf := NewKalmanFilter()
 	kf.Initialize(100, 200, 0, 0)
 
-	state := kf.Predict()
+	state := kf.Predict(1.0)
 
 	if state[0] != 100 {
 		t.Errorf("With zero velocity, x[0] should remain 100, got %f", state[0])
