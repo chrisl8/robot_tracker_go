@@ -120,16 +120,14 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>) {
 
     const ctx = computed(() => context.value)
 
-    function canvasToNatural(canvasX: number, canvasY: number): { x: number; y: number } {
-        const scale = videoScale.value
-        if (scale.x === 0 || scale.y === 0) {
-            return { x: Math.round(canvasX), y: Math.round(canvasY) }
-        }
-        return {
-            x: Math.round((canvasX - scale.offsetX) / scale.x),
-            y: Math.round((canvasY - scale.offsetY) / scale.y),
-        }
-    }
+    // Alias, not a second implementation: this composable used to redefine the same
+    // canvas->natural math here as its own closure, identical to canvasToNaturalShared
+    // above but edited independently. That let the two drift apart silently (see
+    // docs/code-review-2026-09-27.md tech-debt: "Duplicated coordinate-transform logic
+    // in the frontend"). robotStore.confirmDestination already called the shared
+    // version directly; internal call sites in this file now go through this same
+    // reference, so there is exactly one implementation left.
+    const canvasToNatural = canvasToNaturalShared
 
     function naturalToCanvas(naturalX: number, naturalY: number): { x: number; y: number } {
         const scale = videoScale.value

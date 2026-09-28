@@ -502,15 +502,36 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `TestCommandQueue_Enqueue_FirstCommandAlwaysSent`, the first of which fails against
   the old unthrottled code and passes with the fix.
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **Duplicated coordinate-transform logic in the frontend**:
+- **[FIXED] Duplicated coordinate-transform logic in the frontend**:
   `ui/src/composables/useCanvas.ts` has `canvasToNatural` and
   `canvasToNaturalShared` with identical bodies, used inconsistently by different
   call sites (`robotStore.confirmDestination` vs. the canvas click handler) — a
   latent source of transform drift.
-  Similarly, two independent sets of mouse listeners (Vue template bindings in
-  `VideoOverlay.vue` + imperative `addEventListener` in `useCanvas.ts`) attach to
-  the same canvas for different purposes, with no single source of truth for
-  "what does a click do."
+  **Investigation:** confirmed — both were byte-for-byte identical
+  implementations of the same canvas→natural conversion (module-level
+  `canvasToNaturalShared`, exported for `robotStore`, vs. a nested closure
+  `canvasToNatural` inside `useCanvas()` for internal/`VideoOverlay.vue` use),
+  both reading the same module-level `videoScale` ref. They agreed today only
+  because nothing enforced it beyond the two bodies being kept in sync by hand
+  — `robotStore.ts` even had a comment ("Use the SAME canvasToNatural function
+  as useCanvas.ts for consistency") acknowledging the duplication rather than
+  eliminating it. Also confirmed a separate, unrelated third implementation at
+  `ui/src/utils/coordinates.ts:42` (`canvasToNatural(x, y, width, height)`,
+  explicit-dimensions signature, test-only) — left alone since it isn't part
+  of this duplication.
+  **Fix:** `useCanvas()`'s nested `canvasToNatural` is now `const
+  canvasToNatural = canvasToNaturalShared` — an alias, not a second
+  implementation — so every internal call site (`renderDestinationCursor`,
+  `onClick`'s two branches, and the composable's returned `canvasToNatural`
+  consumed by `VideoOverlay.vue`) and `robotStore.confirmDestination` all
+  resolve to the same single function. No call site changed signature or
+  behavior. `./scripts/build.sh` and `cd ui && npm run test:run` (227 tests)
+  pass.
+  Not addressed here (separate finding, tracked below): two independent sets
+  of mouse listeners (Vue template bindings in `VideoOverlay.vue` + imperative
+  `addEventListener` in `useCanvas.ts`) attach to the same canvas for
+  different purposes, with no single source of truth for "what does a click
+  do."
 - **Repeated lock/unlock-then-relock pattern** in `internal/ui/webserver.go`'s
   obstacle handlers (`handleObstacleAdd`/`Delete`/`Update`) — same 4-line dance
   copy-pasted three times.
