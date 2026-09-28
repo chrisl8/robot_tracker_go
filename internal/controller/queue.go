@@ -12,7 +12,7 @@ type CommandQueue struct {
 	commandCh        chan Command
 	stopCh           chan struct{}
 	running          bool
-	interval         time.Duration
+	interval         time.Duration // min spacing between writes of an unchanged command; see Enqueue
 	heartbeatTimeout time.Duration
 	lastCommand      Command
 	lastSentTime     time.Time
@@ -77,6 +77,15 @@ func (q *CommandQueue) Stop() {
 	close(stopCh)
 }
 
+// Enqueue asks the queue to send cmd. The active/heartbeat bookkeeping is
+// updated unconditionally so the heartbeat ticker keeps re-sending the
+// latest desired command, but the actual write to the controller is
+// rate-limited: a repeat of the same command arriving less than `interval`
+// after the last write is dropped rather than written immediately, so a
+// fast caller (e.g. a per-frame autonomous steering loop) can't burst
+// duplicate writes to the serial line faster than CommandIntervalMs. A
+// different command, or enough elapsed time, is always sent right away —
+// only redundant repeats of an unchanged command are throttled.
 func (q *CommandQueue) Enqueue(cmd Command) {
 	q.mu.Lock()
 	if cmd == CommandStop {
@@ -84,6 +93,10 @@ func (q *CommandQueue) Enqueue(cmd Command) {
 	} else {
 		q.activeCommand = cmd
 		q.hasActiveCommand = true
+	}
+	if cmd == q.lastCommand && time.Since(q.lastSentTime) < q.interval {
+		q.mu.Unlock()
+		return
 	}
 	commandCh := q.commandCh
 	q.mu.Unlock()

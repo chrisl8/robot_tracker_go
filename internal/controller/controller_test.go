@@ -608,6 +608,69 @@ func TestNewCommandQueue_HeartbeatTimeoutOverride(t *testing.T) {
 	}
 }
 
+// drainCommandCh reports how many commands are currently buffered in q's
+// command channel, without starting the queue's runLoop (so sendCommand
+// never runs and q.lastCommand/lastSentTime are whatever the test set).
+func drainCommandCh(q *CommandQueue) int {
+	n := 0
+	for {
+		select {
+		case <-q.commandCh:
+			n++
+		default:
+			return n
+		}
+	}
+}
+
+func TestCommandQueue_Enqueue_RateLimitsDuplicates(t *testing.T) {
+	q := NewCommandQueue(nil, 50, 0)
+	// Simulate that CommandForward was just written to the controller.
+	q.lastCommand = CommandForward
+	q.lastSentTime = time.Now()
+
+	q.Enqueue(CommandForward)
+
+	if n := drainCommandCh(q); n != 0 {
+		t.Errorf("Enqueue of an unchanged command within interval wrote %d times, want 0", n)
+	}
+}
+
+func TestCommandQueue_Enqueue_AllowsDifferentCommandsImmediately(t *testing.T) {
+	q := NewCommandQueue(nil, 50, 0)
+	q.lastCommand = CommandForward
+	q.lastSentTime = time.Now()
+
+	q.Enqueue(CommandLeft)
+
+	if n := drainCommandCh(q); n != 1 {
+		t.Errorf("Enqueue of a different command wrote %d times, want 1", n)
+	}
+}
+
+func TestCommandQueue_Enqueue_ResendsAfterIntervalElapses(t *testing.T) {
+	q := NewCommandQueue(nil, 50, 0)
+	q.lastCommand = CommandForward
+	q.lastSentTime = time.Now().Add(-100 * time.Millisecond) // well past the 50ms interval
+
+	q.Enqueue(CommandForward)
+
+	if n := drainCommandCh(q); n != 1 {
+		t.Errorf("Enqueue of an unchanged command after interval elapsed wrote %d times, want 1", n)
+	}
+}
+
+func TestCommandQueue_Enqueue_FirstCommandAlwaysSent(t *testing.T) {
+	q := NewCommandQueue(nil, 50, 0)
+	// q.lastCommand/lastSentTime are still zero-valued.
+
+	q.Enqueue(CommandForward)
+
+	if n := drainCommandCh(q); n != 1 {
+		t.Errorf("first Enqueue wrote %d times, want 1", n)
+	}
+}
+
 func TestConstants(t *testing.T) {
 	if BaudRate != 9600 {
 		t.Errorf("BaudRate = %d, want 9600", BaudRate)

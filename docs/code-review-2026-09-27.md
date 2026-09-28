@@ -473,9 +473,35 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `TestNewCommandQueue_HeartbeatTimeoutOverride`, the latter failing against
   the old hardcoded-constant code and passing with the fix.
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **`CommandQueue.Enqueue` doesn't rate-limit** — despite the type's name and a
+- **[FIXED] `CommandQueue.Enqueue` doesn't rate-limit** — despite the type's name and a
   configured interval, only the heartbeat re-send path is throttled; a fast caller
   can burst up to 10 raw writes back-to-back to the 9600-baud serial line.
+  **Investigation:** confirmed — `NewCommandQueue` stores `interval`
+  (`CommandIntervalMs`, 50ms), but `runLoop`'s ticker only uses it to decide how
+  often to *check* whether the heartbeat has gone stale
+  (`time.Since(q.lastSentTime) > q.heartbeatTimeout`); `Enqueue` itself pushes
+  straight onto `commandCh`, and `runLoop`'s `case cmd := <-commandCh` calls
+  `sendCommand` immediately, never consulting `interval`. The real trigger is
+  `cmd/main.go`'s autonomous per-robot steering loop (`main.go`'s
+  `ProcessFrame`/`ProcessDemoFrame`), which calls `commandQueue.Enqueue(cmd)` every
+  frame (~30fps, ~33ms) even when `cmd` is unchanged from the previous frame — faster
+  than the intended 50ms/20Hz `CommandIntervalMs`, so every steering frame wrote
+  straight to the 9600-baud serial line unthrottled. (Manual control via
+  `ControlPanel.vue` wasn't the trigger — it only sends on keyboard-state *change*,
+  not every frame.)
+  **Fix:** `Enqueue` now drops a repeat of the same command that arrives less than
+  `interval` after the last write to the controller, while still updating
+  `activeCommand`/`hasActiveCommand` unconditionally so the heartbeat ticker keeps
+  the controller refreshed within `heartbeatTimeout` regardless. A different command,
+  or enough elapsed time, is still written immediately, so direction changes and
+  stops remain instant — only redundant repeats of an unchanged steady-state command
+  are throttled. Added doc comments on `Enqueue` and the `interval` field explaining
+  this. Added `TestCommandQueue_Enqueue_RateLimitsDuplicates`,
+  `TestCommandQueue_Enqueue_AllowsDifferentCommandsImmediately`,
+  `TestCommandQueue_Enqueue_ResendsAfterIntervalElapses`, and
+  `TestCommandQueue_Enqueue_FirstCommandAlwaysSent`, the first of which fails against
+  the old unthrottled code and passes with the fix.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **Duplicated coordinate-transform logic in the frontend**:
   `ui/src/composables/useCanvas.ts` has `canvasToNatural` and
   `canvasToNaturalShared` with identical bodies, used inconsistently by different
