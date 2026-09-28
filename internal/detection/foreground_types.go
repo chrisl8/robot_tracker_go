@@ -64,6 +64,44 @@ func DefaultForegroundParams() ForegroundParams {
 	}
 }
 
+// WithDefaults returns p with any zero-valued (or out-of-range Scale) field
+// replaced by the tuned default from DefaultForegroundParams. This is the
+// one place that decides which ForegroundParams fields get defaulted and
+// how; NewForegroundDetector and config.EffectiveForeground both route
+// through it instead of each keeping their own copy of this list (that
+// duplication is what let bug #18 — shadow suppression's "0 disables the
+// gate" not actually working — slip in).
+//
+// The three shadow-suppression bounds (ShadowAlphaMin/Max, ShadowChromaMax)
+// are deliberately never touched here — see the doc comment on
+// ForegroundParams: a caller leaving one at zero means "disable the gate,"
+// not "unset," so it must pass through unchanged.
+func (p ForegroundParams) WithDefaults() ForegroundParams {
+	def := DefaultForegroundParams()
+	if p.Scale <= 0 || p.Scale > 1 {
+		p.Scale = def.Scale
+	}
+	if p.Threshold <= 0 {
+		p.Threshold = def.Threshold
+	}
+	if p.DarkFactor <= 0 {
+		p.DarkFactor = def.DarkFactor
+	}
+	if p.TauSec <= 0 {
+		p.TauSec = def.TauSec
+	}
+	if p.WarmupSec <= 0 {
+		p.WarmupSec = def.WarmupSec
+	}
+	if p.GuardFraction <= 0 {
+		p.GuardFraction = def.GuardFraction
+	}
+	if p.MinBlobPx <= 0 {
+		p.MinBlobPx = def.MinBlobPx
+	}
+	return p
+}
+
 // Disc is a circle in full-resolution frame pixels.
 type Disc struct{ X, Y, R float64 }
 

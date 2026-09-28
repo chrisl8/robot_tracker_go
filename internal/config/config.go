@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/chrisl8/robot_tracker_go/internal/detection"
 	"github.com/chrisl8/robot_tracker_go/internal/position"
 )
 
@@ -113,27 +114,41 @@ func (c *Config) EffectiveForeground() ForegroundSettings {
 		}
 		return def
 	}
+	// The six fields detection.ForegroundParams also has are defaulted by
+	// its own WithDefaults, not a second hardcoded literal list here — see
+	// its doc comment. This is the fix for the "defaults must match
+	// detection.DefaultForegroundParams" duplication that let bug #18 slip
+	// in (shadow suppression's "0 disables the gate" not actually working).
+	dp := detection.ForegroundParams{
+		Scale:         f.Scale,
+		Threshold:     f.Threshold,
+		DarkFactor:    f.DarkFactor,
+		TauSec:        f.TauSec,
+		WarmupSec:     f.WarmupSec,
+		GuardFraction: f.GuardFraction,
+	}.WithDefaults()
 	s := ForegroundSettings{
 		Enabled:            true,
-		Scale:              orF(f.Scale, 0.5),
-		Threshold:          orF(f.Threshold, 22),
-		DarkFactor:         orF(f.DarkFactor, 1.4),
+		Scale:              dp.Scale,
+		Threshold:          dp.Threshold,
+		DarkFactor:         dp.DarkFactor,
 		MinSizeM:           orF(f.MinSizeM, 0.05),
 		AppearMs:           orI(f.AppearMs, 400),
 		VanishMs:           orI(f.VanishMs, 1500),
-		TauSec:             orF(f.TauSec, 60),
-		WarmupSec:          orF(f.WarmupSec, 3),
+		TauSec:             dp.TauSec,
+		WarmupSec:          dp.WarmupSec,
 		RobotMarginM:       orF(f.RobotMarginM, 0.06),
 		StaticMarginPx:     orI(f.StaticMarginPx, 6),
 		MaxBlobs:           orI(f.MaxBlobs, 8),
 		AbsorbAfterSec:     f.AbsorbAfterSec, // 0 = never (objects stay obstacles)
-		GuardFraction:      orF(f.GuardFraction, 0.25),
+		GuardFraction:      dp.GuardFraction,
 		PadM:               orF(f.PadM, 0.02),
 		PersistBackground:  true,
 		PersistIntervalSec: orF(f.PersistIntervalSec, 30),
-		// Defaults must match detection.DefaultForegroundParams. Unlike the
-		// other fields, an explicit 0 here is meaningful (disables the shadow
-		// gate), so these use the nil-checking orFPtr rather than orF.
+		// Unlike the fields above, an explicit 0 here is meaningful
+		// (disables the shadow gate) — detection.WithDefaults never touches
+		// these three, by design, so config must resolve nil-vs-zero itself
+		// via the nil-checking orFPtr rather than route them through it.
 		ShadowAlphaMin:  orFPtr(f.ShadowAlphaMin, 0.15),
 		ShadowAlphaMax:  orFPtr(f.ShadowAlphaMax, 0.98),
 		ShadowChromaMax: orFPtr(f.ShadowChromaMax, 0.20),

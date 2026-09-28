@@ -361,10 +361,40 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   point; added a doc comment on `applyVelocityObstacles` explaining that and
   pointing at the live bearing-based steering path instead. No behavior
   change; `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **Duplicated default-filling for `ForegroundParams`** across
+- **[FIXED] Duplicated default-filling for `ForegroundParams`** across
   `config.go:EffectiveForeground` and `foreground.go:NewForegroundDetector` — the
   comment literally admits "defaults must match" between two independently
   maintained lists, and this exact seam is where bug #18 happened.
+  **Investigation:** confirmed — both places hardcoded their own copy of the
+  defaulting logic for the same six fields (`Scale`, `Threshold`,
+  `DarkFactor`, `TauSec`, `WarmupSec`, `GuardFraction`); the two lists agreed
+  today, but nothing enforced that beyond the comment. Every real call site
+  (`cmd/foreground_glue.go`'s `newForegroundGlue`, fed from
+  `EffectiveForeground()`) and every existing test already ran fully-defaulted
+  params into `NewForegroundDetector`, so its own defaulting block was
+  currently dead weight with no direct test of its own.
+  **Fix:** extracted the six-field defaulting block into
+  `detection.ForegroundParams.WithDefaults()` (`foreground_types.go`, next to
+  `DefaultForegroundParams`, in the always-compiled file so it works in every
+  build configuration including non-`gocv`). `NewForegroundDetector` now
+  calls `p.WithDefaults()` instead of its own inline checks.
+  `config.EffectiveForeground` now builds a `detection.ForegroundParams` from
+  the raw config fields, calls `.WithDefaults()` on it, and reads the six
+  values back out, instead of hardcoding a second copy of the same literals;
+  the config-only fields with no `detection.ForegroundParams` counterpart
+  (`MinSizeM`, `AppearMs`, `VanishMs`, `RobotMarginM`, `StaticMarginPx`,
+  `MaxBlobs`, `PadM`, `PersistIntervalSec`) keep their own `orF`/`orI`
+  defaulting untouched. The three shadow-suppression bounds
+  (`ShadowAlphaMin`/`Max`, `ShadowChromaMax`) keep their existing nil-vs-zero
+  `orFPtr` resolution in `config.go` exactly as-is — `WithDefaults` never
+  touches them, by design, preserving the bug #18 fix (explicit zero still
+  disables the shadow gate) by construction rather than by convention. There
+  is now exactly one place that decides which fields get defaulted and how.
+  No behavior change. Added `TestForegroundParams_WithDefaults`
+  (`internal/detection/foreground_types_test.go`), closing the gap where this
+  logic had no direct unit test; `TestEffectiveForeground` (including the bug
+  #18 regression subtest) passes unchanged. `./scripts/build.sh` and
+  `./scripts/test.sh --verbose` pass.
 - **Hand-rolled YAML string building** (fragile, unescaped edge cases) in at least
   two places: `internal/ui/webserver.go:1308-1327` (obstacles) and
   `internal/position/estimator.go:422-441` (`SaveObstacles`) — while calibration

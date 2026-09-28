@@ -60,34 +60,14 @@ type ForegroundDetector struct {
 	colorBlur gocv.Mat
 }
 
-// NewForegroundDetector creates a detector. Zero-valued params are replaced by
-// the defaults, except the three shadow-suppression bounds
-// (ShadowAlphaMin/ShadowAlphaMax/ShadowChromaMax): per their doc comment on
-// ForegroundParams, a caller leaving any of those at zero means "disable the
-// gate," so zero is passed through as-is rather than coerced to the default.
+// NewForegroundDetector creates a detector. p.WithDefaults() replaces any
+// zero-valued field with its tuned default, except the three
+// shadow-suppression bounds (ShadowAlphaMin/ShadowAlphaMax/ShadowChromaMax):
+// per their doc comment on ForegroundParams, a caller leaving any of those
+// at zero means "disable the gate," so WithDefaults passes zero through
+// as-is for them rather than coercing it to the default.
 func NewForegroundDetector(p ForegroundParams) *ForegroundDetector {
-	def := DefaultForegroundParams()
-	if p.Scale <= 0 || p.Scale > 1 {
-		p.Scale = def.Scale
-	}
-	if p.Threshold <= 0 {
-		p.Threshold = def.Threshold
-	}
-	if p.DarkFactor <= 0 {
-		p.DarkFactor = def.DarkFactor
-	}
-	if p.TauSec <= 0 {
-		p.TauSec = def.TauSec
-	}
-	if p.WarmupSec <= 0 {
-		p.WarmupSec = def.WarmupSec
-	}
-	if p.GuardFraction <= 0 {
-		p.GuardFraction = def.GuardFraction
-	}
-	if p.MinBlobPx <= 0 {
-		p.MinBlobPx = def.MinBlobPx
-	}
+	p = p.WithDefaults()
 	return &ForegroundDetector{
 		params: p,
 		model:  newForegroundModel(p),
