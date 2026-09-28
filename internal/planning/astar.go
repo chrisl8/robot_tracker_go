@@ -44,11 +44,17 @@ func (pq *PriorityQueue) Pop() interface{} {
 	return node
 }
 
+// AStarConfig sizes the planning grid. GridWidthMeters/GridHeightMeters are the
+// grid's real-world extent in *meters* (not cell counts) — the grid is divided
+// into Resolution-sized cells, so with the documented defaults (100m, 0.05m)
+// the actual grid is 2000x2000 cells. A caller wanting a specific cell count
+// must multiply by Resolution first; setting GridWidthMeters to a cell count
+// (e.g. 2000) would silently request a 100km-wide grid.
 type AStarConfig struct {
-	GridWidth     int
-	GridHeight    int
-	Resolution    float64
-	MaxIterations int
+	GridWidthMeters  float64
+	GridHeightMeters float64
+	Resolution       float64
+	MaxIterations    int
 }
 
 type AStar struct {
@@ -58,18 +64,18 @@ type AStar struct {
 func NewAStar(config *AStarConfig) *AStar {
 	if config == nil {
 		config = &AStarConfig{
-			GridWidth:     100,
-			GridHeight:    100,
-			Resolution:    0.05,
-			MaxIterations: 10000,
+			GridWidthMeters:  100,
+			GridHeightMeters: 100,
+			Resolution:       0.05,
+			MaxIterations:    10000,
 		}
 	}
 	return &AStar{config: config}
 }
 
 func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float64) ([][2]float64, bool) {
-	gridWidth := int(float64(a.config.GridWidth) / a.config.Resolution)
-	gridHeight := int(float64(a.config.GridHeight) / a.config.Resolution)
+	gridWidth := int(a.config.GridWidthMeters / a.config.Resolution)
+	gridHeight := int(a.config.GridHeightMeters / a.config.Resolution)
 
 	// Offset so world (0,0) maps to grid center, allowing negative world coordinates
 	offsetX := gridWidth / 2

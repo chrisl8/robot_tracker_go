@@ -200,11 +200,19 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     twice sequentially and then 20 times concurrently and fails (panics) without
     the fix.
 
-16. **`AStarConfig.GridWidth`/`GridHeight` are metres, not cell counts, despite the name.**
+16. **[FIXED] `AStarConfig.GridWidth`/`GridHeight` are metres, not cell counts, despite the name.**
     `internal/planning/astar.go` — `gridWidth := int(GridWidth / Resolution)`. With
     documented defaults (100, 0.05) this silently produces a 2000×2000-cell grid.
     A user "fixing" this by setting `GridWidth: 2000` thinking it means cells would
     produce a 40,000-cell-wide grid (1.6B cells).
+    **Fix:** renamed the fields to `GridWidthMeters`/`GridHeightMeters` (plain
+    `float64`, not `int`) so the name matches what the code has always done with
+    them, and added a doc comment on `AStarConfig` spelling out the units and the
+    2000×2000-cell default. No behavior change — these fields are never wired to
+    `config/tracking_config.yaml` today (every production call site passes `nil`
+    and gets the struct's own defaults), so this is a naming/clarity fix that
+    forecloses the misconfiguration trap described above rather than a runtime
+    bug fix. Updated `astar_test.go`/`planner_test.go` for the new field names.
 
 17. **AprilTag family config has an inverted-looking condition.**
     `internal/detection/apriltag.go:77-79` — `if config.Family != "" { config.Family

@@ -12,11 +12,11 @@ func TestNewAStar(t *testing.T) {
 	if astar == nil {
 		t.Fatal("NewAStar returned nil")
 	}
-	if astar.config.GridWidth != 100 {
-		t.Errorf("Default GridWidth = %d, want 100", astar.config.GridWidth)
+	if astar.config.GridWidthMeters != 100 {
+		t.Errorf("Default GridWidthMeters = %f, want 100", astar.config.GridWidthMeters)
 	}
-	if astar.config.GridHeight != 100 {
-		t.Errorf("Default GridHeight = %d, want 100", astar.config.GridHeight)
+	if astar.config.GridHeightMeters != 100 {
+		t.Errorf("Default GridHeightMeters = %f, want 100", astar.config.GridHeightMeters)
 	}
 	if astar.config.Resolution != 0.05 {
 		t.Errorf("Default Resolution = %f, want 0.05", astar.config.Resolution)
@@ -25,18 +25,18 @@ func TestNewAStar(t *testing.T) {
 
 func TestNewAStar_WithConfig(t *testing.T) {
 	config := &AStarConfig{
-		GridWidth:     200,
-		GridHeight:    150,
-		Resolution:    0.1,
-		MaxIterations: 5000,
+		GridWidthMeters:  200,
+		GridHeightMeters: 150,
+		Resolution:       0.1,
+		MaxIterations:    5000,
 	}
 	astar := NewAStar(config)
 
-	if astar.config.GridWidth != 200 {
-		t.Errorf("GridWidth = %d, want 200", astar.config.GridWidth)
+	if astar.config.GridWidthMeters != 200 {
+		t.Errorf("GridWidthMeters = %f, want 200", astar.config.GridWidthMeters)
 	}
-	if astar.config.GridHeight != 150 {
-		t.Errorf("GridHeight = %d, want 150", astar.config.GridHeight)
+	if astar.config.GridHeightMeters != 150 {
+		t.Errorf("GridHeightMeters = %f, want 150", astar.config.GridHeightMeters)
 	}
 }
 
@@ -157,17 +157,17 @@ func TestPriorityQueue(t *testing.T) {
 
 func TestAStarConfig_Struct(t *testing.T) {
 	config := &AStarConfig{
-		GridWidth:     100,
-		GridHeight:    100,
-		Resolution:    0.05,
-		MaxIterations: 10000,
+		GridWidthMeters:  100,
+		GridHeightMeters: 100,
+		Resolution:       0.05,
+		MaxIterations:    10000,
 	}
 
-	if config.GridWidth != 100 {
-		t.Errorf("GridWidth = %d, want 100", config.GridWidth)
+	if config.GridWidthMeters != 100 {
+		t.Errorf("GridWidthMeters = %f, want 100", config.GridWidthMeters)
 	}
-	if config.GridHeight != 100 {
-		t.Errorf("GridHeight = %d, want 100", config.GridHeight)
+	if config.GridHeightMeters != 100 {
+		t.Errorf("GridHeightMeters = %f, want 100", config.GridHeightMeters)
 	}
 	if config.Resolution != 0.05 {
 		t.Errorf("Resolution = %f, want 0.05", config.Resolution)
@@ -385,7 +385,7 @@ func TestAStar_Plan_FindsOptimalCost(t *testing.T) {
 // A* can route Vorpal through that gap; with the old rectangle-fill it could
 // not, because worldToGrid blocked the whole (much larger) bounding square.
 func TestAStar_Plan_RotatedObstacle_TighterThanItsAABB(t *testing.T) {
-	astar := NewAStar(&AStarConfig{GridWidth: 20, GridHeight: 20, Resolution: 0.05, MaxIterations: 200000})
+	astar := NewAStar(&AStarConfig{GridWidthMeters: 20, GridHeightMeters: 20, Resolution: 0.05, MaxIterations: 200000})
 
 	// A thin diagonal stick across the middle of a 20x20m arena: true half-width
 	// 0.1m, half-length 6m, rotated 45 degrees, centred at the origin. Its AABB

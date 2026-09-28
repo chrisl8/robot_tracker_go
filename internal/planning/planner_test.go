@@ -25,8 +25,8 @@ func TestNewPlanner(t *testing.T) {
 func TestNewPlanner_WithConfig(t *testing.T) {
 	config := &PlannerConfig{
 		AStarConfig: &AStarConfig{
-			GridWidth:  200,
-			GridHeight: 200,
+			GridWidthMeters:  200,
+			GridHeightMeters: 200,
 			Resolution: 0.1,
 		},
 		VelocityObstacleConfig: &VelocityObstacleConfig{
