@@ -2,6 +2,10 @@ package detection
 
 import "log"
 
+// NewDetectionPipeline builds a pipeline around an AprilTag detector.
+// NewAprilTagDetector never actually returns an error today, but Detect and
+// DrawResults still nil-check tagDetector below so that a future constructor
+// failure degrades to "no tags detected" instead of a nil-pointer panic.
 func NewDetectionPipeline(tagConfig AprilTagConfig) *DetectionPipeline {
 	pipeline := &DetectionPipeline{
 		obstacleDrawer: NewObstacleDrawer(),
@@ -23,7 +27,10 @@ func (p *DetectionPipeline) Detect(image []byte, width, height int, timestamp fl
 		FrameIdx:  frameIdx,
 	}
 
-	tags := p.tagDetector.Detect(image, width, height)
+	var tags []AprilTag
+	if p.tagDetector != nil {
+		tags = p.tagDetector.Detect(image, width, height)
+	}
 	result.Tags = tags
 
 	result.FusedDetections = p.fuseDetections(tags)
@@ -75,7 +82,7 @@ func (p *DetectionPipeline) tagToBbox(tag AprilTag) *BoundingBox {
 func (p *DetectionPipeline) DrawResults(image []byte, width, height int, result *DetectionResult) []byte {
 	output := image
 
-	if len(result.Tags) > 0 {
+	if len(result.Tags) > 0 && p.tagDetector != nil {
 		output = p.tagDetector.DrawTags(output, width, height, result.Tags)
 	}
 

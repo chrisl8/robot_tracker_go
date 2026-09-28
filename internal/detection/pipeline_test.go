@@ -38,6 +38,40 @@ func TestDetectionPipeline_Detect(t *testing.T) {
 	}
 }
 
+func TestDetectionPipeline_Detect_NilTagDetectorDoesNotPanic(t *testing.T) {
+	// Simulates NewAprilTagDetector returning an error: tagDetector stays nil.
+	// Detect must degrade to "no tags" instead of nil-pointer-dereferencing.
+	pipeline := &DetectionPipeline{obstacleDrawer: NewObstacleDrawer()}
+
+	timestamp := float64(time.Now().UnixNano()) / 1e9
+	result := pipeline.Detect([]byte{1, 2, 3}, 640, 480, timestamp, 1)
+
+	if result == nil {
+		t.Fatal("Detect returned nil")
+	}
+	if len(result.Tags) != 0 {
+		t.Errorf("Expected 0 tags with nil tagDetector, got %d", len(result.Tags))
+	}
+	if len(result.FusedDetections) != 0 {
+		t.Errorf("Expected 0 fused detections with nil tagDetector, got %d", len(result.FusedDetections))
+	}
+}
+
+func TestDetectionPipeline_DrawResults_NilTagDetectorDoesNotPanic(t *testing.T) {
+	pipeline := &DetectionPipeline{obstacleDrawer: NewObstacleDrawer()}
+
+	result := &DetectionResult{
+		Tags: []AprilTag{{TagID: 1}},
+	}
+	image := []byte{1, 2, 3}
+
+	output := pipeline.DrawResults(image, 640, 480, result)
+
+	if len(output) != len(image) {
+		t.Errorf("Expected DrawResults to return input image unchanged with nil tagDetector, got len %d", len(output))
+	}
+}
+
 func TestDetectionPipeline_fuseDetections(t *testing.T) {
 	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 

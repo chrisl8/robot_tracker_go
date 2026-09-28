@@ -247,12 +247,21 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     `TestForegroundModel_ShadowGateZeroDisablesIt`, both of which fail against
     the old behavior and pass with the fix.
 
-19. **`DetectionPipeline.tagDetector` nil-call landmine.**
+19. **[FIXED] `DetectionPipeline.tagDetector` nil-call landmine.**
     `internal/detection/pipeline.go:11-16` sets `tagDetector = nil` on constructor
     error but `Detect()` calls it unconditionally with no nil check. Currently
     unreachable (constructors never actually return an error today) but will panic
     the instant someone adds a real failure path — the equivalent YOLO path already
     handles this correctly two lines below.
+    **Fix:** `Detect()` and `DrawResults()` now nil-check `tagDetector` before
+    calling it, degrading to "no tags detected"/"skip drawing tags" instead of a
+    nil-pointer panic, matching the pattern already used for `obstacleDrawer`.
+    Added a doc comment on `NewDetectionPipeline` explaining why the nil check
+    exists despite the constructor never currently failing. Added
+    `TestDetectionPipeline_Detect_NilTagDetectorDoesNotPanic` and
+    `TestDetectionPipeline_DrawResults_NilTagDetectorDoesNotPanic`, which
+    construct a pipeline with a nil `tagDetector` directly and fail (panic)
+    against the old code.
 
 ---
 
