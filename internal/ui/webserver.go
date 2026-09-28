@@ -4,6 +4,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,7 +37,8 @@ type WebServer struct {
 	clients       map[*websocket.Conn]*sync.Mutex
 	clientMutex   sync.RWMutex
 	isRunning     bool
-	stopChan      chan struct{}
+	httpServer    *http.Server
+	httpServerMu  sync.Mutex
 	wsPongWait    time.Duration
 	wsPingPeriod  time.Duration
 	wsWriteWait   time.Duration
@@ -263,7 +265,6 @@ func NewWebServer(addr string) *WebServer {
 		engine:       engine,
 		stream:       newMJPEGStream(),
 		clients:      make(map[*websocket.Conn]*sync.Mutex),
-		stopChan:     make(chan struct{}),
 		isRunning:    false,
 		wsPongWait:   defaultWSPongWait,
 		wsPingPeriod: defaultWSPingPeriod,
@@ -1079,21 +1080,37 @@ func sanitizeCameraName(name string) string {
 
 func (s *WebServer) Start() {
 	s.isRunning = true
+	srv := &http.Server{
+		Addr:              s.addr,
+		Handler:           s.engine,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	s.httpServerMu.Lock()
+	s.httpServer = srv
+	s.httpServerMu.Unlock()
 	go func() {
-		srv := &http.Server{
-			Addr:              s.addr,
-			Handler:           s.engine,
-			ReadHeaderTimeout: 5 * time.Second,
-		}
-		if err := srv.ListenAndServe(); err != nil && !strings.Contains(err.Error(), "Server closed") {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			utils.Logf("HTTP server error: %v", err)
 		}
 	}()
 }
 
+// Stop gracefully shuts down the HTTP/WS/MJPEG listener started by Start,
+// waiting up to 5s for in-flight requests (including open WebSocket/MJPEG
+// streams) to finish before forcing the listener closed.
 func (s *WebServer) Stop() {
 	s.isRunning = false
-	close(s.stopChan)
+	s.httpServerMu.Lock()
+	srv := s.httpServer
+	s.httpServerMu.Unlock()
+	if srv == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		utils.Logf("HTTP server shutdown error: %v", err)
+	}
 	utils.Log("Web server stopped")
 }
 

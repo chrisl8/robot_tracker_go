@@ -141,11 +141,18 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     a client that never reads (so it can never answer a ping) and asserts the
     server reclaims it once the shortened liveness timers elapse.
 
-12. **`WebServer.Stop()` doesn't actually stop the HTTP server.**
+12. **[FIXED] `WebServer.Stop()` doesn't actually stop the HTTP server.**
     `internal/ui/webserver.go` — `Stop()` closes an unused `stopChan` and sets a
     flag, but the `*http.Server` from `Start()` is never stored on the struct or
     told to shut down (no `Shutdown()`/`Close()`). Graceful shutdown from
     `cmd/main.go` does not stop the HTTP/WS/MJPEG listener.
+    **Fix:** `Start()` now builds the `*http.Server` once and stores it on the
+    struct (guarded by a small mutex, since `Start`/`Stop` can be called from
+    different goroutines); `Stop()` calls `srv.Shutdown(ctx)` with a 5s timeout
+    instead of closing the unused `stopChan` (removed — nothing ever selected
+    on it). Added `TestWebServer_StopShutsDownListener`, which starts a real
+    listener, confirms it answers `/api/status`, calls `Stop()`, and asserts
+    the port stops accepting connections.
 
 13. **A\* open-set has no decrease-key; violates heap invariant.**
     `internal/planning/astar.go:174-221` — when a cheaper path to an already-queued
