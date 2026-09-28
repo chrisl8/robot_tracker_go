@@ -145,6 +145,9 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 
 	openSet := &PriorityQueue{}
 	heap.Init(openSet)
+	startNode.G = 0
+	startNode.H = a.heuristic(startNode.Pos, goalNode.Pos)
+	startNode.F = startNode.G + startNode.H
 	heap.Push(openSet, startNode)
 
 	cameFrom := make(map[[2]int]*Node)
@@ -161,6 +164,16 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 
 		current := heap.Pop(openSet).(*Node)
 
+		// Lazy deletion: container/heap has no decrease-key, so a cheaper path
+		// to an already-queued node is recorded by pushing a fresh entry
+		// rather than updating the stale one in place (see the push below).
+		// That leaves stale, worse-G copies of the same cell in the heap;
+		// skip any entry whose G no longer matches the best known gScore
+		// instead of expanding it again.
+		if current.G > gScore[current.Pos] {
+			continue
+		}
+
 		if current.Pos == goalNode.Pos {
 			path := a.reconstructPath(cameFrom, current, offsetX, offsetY)
 			utils.Debugf("A*: SUCCESS - found path with %d waypoints in %d iterations",len(path), iterations)
@@ -171,7 +184,7 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 		for _, neighbor := range neighbors {
 			tentativeG := gScore[current.Pos] + a.dist(current.Pos, neighbor.Pos)
 
-			if _, exists := gScore[neighbor.Pos]; !exists || tentativeG < gScore[neighbor.Pos] {
+			if existingG, exists := gScore[neighbor.Pos]; !exists || tentativeG < existingG {
 				cameFrom[neighbor.Pos] = current
 				gScore[neighbor.Pos] = tentativeG
 				neighbor.G = tentativeG
@@ -179,9 +192,7 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 				neighbor.F = neighbor.G + neighbor.H
 				neighbor.Parent = current
 
-				if !a.inOpenSet(openSet, neighbor) {
-					heap.Push(openSet, neighbor)
-				}
+				heap.Push(openSet, neighbor)
 			}
 		}
 	}
@@ -206,18 +217,6 @@ func (a *AStar) getNeighbors(node *Node, width, height int, obstacles map[[2]int
 	}
 
 	return neighbors
-}
-
-func (a *AStar) inOpenSet(pq *PriorityQueue, node *Node) bool {
-	for _, n := range *pq {
-		if n == nil {
-			continue
-		}
-		if n.Pos == node.Pos {
-			return true
-		}
-	}
-	return false
 }
 
 func (a *AStar) heuristic(aPos, bPos [2]int) float64 {

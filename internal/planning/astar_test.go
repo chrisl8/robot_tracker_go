@@ -344,6 +344,41 @@ func TestValidateSimplifiedPath(t *testing.T) {
 	})
 }
 
+// TestAStar_Plan_FindsOptimalCost guards against the open-set having no
+// decrease-key (container/heap can't update a queued node's priority in
+// place): when a cheaper path to an already-queued cell is found, the fix
+// pushes a fresh, better entry and later discards the stale one instead of
+// updating it in place. If that lazy-deletion discard were missing or wrong,
+// a stale worse-G entry could be expanded as if it were optimal, and the
+// returned path would cost more than the true 8-connected-grid optimum of
+// min(dx,dy)*sqrt(2) + abs(dx-dy) meters.
+func TestAStar_Plan_FindsOptimalCost(t *testing.T) {
+	astar := NewAStar(nil)
+	start := [2]float64{0, 0}
+	goal := [2]float64{3, 1}
+
+	path, found := astar.Plan(start, goal, []Obstacle{}, 0)
+	if !found {
+		t.Fatal("Plan should find a path")
+	}
+
+	got := 0.0
+	for i := 1; i < len(path); i++ {
+		dx := path[i][0] - path[i-1][0]
+		dy := path[i][1] - path[i-1][1]
+		got += math.Sqrt(dx*dx + dy*dy)
+	}
+
+	dx, dy := math.Abs(goal[0]-start[0]), math.Abs(goal[1]-start[1])
+	minD, maxD := math.Min(dx, dy), math.Max(dx, dy)
+	want := minD*math.Sqrt2 + (maxD - minD)
+
+	if math.Abs(got-want) > 0.1 {
+		t.Errorf("path cost = %.4f, want ~%.4f (optimal 8-connected-grid cost); "+
+			"a stale, non-optimal heap entry may have been expanded", got, want)
+	}
+}
+
 // TestAStar_Plan_RotatedObstacle_TighterThanItsAABB is the point of the A*
 // rasterization cutover: a long thin obstacle at 45 degrees leaves a gap on
 // either side that its AABB would swallow. With the exact Quad footprint,

@@ -154,13 +154,23 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     listener, confirms it answers `/api/status`, calls `Stop()`, and asserts
     the port stops accepting connections.
 
-13. **A\* open-set has no decrease-key; violates heap invariant.**
+13. **[FIXED] A\* open-set has no decrease-key; violates heap invariant.**
     `internal/planning/astar.go:174-221` — when a cheaper path to an already-queued
     node is found, `gScore`/`cameFrom` are updated but the stale heap entry is
     never replaced, and `inOpenSet` does an O(n) linear scan per neighbor. Final
     paths are still correct, but the search degrades toward Dijkstra-with-dead-
     entries and can get very slow on sparse/large maps (default grid is
     2000×2000 cells — see #16).
+    **Fix:** switched to the standard lazy-deletion pattern for `container/heap`,
+    which has no decrease-key: instead of checking `inOpenSet` and leaving a
+    stale, worse-`G` copy of a cell sitting in the heap, every improved path now
+    just pushes a fresh entry, and a popped node is skipped if its `G` no longer
+    matches the best known `gScore` for that cell (i.e. it was superseded after
+    being queued). This removes the O(n) `inOpenSet` scan entirely (deleted) and
+    keeps the heap's priority order honest. Added
+    `TestAStar_Plan_FindsOptimalCost`, which checks the returned path's total
+    cost against the true 8-connected-grid optimum
+    (`min(dx,dy)*sqrt(2) + abs(dx-dy)`).
 
 14. **Divide-by-zero/NaN when two robots coincide.**
     `internal/planning/coordinator.go:190-199` — `adjustForConflict` divides by
