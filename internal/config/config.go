@@ -53,10 +53,13 @@ type ForegroundConfig struct {
 	PersistIntervalSec float64 `yaml:"persist_interval_sec"`
 	// Shadow suppression: a darkened pixel whose colour is still just the
 	// background colour scaled down (within these bounds) is a cast shadow,
-	// not an object. See detection.isShadowColor.
-	ShadowAlphaMin  float64 `yaml:"shadow_alpha_min"`
-	ShadowAlphaMax  float64 `yaml:"shadow_alpha_max"`
-	ShadowChromaMax float64 `yaml:"shadow_chroma_max"`
+	// not an object. See detection.isShadowColor. nil = use the tuned
+	// default; an explicit 0 disables the gate entirely (see
+	// detection.ForegroundParams), so these must be pointers to tell "unset"
+	// apart from "configured to zero."
+	ShadowAlphaMin  *float64 `yaml:"shadow_alpha_min"`
+	ShadowAlphaMax  *float64 `yaml:"shadow_alpha_max"`
+	ShadowChromaMax *float64 `yaml:"shadow_chroma_max"`
 }
 
 // ForegroundSettings is ForegroundConfig with every default applied.
@@ -104,6 +107,12 @@ func (c *Config) EffectiveForeground() ForegroundSettings {
 		}
 		return def
 	}
+	orFPtr := func(v *float64, def float64) float64 {
+		if v != nil {
+			return *v
+		}
+		return def
+	}
 	s := ForegroundSettings{
 		Enabled:            true,
 		Scale:              orF(f.Scale, 0.5),
@@ -122,10 +131,12 @@ func (c *Config) EffectiveForeground() ForegroundSettings {
 		PadM:               orF(f.PadM, 0.02),
 		PersistBackground:  true,
 		PersistIntervalSec: orF(f.PersistIntervalSec, 30),
-		// Defaults must match detection.DefaultForegroundParams.
-		ShadowAlphaMin:  orF(f.ShadowAlphaMin, 0.15),
-		ShadowAlphaMax:  orF(f.ShadowAlphaMax, 0.98),
-		ShadowChromaMax: orF(f.ShadowChromaMax, 0.20),
+		// Defaults must match detection.DefaultForegroundParams. Unlike the
+		// other fields, an explicit 0 here is meaningful (disables the shadow
+		// gate), so these use the nil-checking orFPtr rather than orF.
+		ShadowAlphaMin:  orFPtr(f.ShadowAlphaMin, 0.15),
+		ShadowAlphaMax:  orFPtr(f.ShadowAlphaMax, 0.98),
+		ShadowChromaMax: orFPtr(f.ShadowChromaMax, 0.20),
 	}
 	if f.Enabled != nil {
 		s.Enabled = *f.Enabled

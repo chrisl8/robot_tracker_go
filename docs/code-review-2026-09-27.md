@@ -227,13 +227,25 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     configured. Added `TestNewAprilTagDetector_FamilyDefault`, which fails
     against the old inverted check and passes with the fix.
 
-18. **Shadow-suppression "disable via zero" doesn't work.**
+18. **[FIXED] Shadow-suppression "disable via zero" doesn't work.**
     `internal/detection/foreground_types.go:36-39` documents that leaving
     `ShadowAlphaMin`/`ShadowChromaMax` at `0` disables the gate — but both
     `config.go`'s `EffectiveForeground` and `foreground.go`'s
     `NewForegroundDetector` treat `0` as "unset" and coerce it back to the
     default. A user tuning the newest, least-tested feature against the real robot
     shadow cannot actually turn it off the documented way.
+    **Fix:** `ForegroundConfig`'s three shadow fields are now `*float64` so
+    `EffectiveForeground` can tell "unset in YAML" (nil, defaults) apart from
+    "explicitly configured to 0" (kept as 0); `NewForegroundDetector` no longer
+    coerces a zero shadow bound back to the tuned default; and
+    `foregroundModel.step` now gates the `isShadowColor` call behind an
+    explicit `shadowGateOn := shadowAlphaMin > 0 && shadowAlphaMax > 0 &&
+    shadowChromaMax > 0` check, rather than relying on each bound's
+    incidental (and, for `ShadowAlphaMin`, wrong-direction) effect on the
+    scale/chroma math. Added `TestEffectiveForeground`'s new "explicit zero
+    disables shadow suppression instead of defaulting" case and
+    `TestForegroundModel_ShadowGateZeroDisablesIt`, both of which fail against
+    the old behavior and pass with the fix.
 
 19. **`DetectionPipeline.tagDetector` nil-call landmine.**
     `internal/detection/pipeline.go:11-16` sets `tagDetector = nil` on constructor

@@ -164,10 +164,11 @@ func TestEffectiveForeground(t *testing.T) {
 		}
 	})
 	t.Run("explicit values win, including switching off", func(t *testing.T) {
+		alphaMin, alphaMax, chromaMax := 0.4, 0.9, 0.2
 		cfg := &Config{Foreground: ForegroundConfig{
 			Enabled: &off, ApplyToPlanner: &on, Threshold: 30, AppearMs: 250, AbsorbAfterSec: 600,
 			PersistBackground: &off, PersistIntervalSec: 10,
-			ShadowAlphaMin: 0.4, ShadowAlphaMax: 0.9, ShadowChromaMax: 0.2,
+			ShadowAlphaMin: &alphaMin, ShadowAlphaMax: &alphaMax, ShadowChromaMax: &chromaMax,
 		}}
 		got := cfg.EffectiveForeground()
 		if got.Enabled || !got.ApplyToPlanner || got.Threshold != 30 || got.AppearMs != 250 || got.AbsorbAfterSec != 600 {
@@ -181,6 +182,17 @@ func TestEffectiveForeground(t *testing.T) {
 		}
 		if got.ShadowAlphaMin != 0.4 || got.ShadowAlphaMax != 0.9 || got.ShadowChromaMax != 0.2 {
 			t.Errorf("shadow-suppression settings not honoured: %+v", got)
+		}
+	})
+	t.Run("explicit zero disables shadow suppression instead of defaulting", func(t *testing.T) {
+		zero := 0.0
+		cfg := &Config{Foreground: ForegroundConfig{ShadowAlphaMin: &zero}}
+		got := cfg.EffectiveForeground()
+		if got.ShadowAlphaMin != 0 {
+			t.Errorf("an explicit 0 should disable the gate, not default, got ShadowAlphaMin=%v", got.ShadowAlphaMin)
+		}
+		if got.ShadowAlphaMax != 0.98 || got.ShadowChromaMax != 0.20 {
+			t.Errorf("unset shadow fields should still default, got %+v", got)
 		}
 	})
 }

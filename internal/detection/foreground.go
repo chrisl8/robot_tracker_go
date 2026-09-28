@@ -61,7 +61,10 @@ type ForegroundDetector struct {
 }
 
 // NewForegroundDetector creates a detector. Zero-valued params are replaced by
-// the defaults.
+// the defaults, except the three shadow-suppression bounds
+// (ShadowAlphaMin/ShadowAlphaMax/ShadowChromaMax): per their doc comment on
+// ForegroundParams, a caller leaving any of those at zero means "disable the
+// gate," so zero is passed through as-is rather than coerced to the default.
 func NewForegroundDetector(p ForegroundParams) *ForegroundDetector {
 	def := DefaultForegroundParams()
 	if p.Scale <= 0 || p.Scale > 1 {
@@ -84,15 +87,6 @@ func NewForegroundDetector(p ForegroundParams) *ForegroundDetector {
 	}
 	if p.MinBlobPx <= 0 {
 		p.MinBlobPx = def.MinBlobPx
-	}
-	if p.ShadowAlphaMin <= 0 {
-		p.ShadowAlphaMin = def.ShadowAlphaMin
-	}
-	if p.ShadowAlphaMax <= 0 {
-		p.ShadowAlphaMax = def.ShadowAlphaMax
-	}
-	if p.ShadowChromaMax <= 0 {
-		p.ShadowChromaMax = def.ShadowChromaMax
 	}
 	return &ForegroundDetector{
 		params: p,

@@ -613,6 +613,41 @@ func TestForegroundModel_ShadowSuppressedOnNeutralCarpet(t *testing.T) {
 	}
 }
 
+// TestForegroundModel_ShadowGateZeroDisablesIt is the regression test for the
+// "disable via zero" bug (code review #18): ForegroundParams documents that
+// leaving any of the three shadow bounds at zero turns the gate off, but the
+// gate used to fall back to the tuned defaults instead. With
+// ShadowAlphaMin == 0 here, the same cast shadow from
+// TestForegroundModel_ShadowSuppressedOnNeutralCarpet must now be flagged as
+// foreground rather than suppressed.
+func TestForegroundModel_ShadowGateZeroDisablesIt(t *testing.T) {
+	m := testModel(func(p *ForegroundParams) { p.ShadowAlphaMin = 0 })
+	s := newColorScene(41, 150, 150, 150)
+	warmUpColor(t, m, s, nil)
+
+	s.scaleRect(20, 20, 60, 60, 0.6)
+
+	var mask []uint8
+	var st modelStep
+	for i := 0; i < 3; i++ {
+		gray, color := s.frames()
+		mask, st = m.step(gray, tw, th, tdt, nil, nil, color)
+	}
+	if len(mask) != tw*th {
+		t.Fatalf("expected a %d-pixel mask, got %d", tw*th, len(mask))
+	}
+	if st.ShadowSuppressed != 0 {
+		t.Errorf("ShadowSuppressed = %d, want 0 with the gate disabled", st.ShadowSuppressed)
+	}
+	shadowTotal := 0
+	for y := 20; y < 60; y++ {
+		shadowTotal += countFG(mask[y*tw+20 : y*tw+60])
+	}
+	if shadowTotal == 0 {
+		t.Error("with the shadow gate disabled, the darkened region should be flagged as foreground like any other change")
+	}
+}
+
 // TestForegroundModel_ColorBlindCallsAreUnaffected proves the gate is inert
 // end-to-end (not just via isShadowColor's own defaults) when no colour is
 // supplied: an object darker than a plausible shadow, and a real shadow-like

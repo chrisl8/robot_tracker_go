@@ -36,7 +36,10 @@ type ForegroundParams struct {
 	// bounds the leftover colour error (as a fraction of the background
 	// colour's magnitude) after removing that scale. See isShadowColor. Any
 	// of these left at zero (the zero value) disables the gate, since 0 is
-	// not a usable bound for either.
+	// not a usable bound for either — enforced explicitly (as shadowGateOn in
+	// foreground_model.go), not just as an incidental effect of the bound
+	// math, and NewForegroundDetector passes zero through unchanged for these
+	// three fields rather than substituting the tuned defaults.
 	ShadowAlphaMin  float64
 	ShadowAlphaMax  float64
 	ShadowChromaMax float64

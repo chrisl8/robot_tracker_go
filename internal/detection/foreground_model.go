@@ -210,6 +210,11 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 	shadowAlphaMin := float32(m.p.ShadowAlphaMin)
 	shadowAlphaMax := float32(m.p.ShadowAlphaMax)
 	shadowChromaMax := float32(m.p.ShadowChromaMax)
+	// Per ForegroundParams' doc comment, leaving any of the three bounds at
+	// zero disables the gate entirely, rather than relying on each bound's
+	// incidental effect on the isShadowColor math (which for ShadowAlphaMin
+	// alone would loosen the gate, not disable it).
+	shadowGateOn := shadowAlphaMin > 0 && shadowAlphaMax > 0 && shadowChromaMax > 0
 
 	fgCount := 0
 	shadowCount := 0
@@ -243,7 +248,7 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 
 			d := cur - m.bg[i]
 			raw := d > thrUp || d < -thrDown
-			if raw && d < 0 && color != nil &&
+			if raw && d < 0 && color != nil && shadowGateOn &&
 				isShadowColor(curB, curG, curR, m.bgB[i], m.bgG[i], m.bgR[i], shadowAlphaMin, shadowAlphaMax, shadowChromaMax) {
 				// Darker, but still just the background colour scaled down: a
 				// cast shadow, not a real change. Leave it classified as
