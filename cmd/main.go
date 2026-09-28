@@ -336,7 +336,42 @@ func (rs *RobotSystem) statusBroadcastDue() bool {
 	return true
 }
 
+// Initialize wires up every subsystem in a fixed order and never returns a
+// non-nil error today (every failure path logs a warning and continues in a
+// degraded state instead) -- each init<Group>() helper below preserves that
+// contract; none of them should be given error-propagating return values
+// without also updating every caller, since callers currently rely on
+// Initialize() always succeeding.
 func (rs *RobotSystem) Initialize() error {
+	rs.initDetectionPipeline()
+	rs.initTracker()
+	rs.initPlanner()
+	rs.initCamera()
+
+	calibrationPath := "config/calibration_default.yaml"
+	if name := rs.cameraDisplayName(); name != "" {
+		calibrationPath = ui.GetCalibrationFilename(name)
+		utils.Logf("Using calibration file: %s", calibrationPath)
+	}
+	rs.initPositionEstimator(calibrationPath)
+	rs.initArduinoAndQueue()
+	rs.initPathExecutor()
+
+	rs.web.webServer = ui.NewWebServer(":9086")
+	rs.registerWebServerCallbacks()
+	rs.applyCalibrationStateToWebServer(calibrationPath)
+	rs.initForeground()
+
+	rs.web.webServer.Start()
+	utils.Log(getWebUIURLs("9086"))
+
+	rs.loadStaticObstacles()
+
+	return nil
+}
+
+// initDetectionPipeline sets up AprilTag detection.
+func (rs *RobotSystem) initDetectionPipeline() {
 	tagConfig := detection.AprilTagConfig{
 		Family:       rs.cfg.AprilTags.Family,
 		QuadDecimate: rs.cfg.AprilTags.QuadDecimate,
@@ -344,7 +379,10 @@ func (rs *RobotSystem) Initialize() error {
 
 	rs.detection.detectionPipe = detection.NewDetectionPipeline(tagConfig)
 	utils.Logf("Detection pipeline initialized")
+}
 
+// initTracker sets up the multi-object tracker.
+func (rs *RobotSystem) initTracker() {
 	trackConfig := &tracking.ByteTrackConfig{
 		TrackThresh: rs.cfg.Tracking.TrackThresh,
 		TrackBuffer: rs.cfg.Tracking.TrackBuffer,
@@ -355,7 +393,10 @@ func (rs *RobotSystem) Initialize() error {
 	}
 	rs.tracking.tracker = tracking.NewByteTrack(trackConfig)
 	utils.Logf("ByteTrack initialized")
+}
 
+// initPlanner sets up the path planner.
+func (rs *RobotSystem) initPlanner() {
 	plannerConfig := &planning.PlannerConfig{
 		AStarConfig:            nil,
 		VelocityObstacleConfig: nil,
@@ -363,7 +404,12 @@ func (rs *RobotSystem) Initialize() error {
 	}
 	rs.planning.planner = planning.NewPlanner(plannerConfig)
 	utils.Logf("Planner initialized")
+}
 
+// initCamera opens the configured primary camera, if any. A failure here is
+// non-fatal: rs.capture.cam is left nil and the caller falls back to demo mode
+// or retries later via tryOpenCamera/StartCamera.
+func (rs *RobotSystem) initCamera() {
 	if primaryCam := rs.cfg.GetPrimaryCamera(); primaryCam != nil {
 		camConfig := camera.CameraConfig{
 			Type:     primaryCam.Type,
@@ -386,12 +432,10 @@ func (rs *RobotSystem) Initialize() error {
 	} else {
 		utils.Logf("No camera configured, using demo mode")
 	}
+}
 
-	calibrationPath := "config/calibration_default.yaml"
-	if name := rs.cameraDisplayName(); name != "" {
-		calibrationPath = ui.GetCalibrationFilename(name)
-		utils.Logf("Using calibration file: %s", calibrationPath)
-	}
+// initPositionEstimator sets up pixel<->world calibration from calibrationPath.
+func (rs *RobotSystem) initPositionEstimator(calibrationPath string) {
 	obstaclesPath := ""
 	if rs.cfg != nil && rs.cfg.Obstacles.GetPath() != "" {
 		obstaclesPath = rs.cfg.Obstacles.GetPath()
@@ -404,8 +448,12 @@ func (rs *RobotSystem) Initialize() error {
 		rs.position.positionEst = posEst
 		utils.Logf("Position estimator initialized")
 	}
+}
 
-	// Initialize Arduino controller using config values
+// initArduinoAndQueue connects to the configured Arduino (if the controller
+// is enabled) and starts the command queue regardless of whether that
+// connection succeeded, matching the previous inline behavior.
+func (rs *RobotSystem) initArduinoAndQueue() {
 	serialPort := "auto"
 	serialBaud := controller.BaudRate
 	commandIntervalMs := controller.CommandIntervalMs
@@ -438,7 +486,11 @@ func (rs *RobotSystem) Initialize() error {
 	} else {
 		utils.Logf("WARNING: Command queue started but Arduino is NOT connected — commands will fail")
 	}
+}
 
+// initPathExecutor sets up waypoint-following parameters from config,
+// falling back to hardcoded defaults if PathExecution isn't configured.
+func (rs *RobotSystem) initPathExecutor() {
 	if rs.cfg != nil && rs.cfg.PathExecution.MaxSpeed > 0 {
 		rs.io.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
 		rs.io.waypointThreshold = rs.cfg.PathExecution.WaypointThreshold
@@ -468,9 +520,13 @@ func (rs *RobotSystem) Initialize() error {
 	utils.Logf("Path executor: spin=%.1f° burst=%d wait=%d forward=%.1f°",
 		rs.io.pathExecutor.SpinThresholdDeg, rs.io.pathExecutor.BurstFrames, rs.io.pathExecutor.MaxWaitFrames,
 		rs.io.pathExecutor.ForwardThresholdDeg)
+}
 
-	rs.web.webServer = ui.NewWebServer(":9086")
-
+// registerWebServerCallbacks wires the operator UI's HTTP/WebSocket handlers
+// (in internal/ui) to RobotSystem behavior via the WebServer's On* callback
+// fields. Each closure captures rs, so it always sees the RobotSystem's
+// current state at call time, not at registration time.
+func (rs *RobotSystem) registerWebServerCallbacks() {
 	rs.web.webServer.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
 		utils.Debugf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planning.planner.SetObstacles(obstacles)
@@ -589,7 +645,12 @@ func (rs *RobotSystem) Initialize() error {
 	rs.web.webServer.OnGetControlState = func() (string, bool) {
 		return rs.GetControlMode().String(), rs.IsEmergencyStopped()
 	}
+}
 
+// applyCalibrationStateToWebServer pushes the current camera name and
+// calibration status to the web server so the operator UI reflects them
+// immediately on startup, without waiting for a calibration event.
+func (rs *RobotSystem) applyCalibrationStateToWebServer(calibrationPath string) {
 	if name := rs.cameraDisplayName(); name != "" {
 		rs.web.webServer.SetCameraName(name)
 	}
@@ -603,14 +664,6 @@ func (rs *RobotSystem) Initialize() error {
 		utils.Debugf("PATH VIS: WARNING - PositionEstimator NOT set! IsCalibrated()=%v",
 			rs.position.positionEst != nil && rs.position.positionEst.IsCalibrated())
 	}
-	rs.initForeground()
-
-	rs.web.webServer.Start()
-	utils.Log(getWebUIURLs("9086"))
-
-	rs.loadStaticObstacles()
-
-	return nil
 }
 
 func (rs *RobotSystem) loadStaticObstacles() {
