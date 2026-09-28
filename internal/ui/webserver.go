@@ -28,6 +28,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gopkg.in/yaml.v3"
 )
 
 type WebServer struct {
@@ -1396,25 +1397,48 @@ func (s *WebServer) handleObstaclesSave(c *gin.Context) {
 	})
 }
 
-func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstacle) error {
-	yamlContent := "version: 1\nobstacles:\n"
+// obstacleFileEntry and obstacleFile mirror the on-disk obstacle YAML shape
+// that PositionEstimator.LoadObstacles parses generically (keys "version",
+// "obstacles[].name", ".pixels.top_left"/".bottom_right",
+// ".world.top_left"/".bottom_right"). Marshaling through these tagged
+// structs, rather than building the YAML text by hand, keeps escaping and
+// nesting correct by construction.
+type obstacleFileEntry struct {
+	Name   string `yaml:"name"`
+	Pixels struct {
+		TopLeft     [2]int `yaml:"top_left"`
+		BottomRight [2]int `yaml:"bottom_right"`
+	} `yaml:"pixels"`
+	World struct {
+		TopLeft     [2]float64 `yaml:"top_left"`
+		BottomRight [2]float64 `yaml:"bottom_right"`
+	} `yaml:"world"`
+}
 
+type obstacleFile struct {
+	Version   int                 `yaml:"version"`
+	Obstacles []obstacleFileEntry `yaml:"obstacles"`
+}
+
+func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstacle) error {
+	file := obstacleFile{Version: 1, Obstacles: make([]obstacleFileEntry, len(obstacles))}
 	for i, obs := range obstacles {
-		yamlContent += fmt.Sprintf("  - name: %q\n", obs.Name)
-		yamlContent += "    pixels:\n"
-		yamlContent += fmt.Sprintf("      top_left: [%d, %d]\n", obs.PixelsTopLeft[0], obs.PixelsTopLeft[1])
-		yamlContent += fmt.Sprintf("      bottom_right: [%d, %d]\n", obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
-		yamlContent += "    world:\n"
-		yamlContent += fmt.Sprintf("      top_left: [%.4f, %.4f]\n", obs.WorldTopLeft[0], obs.WorldTopLeft[1])
-		yamlContent += fmt.Sprintf("      bottom_right: [%.4f, %.4f]\n", obs.WorldBottomRight[0], obs.WorldBottomRight[1])
-		if i < len(obstacles)-1 {
-			yamlContent += "\n"
-		}
+		entry := obstacleFileEntry{Name: obs.Name}
+		entry.Pixels.TopLeft = obs.PixelsTopLeft
+		entry.Pixels.BottomRight = obs.PixelsBottomRight
+		entry.World.TopLeft = obs.WorldTopLeft
+		entry.World.BottomRight = obs.WorldBottomRight
+		file.Obstacles[i] = entry
+	}
+
+	data, err := yaml.Marshal(file)
+	if err != nil {
+		return fmt.Errorf("failed to marshal obstacles: %w", err)
 	}
 
 	// #nosec G304
 	// #nosec G306
-	return os.WriteFile(path, []byte(yamlContent), 0600)
+	return os.WriteFile(path, data, 0600)
 }
 
 func (s *WebServer) GetObstacles() []planning.Obstacle {

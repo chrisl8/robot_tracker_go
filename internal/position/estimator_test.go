@@ -1,6 +1,7 @@
 package position
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -172,6 +173,51 @@ func TestPositionEstimator_ClearObstacles(t *testing.T) {
 	est.ClearObstacles()
 	if len(est.GetObstacles()) != 0 {
 		t.Errorf("After ClearObstacles, GetObstacles = %d, want 0", len(est.GetObstacles()))
+	}
+}
+
+// TestSaveObstacles_RoundTripsThroughLoadObstacles guards the on-disk file
+// shape written by SaveObstacles (via yaml.Marshal) against LoadObstacles's
+// generic map-based parsing, which expects specific keys and nesting rather
+// than relying on the same struct on both ends.
+func TestSaveObstacles_RoundTripsThroughLoadObstacles(t *testing.T) {
+	saver, _ := NewPositionEstimator("", "", false, 0.0)
+	obstacles := []Obstacle{
+		{
+			Name:              `weird "name" with quotes`,
+			WorldTopLeft:      Point2D{X: 1.25, Y: -2.5},
+			WorldBottomRight:  Point2D{X: 3.75, Y: 4.125},
+			PixelsTopLeft:     [2]int{10, 20},
+			PixelsBottomRight: [2]int{300, 400},
+		},
+		{
+			Name:              "second",
+			WorldTopLeft:      Point2D{X: -1, Y: -1},
+			WorldBottomRight:  Point2D{X: 0, Y: 0},
+			PixelsTopLeft:     [2]int{0, 0},
+			PixelsBottomRight: [2]int{5, 5},
+		},
+	}
+
+	path := filepath.Join(t.TempDir(), "obstacles.yaml")
+	if err := saver.SaveObstacles(path, obstacles); err != nil {
+		t.Fatalf("SaveObstacles failed: %v", err)
+	}
+
+	loader, _ := NewPositionEstimator("", "", false, 0.0)
+	if err := loader.LoadObstacles(path); err != nil {
+		t.Fatalf("LoadObstacles failed: %v", err)
+	}
+
+	loaded := loader.GetObstacles()
+	if len(loaded) != len(obstacles) {
+		t.Fatalf("LoadObstacles got %d obstacles, want %d", len(loaded), len(obstacles))
+	}
+	for i, want := range obstacles {
+		got := loaded[i]
+		if got != want {
+			t.Errorf("obstacle %d = %+v, want %+v", i, got, want)
+		}
 	}
 }
 

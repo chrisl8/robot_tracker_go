@@ -395,10 +395,34 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   logic had no direct unit test; `TestEffectiveForeground` (including the bug
   #18 regression subtest) passes unchanged. `./scripts/build.sh` and
   `./scripts/test.sh --verbose` pass.
-- **Hand-rolled YAML string building** (fragile, unescaped edge cases) in at least
-  two places: `internal/ui/webserver.go:1308-1327` (obstacles) and
+- **[FIXED] Hand-rolled YAML string building** (fragile, unescaped edge cases) in at
+  least two places: `internal/ui/webserver.go:1308-1327` (obstacles) and
   `internal/position/estimator.go:422-441` (`SaveObstacles`) — while calibration
   save in the same area correctly uses `yaml.Marshal`.
+  **Investigation:** confirmed — both functions built the obstacle YAML file
+  by hand with `fmt.Sprintf`/string concatenation, one keyed on
+  `planning.Obstacle` (`[2]float64` world corners), the other on
+  `position.Obstacle` (`Point2D` world corners), each independently
+  responsible for producing the exact key/nesting shape (`version`,
+  `obstacles[].name`, `.pixels.top_left`/`.bottom_right`,
+  `.world.top_left`/`.bottom_right`) that `PositionEstimator.LoadObstacles`
+  expects when it parses the file generically via
+  `yaml.Unmarshal(&map[string]interface{})`. `%q` happened to escape the name
+  field correctly today, but nothing enforced that beyond the two hand-kept
+  copies staying in sync — the same kind of seam that caused bug #18.
+  **Fix:** both functions now build a small `yaml:"..."`-tagged
+  `obstacleFile`/`obstacleFileEntry` struct pair (one copy per package, since
+  the two callers use different domain `Obstacle` types) and call
+  `yaml.Marshal`, matching the pattern `SaveCalibration` already used in the
+  same file. On-disk keys/nesting are unchanged, so `LoadObstacles` needed no
+  changes; world coordinates now marshal at full float64 precision instead of
+  the old fixed 4-decimal format (cosmetic only). Added
+  `TestSaveObstaclesToFile_WritesParsableYAML`
+  (`internal/ui/obstacles_file_test.go`) and
+  `TestSaveObstacles_RoundTripsThroughLoadObstacles`
+  (`internal/position/estimator_test.go`), closing the gap where neither
+  save path had a direct test. `./scripts/build.sh` and
+  `./scripts/test.sh --verbose` pass.
 - **Config file paths that don't match reality**: `config/tracking_config.yaml`
   references `config/calibration_default.yaml` / `calibration_camera0.yaml`; actual
   files are `calibration_Camera_0.yaml` / `calibration_demo.yaml`. Either dead
