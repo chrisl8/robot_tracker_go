@@ -1328,6 +1328,14 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
 		return
 	}
+	// Demo mode can fall back from a real camera that's temporarily
+	// unavailable while a real Arduino stays connected (Initialize() wires
+	// up Arduino/commandQueue regardless of demo vs. real-camera mode). Never
+	// let synthetic demo-tag positions drive real hardware.
+	if rs.demoMode && rs.io.arduino != nil && rs.io.arduino.IsConnected() {
+		utils.Logf("Refusing autonomous control: demo mode is active with a real Arduino connected")
+		return
+	}
 
 	commandIssued := false
 	for i := range tracks {
@@ -1727,7 +1735,19 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 				rs.planning.CurrentRobotID = *track.TagID
 				if rs.position.positionEst != nil {
-					rs.updateTrackWorldPosition(track, false)
+					// Mirror ProcessFrame's per-track wiring: register the
+					// robot with the planner and compute its heading, so a
+					// demo run behaves identically to a real camera run for
+					// path planning and autonomous control (previously demo
+					// tracks were drawn/broadcast but never registered with
+					// the planner, so they never got a path, a heading, or
+					// autonomous driving -- see docs/code-review-2026-09-27.md
+					// tech-debt #1).
+					worldPos, robotDiameter := rs.updateTrackWorldPosition(track, true)
+					if rs.planning.planner != nil {
+						rs.planning.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
+					}
+					rs.computeTrackHeading(track, demoTags)
 				}
 			}
 		}
@@ -1737,6 +1757,8 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 			robots = rs.cfg.Robots
 		}
 		rs.web.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.io.robotCommands)
+
+		rs.executeAutonomousControl(trackingResult.Tracks)
 	}
 
 	if rs.detection.detectionPipe != nil && rs.web.webServer != nil && rs.web.webServer.CalibrationViewActive() {
