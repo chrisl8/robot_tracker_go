@@ -2,6 +2,49 @@ package planning
 
 import "math"
 
+// Tuning constants for the velocity-obstacle (VO) collision-avoidance math
+// below. Named per code-review tech-debt ("magic numbers scattered ... in
+// local.go"), following the same const-block convention as
+// planner.go's dynamicObstacleEpsilon/minDynamicReplanInterval.
+const (
+	// voRayEpsilon avoids a divide-by-zero in computeVO's asin() when the
+	// robot and obstacle centers coincide.
+	voRayEpsilon = 0.001
+
+	// evaluateVelocityEpsilon avoids a divide-by-zero in evaluateVelocity's
+	// alignment ratio, and is also the "desired velocity is effectively
+	// zero" threshold used to skip scoring entirely.
+	evaluateVelocityEpsilon = 0.001
+
+	// coincidentPositionEpsilon is the distance below which a robot and
+	// obstacle are treated as coincident (rather than dividing by ~zero) in
+	// computeCombinedCollisionAvoidance; the fallback offset uses the same
+	// value so the resulting escape direction is a small but non-zero push.
+	coincidentPositionEpsilon = 0.01
+
+	// penetrationWeightFloor is added to an obstacle's penetration depth so
+	// even a barely-penetrating obstacle still contributes to the combined
+	// escape direction, instead of being weighted to ~zero.
+	penetrationWeightFloor = 0.01
+
+	// escapeWeightEpsilon avoids a divide-by-zero in escapeWeight's
+	// denominator when both maxPenetration and safetyMargin are zero.
+	escapeWeightEpsilon = 0.01
+
+	// escapeSpeedFraction scales MaxVelocity down for the retreat speed used
+	// when actively escaping a penetrated obstacle.
+	escapeSpeedFraction = 0.8
+
+	// alignmentWeight and speedWeight blend evaluateVelocity's two scoring
+	// terms (goal-alignment vs. raw speed) and are defined to sum to 1.0.
+	alignmentWeight = 0.7
+	speedWeight     = 0.3
+)
+
+// candidateSpeeds are the VO candidate-velocity magnitudes searched by
+// generateCandidateVelocities (a slice can't be a const).
+var candidateSpeeds = []float64{0.1, 0.2, 0.3}
+
 type VelocityObstacleConfig struct {
 	TimeHorizon     float64
 	SafetyMargin    float64
@@ -118,7 +161,7 @@ func (p *LocalPlanner) computeVO(robotPos [2]float64, radius float64, obsPos, ob
 
 	discRadius := radius * tau
 
-	alpha := math.Asin(discRadius / (math.Sqrt(discCenterX*discCenterX+discCenterY*discCenterY) + 0.001))
+	alpha := math.Asin(discRadius / (math.Sqrt(discCenterX*discCenterX+discCenterY*discCenterY) + voRayEpsilon))
 
 	theta := math.Atan2(discCenterY, discCenterX)
 
@@ -185,12 +228,11 @@ func (p *LocalPlanner) velocityInAnyVO(vel [2]float64, vos [][][2]float64) bool 
 }
 
 func (p *LocalPlanner) generateCandidateVelocities(desired [2]float64) [][2]float64 {
-	speeds := []float64{0.1, 0.2, 0.3}
 	angles := [8]float64{0, math.Pi / 4, math.Pi / 2, 3 * math.Pi / 4, math.Pi, -math.Pi / 4, -math.Pi / 2, -3 * math.Pi / 4}
-	candidates := make([][2]float64, 0, len(speeds)*len(angles)+1)
+	candidates := make([][2]float64, 0, len(candidateSpeeds)*len(angles)+1)
 
 	for _, angle := range angles {
-		for _, speed := range speeds {
+		for _, speed := range candidateSpeeds {
 			candidates = append(candidates, [2]float64{
 				math.Cos(angle) * speed,
 				math.Sin(angle) * speed,
@@ -205,15 +247,15 @@ func (p *LocalPlanner) generateCandidateVelocities(desired [2]float64) [][2]floa
 
 func (p *LocalPlanner) evaluateVelocity(vel [2]float64, desired [2]float64, obstacles []RobotState) float64 {
 	desiredMag := math.Sqrt(desired[0]*desired[0] + desired[1]*desired[1])
-	if desiredMag < 0.001 {
+	if desiredMag < evaluateVelocityEpsilon {
 		return 0
 	}
 
-	alignment := (vel[0]*desired[0] + vel[1]*desired[1]) / (desiredMag*math.Sqrt(vel[0]*vel[0]+vel[1]*vel[1]) + 0.001)
+	alignment := (vel[0]*desired[0] + vel[1]*desired[1]) / (desiredMag*math.Sqrt(vel[0]*vel[0]+vel[1]*vel[1]) + evaluateVelocityEpsilon)
 
 	speed := math.Sqrt(vel[0]*vel[0] + vel[1]*vel[1])
 
-	return alignment*0.7 + (speed/p.config.MaxVelocity)*0.3
+	return alignment*alignmentWeight + (speed/p.config.MaxVelocity)*speedWeight
 }
 
 // computeCombinedCollisionAvoidance produces a single escape velocity that
@@ -243,11 +285,11 @@ func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, desir
 		dy := obs.Position[1] - robot.Position[1]
 		dist := math.Sqrt(dx*dx + dy*dy)
 
-		if dist < 0.01 {
+		if dist < coincidentPositionEpsilon {
 			// Coincident positions: push away in an arbitrary but
 			// consistent direction rather than dividing by ~zero.
-			dist = 0.01
-			dx, dy = 0.01, 0
+			dist = coincidentPositionEpsilon
+			dx, dy = coincidentPositionEpsilon, 0
 		}
 
 		penetration := combinedRadius - dist
@@ -261,7 +303,7 @@ func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, desir
 		// Weight the escape contribution by penetration depth (plus a
 		// small floor so even a barely-penetrating obstacle still counts)
 		// so the deepest intrusion dominates the combined direction.
-		weight := penetration + 0.01
+		weight := penetration + penetrationWeightFloor
 		sumX += (-dx / dist) * weight
 		sumY += (-dy / dist) * weight
 	}
@@ -284,9 +326,9 @@ func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, desir
 	// Deeper penetration leans harder on pure retreat; shallow penetration
 	// lets more of the goal-directed sideways motion through so the robot
 	// slides around the obstacle instead of oscillating at its boundary.
-	escapeWeight := maxPenetration / (maxPenetration + safetyMargin + 0.01)
+	escapeWeight := maxPenetration / (maxPenetration + safetyMargin + escapeWeightEpsilon)
 
-	escapeSpeed := p.config.MaxVelocity * 0.8
+	escapeSpeed := p.config.MaxVelocity * escapeSpeedFraction
 	resultX := escapeDirX*escapeSpeed*escapeWeight + tangentX*(1-escapeWeight)
 	resultY := escapeDirY*escapeSpeed*escapeWeight + tangentY*(1-escapeWeight)
 

@@ -608,10 +608,37 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   Added `TestGetObstaclesFilename` and `TestResolveObstaclesPath`
   (`internal/ui/filenames_test.go`), covering all four resolution tiers.
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **Magic numbers scattered and inconsistent across planning files** — e.g.
+- **[FIXED] Magic numbers scattered and inconsistent across planning files** — e.g.
   `dist < 0.5` appears with different meanings in `local.go` and `coordinator.go`;
   avoidance-strength/nudge constants (`0.1`, `0.3`, `0.8`) aren't named or shared
   despite expressing related concepts.
+  **Investigation:** the `dist < 0.5` cross-file duplication is stale — it no
+  longer exists. The only place it ever appeared was
+  `Coordinator.adjustForConflict`, deleted by the earlier "dead second
+  collision-avoidance system" tech-debt fix; `coordinator.go` today has zero
+  numeric literals of any kind (it's a pure per-robot state store).
+  `local.go`'s penetration check was never a literal `dist < 0.5` either — it
+  compares against a computed `combinedRadius`. What *is* still accurate:
+  `local.go` has several unnamed float literals for distinct avoidance-related
+  concepts (an escape-speed fraction, VO candidate speeds, scoring weights, a
+  coincident-position epsilon) — real, but confined to one file, not
+  "scattered" across the package, and confirmed not reached from any
+  production code path today (`applyVelocityObstacles` and its callees have
+  zero callers outside `local_test.go`; the live steering pipeline is
+  bearing-based — see `local.go`'s existing doc comment).
+  **Fix:** added a doc-commented `const`/`var` block to `local.go` (matching
+  `planner.go`'s existing `dynamicObstacleEpsilon`/`minDynamicReplanInterval`
+  convention) naming every previously-bare literal: `voRayEpsilon`,
+  `evaluateVelocityEpsilon`, `coincidentPositionEpsilon`,
+  `penetrationWeightFloor`, `escapeWeightEpsilon`, `escapeSpeedFraction`,
+  `alignmentWeight`/`speedWeight`, and `candidateSpeeds`. All usage sites now
+  reference the named constants instead of bare literals; values are
+  unchanged, so there is no behavior change. `coordinator.go` and the
+  live-path files (`planner.go`, `astar.go`, `collision.go`) were left alone —
+  out of scope for this finding. `./scripts/build.sh` and
+  `./scripts/test.sh --verbose` pass, including `internal/planning`'s
+  existing VO/collision-avoidance regression tests (findings #4, #10)
+  unchanged.
 - **Integer-division truncation** in `internal/tracking/kalman.go:176-179`
   (`bboxToCenter`) — divides before casting to float, losing up to 0.5px per
   measurement, compounding across frames into real-world position error.
