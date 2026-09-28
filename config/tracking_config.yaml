@@ -139,11 +139,6 @@ output:
     trail_length: 30
     show_calibration: false
 
-# Calibration File Paths
-calibration:
-  default: "config/calibration_default.yaml"
-  camera_0: "config/calibration_camera0.yaml"
-
 # Multi-Camera Settings
 multi_camera:
   enabled: false

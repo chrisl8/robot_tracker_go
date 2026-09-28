@@ -423,10 +423,31 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   (`internal/position/estimator_test.go`), closing the gap where neither
   save path had a direct test. `./scripts/build.sh` and
   `./scripts/test.sh --verbose` pass.
-- **Config file paths that don't match reality**: `config/tracking_config.yaml`
+- **[FIXED] Config file paths that don't match reality**: `config/tracking_config.yaml`
   references `config/calibration_default.yaml` / `calibration_camera0.yaml`; actual
   files are `calibration_Camera_0.yaml` / `calibration_demo.yaml`. Either dead
   config or a latent bug.
+  **Investigation:** confirmed as dead config, not a latent bug. `Config`
+  (`internal/config/config.go`) has no `calibration` field at all, so the
+  top-level `calibration:` block in `tracking_config.yaml` was never parsed by
+  anything — `yaml.Unmarshal` silently drops unknown keys. The real
+  calibration path is computed at runtime from the camera's display name via
+  `ui.GetCalibrationFilename` (`config/calibration_<sanitized-camera-name>.yaml`),
+  which is why the actual files are named `calibration_Camera_0.yaml` /
+  `calibration_demo.yaml`. The only place the wrong hardcoded names existed in
+  Go was `cmd/main.go`'s `Initialize()`, as a fallback used only when no
+  camera name is available at all (no camera opened and no camera config) —
+  harmless today because `NewPositionEstimator` checks `FileExists` before
+  loading and just starts uncalibrated if the file is missing.
+  **Fix:** deleted the dead, wrong `calibration:` block from
+  `tracking_config.yaml` instead of correcting its paths, since nothing reads
+  it. Changed the `cmd/main.go` fallback to build its path via
+  `ui.GetCalibrationFilename("default")` instead of a separately hardcoded
+  string literal, so it can't drift from the real naming convention again, and
+  added a comment explaining why that path deliberately doesn't exist on disk.
+  No behavior change (the fallback path string is identical); moved the log
+  line so it fires for both branches instead of only the camera-name one.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **`ControllerConfig.HeartbeatTimeout` is a silent no-op** — declared in config,
   never read anywhere; the real timeout is a hardcoded constant
   (`protocol.go:37`).

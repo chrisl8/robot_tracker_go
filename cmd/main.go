@@ -348,11 +348,18 @@ func (rs *RobotSystem) Initialize() error {
 	rs.initPlanner()
 	rs.initCamera()
 
-	calibrationPath := "config/calibration_default.yaml"
+	// Calibration files are named after the camera (config/calibration_<name>.yaml,
+	// see ui.GetCalibrationFilename); the "default" name below is only reached
+	// when no camera name is available at all (no camera opened and no camera
+	// config), which happens with an empty/misconfigured cameras list. There is
+	// deliberately no config/calibration_default.yaml on disk -- initPositionEstimator
+	// skips loading a calibration file that doesn't exist, so this just starts
+	// uncalibrated rather than fail.
+	calibrationPath := ui.GetCalibrationFilename("default")
 	if name := rs.cameraDisplayName(); name != "" {
 		calibrationPath = ui.GetCalibrationFilename(name)
-		utils.Logf("Using calibration file: %s", calibrationPath)
 	}
+	utils.Logf("Using calibration file: %s", calibrationPath)
 	rs.initPositionEstimator(calibrationPath)
 	rs.initArduinoAndQueue()
 	rs.initPathExecutor()
