@@ -185,10 +185,16 @@ func (c *Config) EffectiveMaxFPS() int {
 }
 
 type ControllerConfig struct {
-	Enabled          bool         `yaml:"enabled"`
-	Serial           SerialConfig `yaml:"serial"`
-	CommandInterval  float64      `yaml:"command_interval"`
-	HeartbeatTimeout float64      `yaml:"heartbeat_timeout"`
+	Enabled bool         `yaml:"enabled"`
+	Serial  SerialConfig `yaml:"serial"`
+	// CommandInterval is the minimum spacing, in seconds, between commands
+	// sent to the Arduino; 0/unset falls back to controller.CommandIntervalMs.
+	CommandInterval float64 `yaml:"command_interval"`
+	// HeartbeatTimeout is how long, in seconds, the command queue can go
+	// without sending anything before it re-sends the active command (or
+	// CommandStop if none is active) so the firmware's own watchdog doesn't
+	// trip; 0/unset falls back to controller.HeartbeatTimeoutMs.
+	HeartbeatTimeout float64 `yaml:"heartbeat_timeout"`
 }
 
 type SerialConfig struct {

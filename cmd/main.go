@@ -464,6 +464,7 @@ func (rs *RobotSystem) initArduinoAndQueue() {
 	serialPort := "auto"
 	serialBaud := controller.BaudRate
 	commandIntervalMs := controller.CommandIntervalMs
+	heartbeatTimeoutMs := controller.HeartbeatTimeoutMs
 	if rs.cfg.Controller.Serial.Port != "" {
 		serialPort = rs.cfg.Controller.Serial.Port
 	}
@@ -473,6 +474,9 @@ func (rs *RobotSystem) initArduinoAndQueue() {
 	controllerEnabled := rs.cfg.Controller.Enabled
 	if rs.cfg.Controller.CommandInterval > 0 {
 		commandIntervalMs = int(rs.cfg.Controller.CommandInterval * 1000)
+	}
+	if rs.cfg.Controller.HeartbeatTimeout > 0 {
+		heartbeatTimeoutMs = int(rs.cfg.Controller.HeartbeatTimeout * 1000)
 	}
 
 	rs.io.arduino = controller.NewArduinoController(serialPort, serialBaud)
@@ -486,7 +490,7 @@ func (rs *RobotSystem) initArduinoAndQueue() {
 		utils.Logf("Controller disabled in config, skipping Arduino connection")
 	}
 
-	rs.io.commandQueue = controller.NewCommandQueue(rs.io.arduino, commandIntervalMs)
+	rs.io.commandQueue = controller.NewCommandQueue(rs.io.arduino, commandIntervalMs, heartbeatTimeoutMs)
 	rs.io.commandQueue.Start()
 	if rs.io.arduino.IsConnected() {
 		utils.Logf("Command queue started (Arduino connected)")

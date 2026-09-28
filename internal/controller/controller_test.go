@@ -3,6 +3,7 @@ package controller
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func TestSerialProtocol_EncodeCommand(t *testing.T) {
@@ -589,6 +590,22 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 			t.Fatalf("got %c, want Forward (within hysteresis band)", cmd)
 		}
 	})
+}
+
+func TestNewCommandQueue_HeartbeatTimeoutDefault(t *testing.T) {
+	q := NewCommandQueue(nil, 0, 0)
+	want := time.Duration(HeartbeatTimeoutMs) * time.Millisecond
+	if q.heartbeatTimeout != want {
+		t.Errorf("heartbeatTimeout = %v, want default %v", q.heartbeatTimeout, want)
+	}
+}
+
+func TestNewCommandQueue_HeartbeatTimeoutOverride(t *testing.T) {
+	q := NewCommandQueue(nil, 0, 250)
+	want := 250 * time.Millisecond
+	if q.heartbeatTimeout != want {
+		t.Errorf("heartbeatTimeout = %v, want configured %v", q.heartbeatTimeout, want)
+	}
 }
 
 func TestConstants(t *testing.T) {

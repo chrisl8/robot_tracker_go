@@ -13,6 +13,7 @@ type CommandQueue struct {
 	stopCh           chan struct{}
 	running          bool
 	interval         time.Duration
+	heartbeatTimeout time.Duration
 	lastCommand      Command
 	lastSentTime     time.Time
 	activeCommand    Command // currently desired command (re-sent each tick)
@@ -21,16 +22,26 @@ type CommandQueue struct {
 	mu               sync.Mutex
 }
 
-func NewCommandQueue(controller *ArduinoController, intervalMs int) *CommandQueue {
+// NewCommandQueue builds a CommandQueue that re-sends the active (or stop)
+// command at least every heartbeatTimeoutMs, so the Arduino firmware's own
+// watchdog never sees silence while a track is being followed. intervalMs
+// and heartbeatTimeoutMs of 0 (or negative) fall back to CommandIntervalMs
+// and HeartbeatTimeoutMs respectively.
+func NewCommandQueue(controller *ArduinoController, intervalMs int, heartbeatTimeoutMs int) *CommandQueue {
 	interval := time.Duration(intervalMs) * time.Millisecond
 	if interval == 0 {
 		interval = CommandIntervalMs * time.Millisecond
 	}
+	heartbeatTimeout := time.Duration(heartbeatTimeoutMs) * time.Millisecond
+	if heartbeatTimeout <= 0 {
+		heartbeatTimeout = HeartbeatTimeoutMs * time.Millisecond
+	}
 	return &CommandQueue{
-		controller: controller,
-		commandCh:  make(chan Command, 10),
-		stopCh:     make(chan struct{}),
-		interval:   interval,
+		controller:       controller,
+		commandCh:        make(chan Command, 10),
+		stopCh:           make(chan struct{}),
+		interval:         interval,
+		heartbeatTimeout: heartbeatTimeout,
 	}
 }
 
@@ -112,7 +123,7 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 			q.sendCommand(cmd)
 
 		case <-ticker.C:
-			if q.controller.IsConnected() && time.Since(q.lastSentTime) > HeartbeatTimeoutMs*time.Millisecond {
+			if q.controller.IsConnected() && time.Since(q.lastSentTime) > q.heartbeatTimeout {
 				q.mu.Lock()
 				active := q.hasActiveCommand
 				cmd := q.activeCommand

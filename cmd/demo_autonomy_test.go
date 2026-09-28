@@ -41,7 +41,7 @@ func newDemoAutonomyRig(t *testing.T) *RobotSystem {
 	rs.position.positionEst = est
 	rs.io.pathExecutor = controller.NewPathExecutor(0.15, 0.5)
 	rs.io.waypointThreshold = 0.1
-	rs.io.commandQueue = controller.NewCommandQueue(nil, 100) // not Start()ed: Enqueue is safe, nothing consumes it
+	rs.io.commandQueue = controller.NewCommandQueue(nil, 100, 0) // not Start()ed: Enqueue is safe, nothing consumes it
 	rs.web.webServer = ui.NewWebServer(":0")                  // not Start()ed: no real listener needed for this test
 	rs.control.controlMode = ControlModeAutonomous
 	return rs

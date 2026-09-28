@@ -448,9 +448,31 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   No behavior change (the fallback path string is identical); moved the log
   line so it fires for both branches instead of only the camera-name one.
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **`ControllerConfig.HeartbeatTimeout` is a silent no-op** — declared in config,
+- **[FIXED] `ControllerConfig.HeartbeatTimeout` is a silent no-op** — declared in config,
   never read anywhere; the real timeout is a hardcoded constant
   (`protocol.go:37`).
+  **Investigation:** confirmed — `config/tracking_config.yaml` actually sets
+  `heartbeat_timeout: 0.5`, documented as "seconds before sending STOP if no
+  command received," so this wasn't just a dead struct field but a setting
+  presented to whoever edits that YAML as real and tunable while silently
+  doing nothing; `queue.go`'s heartbeat ticker used the hardcoded
+  `HeartbeatTimeoutMs` constant instead. Same shape as the sibling
+  `CommandInterval` field, which sits right next to it and *is* correctly
+  wired through `cmd/main.go` into `NewCommandQueue` — `HeartbeatTimeout` was
+  clearly meant to follow that pattern and was never finished.
+  **Fix:** `NewCommandQueue` now takes a third `heartbeatTimeoutMs` parameter
+  (falling back to `HeartbeatTimeoutMs` when `<= 0`, mirroring the existing
+  `intervalMs`/`CommandIntervalMs` fallback), and `cmd/main.go`'s
+  `initArduinoAndQueue` reads `rs.cfg.Controller.HeartbeatTimeout` (seconds →
+  ms) and passes it through, exactly like `CommandInterval`. Added doc
+  comments on `ControllerConfig.CommandInterval`/`HeartbeatTimeout` spelling
+  out the units and fallback. No behavior change with the shipped
+  `tracking_config.yaml` (0.5s matches the old hardcoded default), but the
+  setting is no longer ignored if changed. Added
+  `TestNewCommandQueue_HeartbeatTimeoutDefault` and
+  `TestNewCommandQueue_HeartbeatTimeoutOverride`, the latter failing against
+  the old hardcoded-constant code and passing with the fix.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **`CommandQueue.Enqueue` doesn't rate-limit** — despite the type's name and a
   configured interval, only the heartbeat re-send path is throttled; a fast caller
   can burst up to 10 raw writes back-to-back to the 9600-baud serial line.
