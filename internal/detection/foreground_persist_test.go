@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func testState() modelState {
@@ -132,4 +133,128 @@ func TestDeleteModelState(t *testing.T) {
 	}
 	// Deleting again (already gone) must not panic or error out audibly.
 	deleteModelState(path)
+}
+
+// warmTestModel returns a warm model (restored from testState) and a cold one.
+func warmTestModel(t *testing.T) *foregroundModel {
+	t.Helper()
+	m := newForegroundModel(DefaultForegroundParams())
+	if !m.restore(testState()) {
+		t.Fatal("could not build a warm test model")
+	}
+	return m
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func TestModelPersister_DisabledIsNoOp(t *testing.T) {
+	var p modelPersister
+	m := warmTestModel(t)
+	p.saveNow(m)
+	p.maybeSave(time.Now(), m)
+	p.wait()
+	p.clear()
+	p.restore(newForegroundModel(DefaultForegroundParams()), 4, 2) // must not panic
+}
+
+func TestModelPersister_ColdModelNotSaved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bg.bin")
+	var p modelPersister
+	p.enable(path, time.Second)
+	cold := newForegroundModel(DefaultForegroundParams())
+	p.saveNow(cold)
+	p.maybeSave(time.Now(), cold)
+	p.wait()
+	if fileExists(path) {
+		t.Error("a cold model must not be saved")
+	}
+}
+
+func TestModelPersister_SaveNowWritesAndRestoreRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bg.bin")
+	var p modelPersister
+	p.enable(path, time.Second)
+	p.saveNow(warmTestModel(t))
+
+	fresh := newForegroundModel(DefaultForegroundParams())
+	p.restore(fresh, 4, 2)
+	if !fresh.warm {
+		t.Error("restore should leave the model warm")
+	}
+}
+
+func TestModelPersister_RestoreIgnoresSizeMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bg.bin")
+	var p modelPersister
+	p.enable(path, time.Second)
+	p.saveNow(warmTestModel(t))
+
+	fresh := newForegroundModel(DefaultForegroundParams())
+	p.restore(fresh, 8, 8)
+	if fresh.warm {
+		t.Error("a save at a different resolution must not be restored")
+	}
+}
+
+func TestModelPersister_MaybeSaveThrottlesByInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bg.bin")
+	var p modelPersister
+	p.enable(path, time.Minute)
+	m := warmTestModel(t)
+	t0 := time.Now()
+
+	tests := []struct {
+		name      string
+		at        time.Duration
+		wantWrite bool
+	}{
+		{"first call saves", 0, true},
+		{"within interval skipped", 30 * time.Second, false},
+		{"after interval saves", 61 * time.Second, true},
+	}
+	for _, tt := range tests {
+		_ = os.Remove(path)
+		p.maybeSave(t0.Add(tt.at), m)
+		p.wait()
+		if got := fileExists(path); got != tt.wantWrite {
+			t.Errorf("%s: file written = %v, want %v", tt.name, got, tt.wantWrite)
+		}
+	}
+}
+
+func TestModelPersister_ConcurrentSaveNowAndMaybeSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bg.bin")
+	var p modelPersister
+	p.enable(path, time.Millisecond)
+	m := warmTestModel(t)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			p.saveNow(m)
+		}
+	}()
+	now := time.Now()
+	for i := 0; i < 50; i++ {
+		p.maybeSave(now.Add(time.Duration(i)*time.Second), m)
+	}
+	<-done
+	p.wait()
+	if _, ok := loadModelState(path); !ok {
+		t.Error("file should be a valid save after concurrent writers")
+	}
+}
+
+func TestModelPersister_ClearRemovesFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bg.bin")
+	var p modelPersister
+	p.enable(path, time.Second)
+	p.saveNow(warmTestModel(t))
+	p.clear()
+	if fileExists(path) {
+		t.Error("clear should remove the save")
+	}
 }

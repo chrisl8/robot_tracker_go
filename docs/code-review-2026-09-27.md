@@ -877,11 +877,32 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   baseline, still 0 allocs. No threshold, comparison, or ordering changed;
   existing tests pass unmodified. `./scripts/build.sh` and
   `./scripts/test.sh --verbose` pass.
-- **`ForegroundDetector` has accreted OpenCV lifecycle + command queuing + debug
+- **[FIXED] `ForegroundDetector` has accreted OpenCV lifecycle + command queuing + debug
   rendering + blob extraction + background persistence** into one struct after 4+
   incremental phases (persistence scheduling alone is 5 pieces of loosely-related
   state: `SaveNow`/`maybePersist`/`persistWG`/`persistMu`/`saveInFlight`) — a good
   candidate to extract as its own small, independently-testable type.
+  **Investigation:** partly confirmed. The persistence half is real — 6
+  fields (`persistPath`, `persistInterval`, `lastPersist`, `saveInFlight`,
+  `persistMu`, `persistWG`) and five code sites (`EnablePersistence`,
+  `SaveNow`, `maybePersist`, `restorePersistedState`, a delete-on-reset branch
+  in `applyCommands`) with a concurrency contract explained across three
+  comments. None of it needs OpenCV, yet it was only testable through the
+  gocv-tagged detector, so the throttle/in-flight/write-serialisation rules
+  had no untagged unit tests. The other three concerns are overstated: command
+  queuing is 3 fields and 4 tiny methods under one mutex, and debug rendering
+  and blob extraction operate directly on the detector's shared Mats, whose
+  lifecycle (`Close`) is the detector's job — extracting them would only
+  pass a dozen Mats around, so they were deliberately left alone.
+  **Fix:** behavior-preserving extraction of an unexported `modelPersister`
+  into the untagged `foreground_persist.go` (methods `enable`, `maybeSave`,
+  `saveNow`, `restore`, `clear`, `wait`; zero value = disabled), carrying the
+  concurrency contract in its doc comment. `ForegroundDetector` now holds one
+  `persist modelPersister` field and delegates; its public API, the `!gocv`
+  stub, and all callers in `cmd/` are unchanged. Added untagged tests for
+  the persister (disabled no-op, cold model, round trip, size mismatch,
+  interval throttling, concurrent `saveNow`/`maybeSave` under `-race`,
+  clear); the existing gocv persistence tests pass unchanged.
 
 ---
 

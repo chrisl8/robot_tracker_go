@@ -7,7 +7,6 @@ import (
 	"image/color"
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gocv.io/x/gocv"
@@ -20,6 +19,9 @@ import (
 // a robot or a user-marked static obstacle. The pixel logic lives in
 // foregroundModel; this wrapper does the OpenCV image work (resize, gray, blur,
 // morphology, connected components).
+//
+// Persisting the learned background across restarts is delegated to
+// modelPersister (foreground_persist.go).
 //
 // Process must be called from a single goroutine. Reset, Absorb, RequestDebug
 // and DebugJPEG may be called from any goroutine.
@@ -40,14 +42,9 @@ type ForegroundDetector struct {
 	robotMask  []uint8
 	staticMask []uint8
 
-	// Persistence: saving/restoring the learned background across restarts.
-	// See EnablePersistence.
-	persistPath     string
-	persistInterval time.Duration
-	lastPersist     time.Time
-	saveInFlight    atomic.Bool
-	persistMu       sync.Mutex     // serializes actual writes: see SaveNow
-	persistWG       sync.WaitGroup // lets Close wait for an in-flight background save
+	// persist saves/restores the learned background across restarts; see
+	// modelPersister and EnablePersistence.
+	persist modelPersister
 
 	small, gray, blur, fgMat, opened, closed gocv.Mat
 	labels, stats, centroids                 gocv.Mat
@@ -91,64 +88,15 @@ func (d *ForegroundDetector) IsAvailable() bool { return true }
 // leaves persistence off, e.g. when there is no calibrated camera to name a
 // file after. Call this once, before the first Process call.
 func (d *ForegroundDetector) EnablePersistence(path string, interval time.Duration) {
-	d.persistPath = path
-	d.persistInterval = interval
+	d.persist.enable(path, interval)
 }
 
 // SaveNow immediately saves the background if persistence is enabled and the
 // model is warm, blocking until the write completes. Intended for clean
-// shutdown, where a fire-and-forget save (as maybePersist does during normal
-// operation) could be killed by process exit before it finishes. It shares
-// persistMu with maybePersist's background goroutine (SaveNow can be called
-// from a different goroutine, at shutdown, while a periodic save is still in
-// flight) so the two can never race on the same file.
+// shutdown; it is safe to call from a different goroutine than Process (see
+// modelPersister).
 func (d *ForegroundDetector) SaveNow() {
-	if d.persistPath == "" {
-		return
-	}
-	snap, ok := d.model.snapshot()
-	if !ok {
-		return
-	}
-	d.persistMu.Lock()
-	defer d.persistMu.Unlock()
-	if err := saveModelState(d.persistPath, snap); err != nil {
-		utils.Debugf("foreground: could not save background to %s: %v", d.persistPath, err)
-	}
-}
-
-// maybePersist saves the background in the background (pun intended) at most
-// once per persistInterval, while the model is warm. snapshot() already
-// copies the slices it returns, so handing them to a goroutine is safe; the
-// saveInFlight guard just avoids scheduling a redundant goroutine while one
-// is already pending — persistMu (also used by SaveNow) is what actually
-// guarantees only one write to the file happens at a time.
-func (d *ForegroundDetector) maybePersist(now time.Time) {
-	if d.persistPath == "" || d.persistInterval <= 0 {
-		return
-	}
-	if !d.lastPersist.IsZero() && now.Sub(d.lastPersist) < d.persistInterval {
-		return
-	}
-	snap, ok := d.model.snapshot()
-	if !ok {
-		return
-	}
-	d.lastPersist = now
-	if !d.saveInFlight.CompareAndSwap(false, true) {
-		return
-	}
-	path := d.persistPath
-	d.persistWG.Add(1)
-	go func() {
-		defer d.persistWG.Done()
-		defer d.saveInFlight.Store(false)
-		d.persistMu.Lock()
-		defer d.persistMu.Unlock()
-		if err := saveModelState(path, snap); err != nil {
-			utils.Debugf("foreground: could not save background to %s: %v", path, err)
-		}
-	}()
+	d.persist.saveNow(d.model)
 }
 
 // Reset discards the background and starts learning again (the operator says
@@ -189,7 +137,7 @@ func (d *ForegroundDetector) DebugJPEG() []byte {
 // save (from maybePersist) to finish first, so a save never outlives the
 // detector — call SaveNow before Close if you also want a final save.
 func (d *ForegroundDetector) Close() {
-	d.persistWG.Wait()
+	d.persist.wait()
 	for _, m := range []*gocv.Mat{&d.small, &d.gray, &d.blur, &d.fgMat, &d.opened, &d.closed,
 		&d.labels, &d.stats, &d.centroids, &d.kOpen, &d.kClose, &d.dbg, &d.colorBlur} {
 		_ = m.Close()
@@ -248,7 +196,7 @@ func (d *ForegroundDetector) Process(frame []byte, width, height int, now time.T
 
 	fg, st := d.model.step(pixels, d.sw, d.sh, dt, d.robotMask, d.staticMask, colorPixels)
 	if !st.Warming {
-		d.maybePersist(now)
+		d.persist.maybeSave(now, d.model)
 	}
 	res := ForegroundResult{Warming: st.Warming, Guarded: st.Guarded, Fraction: st.Fraction, Gain: st.Gain, ShadowSuppressed: st.ShadowSuppressed}
 	if fg == nil || st.Warming || st.Guarded {
@@ -271,12 +219,9 @@ func (d *ForegroundDetector) applyCommands() {
 
 	if reset {
 		d.model.reset()
-		if d.persistPath != "" {
-			// The operator asked to relearn the floor: a stale save from
-			// before the reset must not silently undo that on the next
-			// restart, so it goes too, not just the live state.
-			deleteModelState(d.persistPath)
-		}
+		// The operator asked to relearn the floor: the saved background
+		// goes too, not just the live state.
+		d.persist.clear()
 	}
 	for _, p := range absorbs {
 		if d.fullW > 0 && d.fullH > 0 {
@@ -296,32 +241,9 @@ func (d *ForegroundDetector) ensureSize(width, height int) {
 	d.robotMask = make([]uint8, d.sw*d.sh)
 	d.staticMask = make([]uint8, d.sw*d.sh)
 	d.model = newForegroundModel(d.params)
-	d.restorePersistedState()
+	d.persist.restore(d.model, d.sw, d.sh)
 	_ = d.fgMat.Close()
 	d.fgMat = gocv.NewMatWithSize(d.sh, d.sw, gocv.MatTypeCV8U)
-}
-
-// restorePersistedState loads a previously-saved background into the model
-// ensureSize just (re)created, when persistence is enabled and the save
-// matches the working resolution just computed. A size mismatch (a different
-// camera, a different scale config) is left alone to warm up normally,
-// exactly as if nothing had been saved.
-func (d *ForegroundDetector) restorePersistedState() {
-	if d.persistPath == "" {
-		return
-	}
-	s, ok := loadModelState(d.persistPath)
-	if !ok {
-		return
-	}
-	if s.W != d.sw || s.H != d.sh {
-		utils.Debugf("foreground: ignoring background save at %s (%dx%d, working resolution is %dx%d)",
-			d.persistPath, s.W, s.H, d.sw, d.sh)
-		return
-	}
-	if d.model.restore(s) {
-		utils.Logf("foreground: restored background from %s, skipping warm-up", d.persistPath)
-	}
 }
 
 // rasterizeMasks draws this frame's robot discs and static boxes into the
