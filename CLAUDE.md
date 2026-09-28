@@ -36,7 +36,7 @@ This is a multi-robot tracking and control system. Data flows through a pipeline
 
 **Camera → Detection → Tracking → Planning → Arduino Controller**
 
-The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems via `Initialize()` and `ProcessFrame()`.
+The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems, grouped into 11 named sub-structs by concern (capture, detection, tracking, planning, obstacles, position, io, web, control, heading, stats — declared in `cmd/robot_system_types.go`; see the doc comment on `RobotSystem`). `Initialize()` wires each group up via its own `init<Group>()` method, in a fixed order. `ProcessFrame()` (real camera) and `ProcessDemoFrame()` (no camera) share their per-frame math (`updateFPS`, `updateTrackWorldPosition`, `broadcastFrameStats`) and both register confirmed tracks with the planner, compute headings, and run autonomous control — demo mode is intentionally kept behaviorally identical to the real-camera path here, so don't reintroduce a divergence between the two without also updating both.
 
 ### Key Packages
 

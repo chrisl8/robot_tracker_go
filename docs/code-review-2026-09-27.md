@@ -267,7 +267,7 @@ ranked by severity. This file is the deliverable — a report, not an implementa
 
 ## 🟡 Tech debt
 
-- **`cmd/main.go` is a ~1950-line god file** — `RobotSystem` has ~35 fields covering
+- **[FIXED] `cmd/main.go` is a ~1950-line god file** — `RobotSystem` has ~35 fields covering
   camera, detection, tracking, planning, position, Arduino I/O, command queue, path
   execution, web server, calibration, heading smoothing, obstacles, and perf
   tracking. `Initialize()` (285 lines) wires 10+ subsystems via 9 inline callback
@@ -276,6 +276,23 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   and demo mode silently never calls `AddRobot`/`computeTrackHeading`/
   `executeAutonomousControl`, so demo robots never get paths/headings, a divergence
   that isn't obvious from reading either function alone.
+  **Investigation:** the struct actually has 47 fields (not ~35) and `Initialize()`
+  registers 10 callbacks (not 9); the "~80% duplicated" claim was overstated —
+  real, unextracted duplication was closer to 30% of each function (FPS smoothing,
+  per-track pixel-radius/world-position math, and the stats/status/tags broadcast
+  tail; "RGBA conversion" wasn't duplicated at all, only `ProcessFrame` does it).
+  The demo-mode divergence, however, was confirmed exactly as described.
+  **Fix:** split `RobotSystem`'s fields into 11 named sub-structs by concern
+  (`cmd/robot_system_types.go`); split `Initialize()` into per-group `init<Group>()`
+  methods called in the same order as before; extracted the three genuinely
+  duplicated blocks into shared helpers (`updateFPS`, `updateTrackWorldPosition`,
+  `broadcastFrameStats`) used by both `ProcessFrame` and `ProcessDemoFrame`; and
+  fixed the demo-mode divergence by having `ProcessDemoFrame` also call
+  `AddRobot`/`computeTrackHeading`/`executeAutonomousControl`, with a new guard so
+  autonomous control refuses to run if demo mode is active with a real, connected
+  Arduino. Added `cmd/demo_autonomy_test.go` (regression test that fails against
+  the old code, plus a guard test). No behavior change other than the demo-mode
+  fix itself; `./scripts/build.sh` and `./scripts/test.sh` pass throughout.
 - **Dead second collision-avoidance/coordination system.** `Coordinator.
   ComputeCommands`/`ResolveConflicts`/`willCollide`/`adjustForConflict`/
   `AssignGoals` (`internal/planning/coordinator.go`) are never called from
