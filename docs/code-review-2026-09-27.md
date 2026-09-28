@@ -532,9 +532,36 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `addEventListener` in `useCanvas.ts`) attach to the same canvas for
   different purposes, with no single source of truth for "what does a click
   do."
-- **Repeated lock/unlock-then-relock pattern** in `internal/ui/webserver.go`'s
+- **[FIXED] Repeated lock/unlock-then-relock pattern** in `internal/ui/webserver.go`'s
   obstacle handlers (`handleObstacleAdd`/`Delete`/`Update`) — same 4-line dance
   copy-pasted three times.
+  **Investigation:** confirmed — `handleObstacleAdd`, `handleObstacleDelete`,
+  and `handleObstacleUpdate` each ended with the byte-for-byte identical block
+  `s.BroadcastObstacles()` followed by
+  `if s.OnObstaclesChanged != nil { RLock / read s.obstacles / RUnlock / call }`.
+  The relock is not accidental: `BroadcastObstacles` takes its own `RLock`
+  (calling it while still holding the write lock would deadlock), and
+  `OnObstaclesChanged` is arbitrary application code that must not run while
+  any lock is held — but that reasoning lived only as tribal knowledge,
+  repeated three times instead of stated once, the same seam shape that
+  caused bug #18. A fourth, near-identical copy was found in
+  `handleObstaclesClear`, which did the same broadcast but called
+  `OnObstaclesChanged` with a hardcoded `[]planning.Obstacle{}` literal
+  instead of reading `s.obstacles` — functionally equivalent at that point in
+  the function (obstacles had just been cleared) but a fourth divergent copy
+  of "notify obstacle-changed" logic. `handleObstaclesList`,
+  `handleObstaclesSave`, `GetObstacles`, `GetAllObstacles`, and `SetObstacles`
+  don't share this duplication (read-only, or don't call
+  `OnObstaclesChanged`) and were left untouched.
+  **Fix:** extracted a `notifyObstaclesChanged()` helper (next to
+  `BroadcastObstacles`) that broadcasts and then, if set, invokes
+  `OnObstaclesChanged` with a freshly-locked snapshot of `s.obstacles`, with a
+  doc comment spelling out the locking rationale in one place. All four
+  mutating handlers (`Add`/`Delete`/`Update`/`Clear`) now call it after
+  releasing `obstaclesMutex`, replacing their individual copies of the tail
+  logic — `Clear` now reads the (already-empty) `s.obstacles` through the
+  helper instead of passing a separate literal. No behavior change.
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **Obstacle-file path resolution logic spread across three places**
   (`webserver.go`, `main.go:loadStaticObstacles`, `config.go`'s
   `ObstaclesConfig.GetPath()`), each with its own fallback chain.

@@ -566,6 +566,23 @@ func (s *WebServer) BroadcastObstacles() {
 	})
 }
 
+// notifyObstaclesChanged broadcasts the current obstacle list to WebSocket
+// clients and, if OnObstaclesChanged is set, invokes it with a locked
+// snapshot of s.obstacles. Callers must call this only after releasing
+// obstaclesMutex: BroadcastObstacles takes its own RLock (so calling this
+// while still holding the write lock would deadlock), and OnObstaclesChanged
+// is arbitrary application code that must not run while any lock is held.
+func (s *WebServer) notifyObstaclesChanged() {
+	s.BroadcastObstacles()
+
+	if s.OnObstaclesChanged != nil {
+		s.obstaclesMutex.RLock()
+		obstacles := s.obstacles
+		s.obstaclesMutex.RUnlock()
+		s.OnObstaclesChanged(obstacles)
+	}
+}
+
 func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.RobotConfig, robotCommands map[int]string) {
 	trackMessages := make([]TrackMessage, 0, len(tracks))
 	for _, track := range tracks {
@@ -1259,14 +1276,7 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 	s.obstaclesSaved = false
 
 	s.obstaclesMutex.Unlock()
-	s.BroadcastObstacles()
-
-	if s.OnObstaclesChanged != nil {
-		s.obstaclesMutex.RLock()
-		obstacles := s.obstacles
-		s.obstaclesMutex.RUnlock()
-		s.OnObstaclesChanged(obstacles)
-	}
+	s.notifyObstaclesChanged()
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": len(s.obstacles)})
 }
@@ -1286,14 +1296,7 @@ func (s *WebServer) handleObstacleDelete(c *gin.Context) {
 	s.obstaclesSaved = false
 
 	s.obstaclesMutex.Unlock()
-	s.BroadcastObstacles()
-
-	if s.OnObstaclesChanged != nil {
-		s.obstaclesMutex.RLock()
-		obstacles := s.obstacles
-		s.obstaclesMutex.RUnlock()
-		s.OnObstaclesChanged(obstacles)
-	}
+	s.notifyObstaclesChanged()
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": len(s.obstacles)})
 }
@@ -1322,14 +1325,7 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 	s.obstaclesSaved = false
 
 	s.obstaclesMutex.Unlock()
-	s.BroadcastObstacles()
-
-	if s.OnObstaclesChanged != nil {
-		s.obstaclesMutex.RLock()
-		obstacles := s.obstacles
-		s.obstaclesMutex.RUnlock()
-		s.OnObstaclesChanged(obstacles)
-	}
+	s.notifyObstaclesChanged()
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id})
 }
@@ -1341,11 +1337,7 @@ func (s *WebServer) handleObstaclesClear(c *gin.Context) {
 	s.obstaclesSaved = false
 
 	s.obstaclesMutex.Unlock()
-	s.BroadcastObstacles()
-
-	if s.OnObstaclesChanged != nil {
-		s.OnObstaclesChanged([]planning.Obstacle{})
-	}
+	s.notifyObstaclesChanged()
 
 	// Persist cleared state to disk so obstacles don't return on restart
 	path := s.GetObstaclesPath()
