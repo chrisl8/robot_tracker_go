@@ -54,16 +54,6 @@ func (c *Coordinator) GetRobotState(id int) (RobotState, bool) {
 	return state, exists
 }
 
-func (c *Coordinator) getOtherRobots(selfID int) []RobotState {
-	others := make([]RobotState, 0, len(c.robots)-1)
-	for id, robot := range c.robots {
-		if id != selfID {
-			others = append(others, robot)
-		}
-	}
-	return others
-}
-
 func (c *Coordinator) UpdateRobots(positions map[int][2]float64, velocities map[int][2]float64) {
 	for id, pos := range positions {
 		if robot, exists := c.robots[id]; exists {

@@ -335,9 +335,32 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `Planner.ComputeAllCommands` were rewritten to exercise the actual live
   pipeline (`GetNextWaypoint` + bearing math + `BearingToCommand`) instead.
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **Three near-duplicate "compute velocity" entry points** in
+- **[FIXED] Three near-duplicate "compute velocity" entry points** in
   `internal/planning/local.go` (`ComputeVelocity`, `ComputeVelocityWithObstacles`,
   `ComputeVelocityToWaypoint`) — two of the three appear unused in production.
+  **Investigation:** understated — repo-wide grep found **zero** callers
+  (production or test) for all three, not two: `ComputeVelocityToWaypoint`
+  wasn't even wrapped by `Planner`, and the two `Planner`-level wrappers
+  around the other pair (`Planner.ComputeVelocity`,
+  `Planner.ComputeVelocityWithDynamicObstacles`) were themselves dead too —
+  `cmd/main.go`'s only obstacle-feeding call is
+  `Planner.SetDynamicObstacles([]Obstacle)`, a different, still-live type
+  used by A* planning, never these. `Coordinator.getOtherRobots` existed
+  only to serve those two wrappers. This is the concrete instance of the
+  "two parallel local-avoidance pipelines exist (one live, one dead)"
+  over-complexity bullet below — this VO-entry-point layer is the dead one.
+  **Fix:** removed all three `LocalPlanner` entry points, the orphaned
+  `computeDesiredVelocity` helper they alone called, both dead `Planner`
+  wrappers, and the now-unused `Coordinator.getOtherRobots`. Kept
+  `applyVelocityObstacles` and everything it calls (`computeVO`,
+  `velocityInVO`, `computeBestAvoidanceVelocity`,
+  `generateCandidateVelocities`, `evaluateVelocity`,
+  `computeCombinedCollisionAvoidance`) — this is real, tested logic
+  (exercised directly by `internal/planning/local_test.go`'s regression
+  tests for findings #4 and #10), just not currently wired to any entry
+  point; added a doc comment on `applyVelocityObstacles` explaining that and
+  pointing at the live bearing-based steering path instead. No behavior
+  change; `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **Duplicated default-filling for `ForegroundParams`** across
   `config.go:EffectiveForeground` and `foreground.go:NewForegroundDetector` — the
   comment literally admits "defaults must match" between two independently

@@ -99,35 +99,6 @@ func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]floa
 	return path, ok
 }
 
-func (p *Planner) ComputeVelocity(robotID int, goal [2]float64) ([2]float64, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	robot, exists := p.coordinator.GetRobotState(robotID)
-	if !exists {
-		return [2]float64{0, 0}, false
-	}
-
-	otherRobots := p.coordinator.getOtherRobots(robotID)
-	return p.localPlanner.ComputeVelocity(robot, goal, otherRobots)
-}
-
-func (p *Planner) ComputeVelocityWithDynamicObstacles(
-	robotID int,
-	goal [2]float64,
-	dynamicObstacles []*DynamicObstacle,
-	minConfidence float64,
-) ([2]float64, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	robot, exists := p.coordinator.GetRobotState(robotID)
-	if !exists {
-		return [2]float64{0, 0}, false
-	}
-
-	otherRobots := p.coordinator.getOtherRobots(robotID)
-	return p.localPlanner.ComputeVelocityWithObstacles(robot, goal, otherRobots, dynamicObstacles, minConfidence)
-}
-
 func (p *Planner) AddObstacle(obstacle Obstacle) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

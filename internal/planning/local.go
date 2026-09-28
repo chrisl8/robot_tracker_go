@@ -27,37 +27,18 @@ func NewLocalPlanner(config *VelocityObstacleConfig) *LocalPlanner {
 	return &LocalPlanner{config: config}
 }
 
-func (p *LocalPlanner) ComputeVelocity(robot RobotState, goal [2]float64, obstacles []RobotState) ([2]float64, bool) {
-	desiredVel := p.computeDesiredVelocity(robot, goal)
-	safeVel := p.applyVelocityObstacles(robot, desiredVel, obstacles)
-	return safeVel, true
-}
-
-func (p *LocalPlanner) computeDesiredVelocity(robot RobotState, goal [2]float64) [2]float64 {
-	dx := goal[0] - robot.Position[0]
-	dy := goal[1] - robot.Position[1]
-	dist := math.Sqrt(dx*dx + dy*dy)
-
-	if dist < 0.01 {
-		return [2]float64{0, 0}
-	}
-
-	maxSpeed := robot.Diameter
-	if maxSpeed > p.config.MaxVelocity {
-		maxSpeed = p.config.MaxVelocity
-	}
-
-	desiredSpeed := maxSpeed
-	if dist < 0.5 {
-		desiredSpeed = maxSpeed * dist / 0.5
-	}
-
-	velX := (dx / dist) * desiredSpeed
-	velY := (dy / dist) * desiredSpeed
-
-	return [2]float64{velX, velY}
-}
-
+// applyVelocityObstacles is the velocity-obstacle (VO) collision-avoidance
+// core: given a desired velocity, it returns a safe velocity that avoids
+// every currently-penetrating or soon-to-collide obstacle. It is not
+// currently reached from any production code path — the live steering pipeline
+// is bearing-based (cmd/main.go: PlanPath -> waypoints -> BearingToCommand),
+// not velocity-obstacle-based (code review tech-debt: "Three near-duplicate
+// compute velocity entry points" in docs/code-review-2026-09-27.md; the three
+// public entry points that used to call this — LocalPlanner.ComputeVelocity,
+// ComputeVelocityWithObstacles, ComputeVelocityToWaypoint, plus their
+// Planner-level wrappers — were all dead code and have been removed). It is
+// exercised directly by internal/planning/local_test.go and kept as the
+// tested foundation a future local-avoidance integration would build on.
 func (p *LocalPlanner) applyVelocityObstacles(robot RobotState, desiredVel [2]float64, obstacles []RobotState) [2]float64 {
 	robotRadius := robot.Diameter / 2
 	timeHorizon := p.config.TimeHorizon
@@ -337,68 +318,3 @@ func (p *LocalPlanner) IsCollisionFree(robot RobotState, velocity [2]float64, ob
 	return true
 }
 
-func (p *LocalPlanner) ComputeVelocityWithObstacles(
-	robot RobotState,
-	goal [2]float64,
-	robotObstacles []RobotState,
-	dynamicObstacles []*DynamicObstacle,
-	minConfidence float64,
-) ([2]float64, bool) {
-	desiredVel := p.computeDesiredVelocity(robot, goal)
-
-	filteredObstacles := make([]RobotState, 0, len(robotObstacles))
-	for _, obs := range robotObstacles {
-		if obs.Diameter > 0 {
-			filteredObstacles = append(filteredObstacles, obs)
-		}
-	}
-
-	for _, dyn := range dynamicObstacles {
-		if dyn.Confidence >= minConfidence && dyn.Radius > 0 {
-			filteredObstacles = append(filteredObstacles, dyn.ToRobotState())
-		}
-	}
-
-	safeVel := p.applyVelocityObstacles(robot, desiredVel, filteredObstacles)
-	return safeVel, true
-}
-
-func (p *LocalPlanner) ComputeVelocityToWaypoint(
-	robot RobotState,
-	waypoint [2]float64,
-	staticObstacles []Obstacle,
-	dynamicObstacles []*DynamicObstacle,
-	minConfidence float64,
-) ([2]float64, bool) {
-	dx := waypoint[0] - robot.Position[0]
-	dy := waypoint[1] - robot.Position[1]
-	dist := math.Sqrt(dx*dx + dy*dy)
-
-	if dist < 0.05 {
-		return [2]float64{0, 0}, true
-	}
-
-	maxVel := p.config.MaxVelocity
-	vx := (dx / dist) * maxVel
-	vy := (dy / dist) * maxVel
-
-	desiredVel := [2]float64{vx, vy}
-
-	filteredObstacles := make([]RobotState, 0)
-	for _, obs := range staticObstacles {
-		obsState := RobotState{
-			Position: [2]float64{(obs.WorldTopLeft[0] + obs.WorldBottomRight[0]) / 2, (obs.WorldTopLeft[1] + obs.WorldBottomRight[1]) / 2},
-			Diameter: obs.WorldBottomRight[0] - obs.WorldTopLeft[0],
-		}
-		filteredObstacles = append(filteredObstacles, obsState)
-	}
-
-	for _, dyn := range dynamicObstacles {
-		if dyn.Confidence >= minConfidence && dyn.Radius > 0 {
-			filteredObstacles = append(filteredObstacles, dyn.ToRobotState())
-		}
-	}
-
-	safeVel := p.applyVelocityObstacles(robot, desiredVel, filteredObstacles)
-	return safeVel, true
-}
