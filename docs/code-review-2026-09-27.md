@@ -108,11 +108,19 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    `TestByteTrack_Update_MatchThreshBelowHalfIsHonored`, which fails against the
    old hardcoded check and passes with the fix.
 
-10. **`computeCollisionAvoidance` ignores goal direction, causes oscillation.**
+10. **[FIXED] `computeCollisionAvoidance` ignores goal direction, causes oscillation.**
     `internal/planning/local.go:201-214` — `desiredVel`, `combinedRadius`, and
     `timeHorizon` parameters are all unused; it unconditionally reverses at 80% max
     speed directly away from the obstacle regardless of penetration depth or goal,
     which will cause hunting/oscillation near any obstacle boundary.
+    **Fix:** the function (renamed `computeCombinedCollisionAvoidance` by the
+    fix for finding #4) now takes `desiredVel` and blends in its component
+    tangential to the escape direction, weighted by how shallow the
+    penetration is — deep penetration still leans on pure retreat, but
+    shallow penetration lets the robot slide sideways toward its goal
+    instead of backing straight out and being driven right back in once
+    `desiredVel` resumes control. Added
+    `TestLocalPlanner_CollisionAvoidance_BlendsGoalDirection`.
 
 11. **WebSocket connections leak on silent network death.**
     `internal/ui/webserver.go:227-352` — no `SetReadLimit`, `SetReadDeadline`,

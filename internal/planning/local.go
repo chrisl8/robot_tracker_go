@@ -111,7 +111,7 @@ func (p *LocalPlanner) applyVelocityObstacles(robot RobotState, desiredVel [2]fl
 		// Already inside one or more safety margins: escape combines every
 		// penetrating obstacle's push-away direction, weighted by how deep
 		// the penetration is, rather than only the last one seen.
-		avoidanceVel = p.computeCombinedCollisionAvoidance(robot, penetrating, robotRadius, safetyMargin)
+		avoidanceVel = p.computeCombinedCollisionAvoidance(robot, desiredVel, penetrating, robotRadius, safetyMargin)
 	} else if needsVOAvoidance {
 		// Not yet penetrating anything, but the desired velocity would enter
 		// a predicted collision cone. Pick a candidate velocity that clears
@@ -241,8 +241,18 @@ func (p *LocalPlanner) evaluateVelocity(vel [2]float64, desired [2]float64, obst
 // where handling obstacles one at a time in a loop lets the last obstacle
 // processed silently override an escape direction that was safe for an
 // earlier, still-penetrated obstacle.
-func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, obstacles []RobotState, robotRadius, safetyMargin float64) [2]float64 {
+//
+// The escape velocity also blends in the goal-directed desiredVel's
+// component tangential to the escape direction, weighted by how shallow the
+// penetration is. Without this, the robot retreats straight back the way it
+// came with no regard for the goal; the instant it clears the safety margin,
+// desiredVel takes over again and drives it straight back into the same
+// obstacle, causing it to hunt back and forth at the boundary (code review
+// finding #10). Blending lets it slide sideways around the obstacle instead,
+// leaning more on pure retreat the deeper the penetration is.
+func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, desiredVel [2]float64, obstacles []RobotState, robotRadius, safetyMargin float64) [2]float64 {
 	var sumX, sumY float64
+	maxPenetration := 0.0
 
 	for _, obs := range obstacles {
 		obsRadius := obs.Diameter / 2
@@ -263,6 +273,9 @@ func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, obsta
 		if penetration < 0 {
 			penetration = 0
 		}
+		if penetration > maxPenetration {
+			maxPenetration = penetration
+		}
 
 		// Weight the escape contribution by penetration depth (plus a
 		// small floor so even a barely-penetrating obstacle still counts)
@@ -276,11 +289,27 @@ func (p *LocalPlanner) computeCombinedCollisionAvoidance(robot RobotState, obsta
 	if mag < 1e-9 {
 		return [2]float64{0, 0}
 	}
+	escapeDirX := sumX / mag
+	escapeDirY := sumY / mag
 
-	return [2]float64{
-		(sumX / mag) * p.config.MaxVelocity * 0.8,
-		(sumY / mag) * p.config.MaxVelocity * 0.8,
-	}
+	// The component of desiredVel perpendicular to the escape direction:
+	// sideways motion toward the goal that doesn't fight the escape (a
+	// component along the escape direction, by contrast, would either
+	// duplicate it or push back into the obstacle, so it's dropped).
+	desiredDot := desiredVel[0]*escapeDirX + desiredVel[1]*escapeDirY
+	tangentX := desiredVel[0] - desiredDot*escapeDirX
+	tangentY := desiredVel[1] - desiredDot*escapeDirY
+
+	// Deeper penetration leans harder on pure retreat; shallow penetration
+	// lets more of the goal-directed sideways motion through so the robot
+	// slides around the obstacle instead of oscillating at its boundary.
+	escapeWeight := maxPenetration / (maxPenetration + safetyMargin + 0.01)
+
+	escapeSpeed := p.config.MaxVelocity * 0.8
+	resultX := escapeDirX*escapeSpeed*escapeWeight + tangentX*(1-escapeWeight)
+	resultY := escapeDirY*escapeSpeed*escapeWeight + tangentY*(1-escapeWeight)
+
+	return [2]float64{resultX, resultY}
 }
 
 func (p *LocalPlanner) IsCollisionFree(robot RobotState, velocity [2]float64, obstacles []RobotState, duration float64) bool {

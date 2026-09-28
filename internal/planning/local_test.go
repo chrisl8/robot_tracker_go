@@ -72,3 +72,48 @@ func TestLocalPlanner_MultiObstaclePenetration_OrderIndependent(t *testing.T) {
 		t.Errorf("escape velocity depends on obstacle order: [A,B]=%v vs [B,A]=%v", velAB, velBA)
 	}
 }
+
+// TestLocalPlanner_CollisionAvoidance_BlendsGoalDirection verifies that the
+// escape velocity slides sideways toward the goal instead of retreating
+// straight back the way the robot came with no regard for desiredVel.
+// Regression test for the oscillation bug (code review finding #10): the old
+// implementation ignored desiredVel entirely and always retreated directly
+// away from the obstacle at a fixed 80% max speed, so the robot would bounce
+// back into the same obstacle the instant it cleared the safety margin.
+func TestLocalPlanner_CollisionAvoidance_BlendsGoalDirection(t *testing.T) {
+	lp := NewLocalPlanner(&VelocityObstacleConfig{
+		TimeHorizon:     2.0,
+		SafetyMargin:    0.15,
+		MaxVelocity:     0.5,
+		MaxAcceleration: 0.3,
+		TimeStep:        0.1,
+	})
+
+	robot := RobotState{Position: [2]float64{0, 0}, Diameter: 0.3}
+
+	// Obstacle directly ahead on +X; goal is beyond it, offset in +Y, so the
+	// desired velocity has a sideways component the robot should be able to
+	// use to go around the obstacle rather than just backing away from it.
+	obs := RobotState{Position: [2]float64{0.2, 0}, Diameter: 0.3} // shallow penetration
+	desiredVel := [2]float64{0.3, 0.3}
+
+	vel := lp.applyVelocityObstacles(robot, desiredVel, []RobotState{obs})
+
+	if vel[0] >= 0 {
+		t.Errorf("expected escape velocity to retreat in -X away from the obstacle, got vel=%v", vel)
+	}
+	if vel[1] <= 0 {
+		t.Errorf("expected escape velocity to retain a +Y component toward the goal (sliding around the obstacle), got vel=%v", vel)
+	}
+
+	// A deep penetration should lean further on pure retreat (smaller
+	// sideways component relative to escape speed) than a shallow one.
+	deepObs := RobotState{Position: [2]float64{0.05, 0}, Diameter: 0.3}
+	velDeep := lp.applyVelocityObstacles(robot, desiredVel, []RobotState{deepObs})
+
+	shallowRatio := math.Abs(vel[1] / vel[0])
+	deepRatio := math.Abs(velDeep[1] / velDeep[0])
+	if deepRatio >= shallowRatio {
+		t.Errorf("expected deeper penetration to reduce the sideways-to-retreat ratio: shallow=%v (ratio %v) deep=%v (ratio %v)", vel, shallowRatio, velDeep, deepRatio)
+	}
+}
