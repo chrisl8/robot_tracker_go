@@ -27,8 +27,10 @@ async function deleteObstacle(id: string): Promise<void> {
             throw new Error('Failed to delete obstacle')
         }
 
-        const data = await response.json()
-        obstacleStore.setObstacles(data.obstacles.obstacles || [])
+        // The DELETE response is just {status, id, count}; the server also
+        // broadcasts the new list over the WebSocket, so only drop the row
+        // locally for immediate feedback.
+        obstacleStore.removeObstacle(id)
         uiStore.showToast('Obstacle deleted', 'success')
     } catch (e) {
         console.error('Failed to delete obstacle:', e)

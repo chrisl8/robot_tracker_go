@@ -294,3 +294,50 @@ func TestKalmanFilter_ZeroVelocity(t *testing.T) {
 		t.Errorf("With zero velocity, x[1] should remain 200, got %f", state[1])
 	}
 }
+
+// A target moving at constant velocity must make the filter's velocity state
+// converge to that velocity. Regression: Predict computed P = F*P + Q*dt
+// (missing the *F^T term), which left P[2..3][0..1] at zero, so the velocity
+// gain was always zero and vx/vy never left 0.
+func TestKalmanFilter_VelocityConverges(t *testing.T) {
+	const (
+		dt     = 1.0 / 30.0
+		vx, vy = 100.0, -50.0
+		steps  = 90
+	)
+
+	kf := NewKalmanFilter()
+	kf.Initialize(0, 0, 0, 0)
+
+	for i := 1; i <= steps; i++ {
+		kf.Predict(dt)
+		kf.Update([2]float64{vx * dt * float64(i), vy * dt * float64(i)})
+	}
+
+	state := kf.GetState()
+	if d := state[2] - vx; d < -0.2*vx || d > 0.2*vx {
+		t.Errorf("vx = %.2f, want ~%.2f", state[2], vx)
+	}
+	if d := state[3] - vy; d < 0.2*vy || d > -0.2*vy {
+		t.Errorf("vy = %.2f, want ~%.2f", state[3], vy)
+	}
+}
+
+func TestKalmanFilter_Predict_CovarianceStaysSymmetric(t *testing.T) {
+	kf := NewKalmanFilter()
+	kf.Initialize(10, 20, 3, 4)
+
+	for i := 0; i < 5; i++ {
+		kf.Predict(0.033)
+		kf.Update([2]float64{10 + float64(i), 20})
+	}
+
+	P := kf.GetCovariance()
+	for i := 0; i < 4; i++ {
+		for j := i + 1; j < 4; j++ {
+			if d := P[i][j] - P[j][i]; d > 1e-9 || d < -1e-9 {
+				t.Errorf("P[%d][%d]=%g != P[%d][%d]=%g", i, j, P[i][j], j, i, P[j][i])
+			}
+		}
+	}
+}

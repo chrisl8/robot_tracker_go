@@ -210,6 +210,12 @@ func drawLine(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int) {
 	dx := p2.X - p1.X
 	dy := p2.Y - p1.Y
 
+	// A zero-length segment would divide by dy == 0 below.
+	if dx == 0 && dy == 0 {
+		drawCircle(img, p1.X, p1.Y, width/2, c)
+		return
+	}
+
 	if utils.Abs(dx) > utils.Abs(dy) {
 		if p1.X > p2.X {
 			p1, p2 = p2, p1

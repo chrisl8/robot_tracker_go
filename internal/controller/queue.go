@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -63,18 +64,40 @@ func (q *CommandQueue) Start() {
 	go q.runLoop(commandCh, stopCh)
 }
 
-func (q *CommandQueue) Stop() {
+// halt marks the queue stopped and shuts down the run loop, reporting whether
+// it was running. Once halted, sendCommand refuses anything but Stop, so a
+// command still buffered in commandCh can't reach the robot after the final
+// Stop.
+func (q *CommandQueue) halt() bool {
 	q.mu.Lock()
-	if !q.running {
-		q.mu.Unlock()
-		return
-	}
+	wasRunning := q.running
 	q.running = false
 	q.hasActiveCommand = false
 	stopCh := q.stopCh
 	q.mu.Unlock()
 
-	close(stopCh)
+	if wasRunning {
+		close(stopCh)
+	}
+	return wasRunning
+}
+
+// sendStopDirect writes Stop straight to the controller, bypassing the queue.
+func (q *CommandQueue) sendStopDirect() {
+	if q.controller == nil {
+		return
+	}
+	if err := q.controller.SendCommand(CommandStop); err != nil && !errors.Is(err, ErrNotConnected) {
+		utils.Logf("Arduino stop send error: %v", err)
+	}
+}
+
+// Stop shuts the queue down and tells the robot to stop, so shutting down
+// mid-drive doesn't leave it running on its last command.
+func (q *CommandQueue) Stop() {
+	if q.halt() {
+		q.sendStopDirect()
+	}
 }
 
 // Enqueue asks the queue to send cmd. The active/heartbeat bookkeeping is
@@ -107,15 +130,11 @@ func (q *CommandQueue) Enqueue(cmd Command) {
 	}
 }
 
+// EmergencyStop halts the queue and sends Stop whether or not the queue was
+// running.
 func (q *CommandQueue) EmergencyStop() {
-	q.mu.Lock()
-	q.hasActiveCommand = false
-	q.mu.Unlock()
-
-	// Send stop directly to controller, bypassing the queue to avoid
-	// racing with channel close
-	_ = q.controller.SendCommand(CommandStop)
-	q.Stop()
+	q.halt()
+	q.sendStopDirect()
 }
 
 // ClearActiveCommand clears the active command without stopping the queue.
@@ -157,6 +176,10 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 func (q *CommandQueue) sendCommand(cmd Command) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	if !q.running && cmd != CommandStop {
+		return
+	}
 
 	if err := q.controller.SendCommand(cmd); err != nil {
 		q.errorCount++

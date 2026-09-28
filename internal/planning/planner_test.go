@@ -486,3 +486,30 @@ func TestPlanner_SetDynamicObstacles_DoesNotStormReplans(t *testing.T) {
 		t.Errorf("replan repeated with nothing new (replans=%d)", p.replans)
 	}
 }
+
+// RemoveObstacle sized its slice with len-1, which panics ("cap out of
+// range") when the planner has no obstacles.
+func TestPlanner_RemoveObstacle_EmptyDoesNotPanic(t *testing.T) {
+	planner := NewPlanner(nil)
+
+	planner.RemoveObstacle("nonexistent")
+
+	if got := len(planner.GetObstacles()); got != 0 {
+		t.Errorf("obstacles = %d, want 0", got)
+	}
+}
+
+func TestPlanner_RemoveObstacle_RemovesOnlyNamed(t *testing.T) {
+	planner := NewPlanner(nil)
+	planner.SetObstacles([]Obstacle{
+		NewRectObstacle("a", [2]float64{0, 0}, [2]float64{0.1, 0.1}),
+		NewRectObstacle("b", [2]float64{1, 1}, [2]float64{1.1, 1.1}),
+	})
+
+	planner.RemoveObstacle("a")
+
+	got := planner.GetObstacles()
+	if len(got) != 1 || got[0].Name != "b" {
+		t.Errorf("obstacles = %+v, want only b", got)
+	}
+}

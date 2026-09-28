@@ -1394,11 +1394,12 @@ func (s *WebServer) handleObstacleDelete(c *gin.Context) {
 	}
 	s.obstacles.list = newObs
 	s.obstacles.saved = false
+	count := len(newObs)
 
 	s.obstacles.mutex.Unlock()
 	s.notifyObstaclesChanged()
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": len(s.obstacles.list)})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": id, "count": count})
 }
 
 func (s *WebServer) handleObstacleUpdate(c *gin.Context) {

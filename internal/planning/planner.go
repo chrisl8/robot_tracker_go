@@ -239,7 +239,7 @@ func (p *Planner) replanAllPathsLocked() {
 func (p *Planner) RemoveObstacle(name string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	newObstacles := make([]Obstacle, 0, len(p.obstacles)-1)
+	newObstacles := make([]Obstacle, 0, len(p.obstacles))
 	for _, obs := range p.obstacles {
 		if obs.Name != name {
 			newObstacles = append(newObstacles, obs)

@@ -1941,22 +1941,4 @@ func main() {
 			time.Sleep(33 * time.Millisecond)
 		}
 	}
-
-	if cfg != nil {
-		executor := controller.NewPathExecutor(0.15, 1.0)
-		testCommands := []controller.Command{
-			controller.CommandForward,
-			controller.CommandLeft,
-			controller.CommandRight,
-			controller.CommandStop,
-		}
-
-		for _, cmd := range testCommands {
-			utils.Logf("Sending command: %c", cmd)
-			rs.io.commandQueue.Enqueue(cmd)
-			vel := executor.CommandToVelocity(cmd)
-			utils.Logf("  Velocity: (%.2f, %.2f)", vel.VX, vel.VY)
-		}
-	}
-
 }

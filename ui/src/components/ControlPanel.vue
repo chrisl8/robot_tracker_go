@@ -19,13 +19,20 @@ onMounted(() => {
 
 async function sendCommand(command: string): Promise<void> {
     try {
-        await fetch('/api/command', {
+        const response = await fetch('/api/command', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ command }),
         })
+        if (!response.ok && command === 'S') {
+            // A failed stop must not be silent: the robot may still be moving.
+            uiStore.showToast('Stop command failed - use EMERGENCY STOP', 'error', 8000)
+        }
     } catch (e) {
         console.error('Failed to send command:', e)
+        if (command === 'S') {
+            uiStore.showToast('Stop command failed - use EMERGENCY STOP', 'error', 8000)
+        }
     }
 }
 
@@ -35,6 +42,9 @@ function handleMouseDown(key: string, command: string): void {
 }
 
 function handleMouseUp(): void {
+    // mouseleave also routes here; don't stop the robot (e.g. being driven by
+    // keyboard) just because the pointer crossed an unpressed button.
+    if (pressed.value === null) return
     pressed.value = null
     sendCommand('S') // Stop on release
 }

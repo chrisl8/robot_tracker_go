@@ -314,9 +314,11 @@ export const useRobotStore = defineStore('robot', () => {
                 uiStore.addLogEntry('error', 'Emergency stop activated')
                 return true
             }
+            uiStore.showToast('EMERGENCY STOP FAILED - robot may still be moving!', 'error', 10000)
             return false
         } catch (error) {
             console.error('Failed to activate emergency stop:', error)
+            uiStore.showToast('EMERGENCY STOP FAILED - robot may still be moving!', 'error', 10000)
             return false
         }
     }

@@ -102,12 +102,22 @@ func (kf *KalmanFilter) Predict(dt float64) [4]float64 {
 		}
 	}
 
+	// P = F*P*F^T + Q*dt. Both F factors are required: with only F*P the
+	// covariance goes asymmetric and the velocity rows never couple to the
+	// position rows, so the filter can never learn velocity.
+	var FP [4][4]float64
+	for i := 0; i < 4; i++ {
+		for j := 0; j < 4; j++ {
+			for k := 0; k < 4; k++ {
+				FP[i][j] += kf.F[i][k] * kf.P[k][j]
+			}
+		}
+	}
 	PNew := [4][4]float64{}
 	for i := 0; i < 4; i++ {
 		for j := 0; j < 4; j++ {
-			PNew[i][j] = 0
 			for k := 0; k < 4; k++ {
-				PNew[i][j] += kf.F[i][k] * kf.P[k][j]
+				PNew[i][j] += FP[i][k] * kf.F[j][k]
 			}
 		}
 	}

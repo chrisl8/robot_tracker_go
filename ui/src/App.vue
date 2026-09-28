@@ -91,16 +91,31 @@ function handleKeyUp(event: KeyboardEvent): void {
     }
 }
 
+// The keyup for a held key is never delivered once the window loses focus or
+// the tab is hidden, which would leave the robot driving. Clearing the
+// keyboard state triggers ControlPanel's watcher, which sends Stop.
+function handleFocusLost(): void {
+    uiStore.resetKeyboard()
+}
+
+function handleVisibilityChange(): void {
+    if (document.hidden) handleFocusLost()
+}
+
 // Lifecycle
 onMounted(() => {
     loadInitialData()
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', handleFocusLost)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyDown)
     window.removeEventListener('keyup', handleKeyUp)
+    window.removeEventListener('blur', handleFocusLost)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
