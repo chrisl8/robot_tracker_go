@@ -793,10 +793,35 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   No behavior change. `./scripts/build.sh` and `./scripts/test.sh --verbose`
   pass, including the websocket concurrency/liveness regression tests
   (findings #6 and #11) and `cmd/demo_autonomy_test.go` unchanged.
-- **`ui/src/composables/useCanvas.ts` is a 1264-line composable** mixing five
+- **[FIXED] `ui/src/composables/useCanvas.ts` is a 1264-line composable** mixing five
   concerns: rendering, a particle animation system, coordinate transforms,
   click/hit-testing, and its own `requestAnimationFrame`/`ResizeObserver`
   lifecycle. Prime candidate for splitting into focused composables.
+  **Investigation:** confirmed — 1262 lines, one `useCanvas()` closure holding
+  ~30 inner functions across exactly the five named concerns. Two further
+  problems turned up: `isCircleInObstacle` was buried in the closure, so
+  `useCanvas.test.ts` was testing a hand-copied duplicate of it rather than the
+  real code; and `robotStore.ts` imported `canvasToNaturalShared` from
+  `useCanvas.ts` while `useCanvas.ts` imported `robotStore` (a store↔composable
+  import cycle that only worked because of lazy use).
+  **Fix:** behavior-preserving extraction; `useCanvas()` returns the identical
+  object, so `VideoOverlay.vue` and the 9 existing canvas test files needed no
+  changes. Function bodies were moved verbatim (no drawing call, draw order, or
+  constant changed) into: `utils/canvasTransform.ts` (shared `videoScale`,
+  `canvasToNaturalShared`, `naturalToCanvas`, `updateVideoScale` — a leaf module,
+  which also breaks the robotStore cycle), `utils/obstacleCollision.ts` (pure
+  `isCircleInObstacle(obstacles, cx, cy, r)`), and under `composables/canvas/`:
+  `theme.ts`, `trackAnimation.ts` (particle/phase state + update),
+  `renderTracks.ts`, `renderOverlays.ts`, `renderCalibration.ts`, and
+  `useCanvasInteraction.ts`. The renderers/interaction are factories taking their
+  dependencies (ctx, stores, animation, refs) explicitly. `useCanvas.ts` is now
+  a ~230-line orchestrator (refs, rAF loop, dirty watcher, resize/listener
+  lifecycle, ordered `render()`) with a doc comment mapping each concern to its
+  module. `robotStore.ts` now imports from `utils/canvasTransform`. Tests:
+  `useCanvas.test.ts` now exercises the real `isCircleInObstacle`; added
+  `trackAnimation.test.ts` and `utils/__tests__/canvasTransform.test.ts`.
+  `CLAUDE.md` notes the new layout. Type-check, lint, `npm run test:run`,
+  `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **Unclear ownership between `Planner`, `Coordinator`, and `LocalPlanner`** — two
   parallel local-avoidance pipelines exist (one live, one dead per the tech-debt
   section above); a newcomer must read all three files plus `main.go` to figure

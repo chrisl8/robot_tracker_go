@@ -8,7 +8,7 @@ import type {
     TracksNestedResponse,
     PathMessage,
 } from '@/types/api'
-import { canvasToNaturalShared } from '@/composables/useCanvas'
+import { canvasToNaturalShared } from '@/utils/canvasTransform'
 import { useUIStore } from './uiStore'
 import { useObstacleStore } from './obstacleStore'
 import { useTempObstacleStore } from './tempObstacleStore'
@@ -214,7 +214,7 @@ export const useRobotStore = defineStore('robot', () => {
         }
         const robotId = track.tag_id
 
-        // Use the SAME canvasToNatural function as useCanvas.ts for consistency
+        // Use the shared canvasToNatural (utils/canvasTransform.ts), the same one useCanvas uses
         const naturalCoords = canvasToNaturalShared(canvasX, canvasY)
 
         try {

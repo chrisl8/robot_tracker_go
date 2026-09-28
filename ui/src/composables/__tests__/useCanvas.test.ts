@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { isCircleInObstacle as realIsCircleInObstacle } from '@/utils/obstacleCollision'
 
 describe('FOOTPRINT-001: Circle-Rectangle Collision Detection', () => {
+    // Adapter so the cases below can stay in flat (rect coords) form while
+    // exercising the real implementation, not a copy of it.
     function isCircleInObstacle(
         cx: number,
         cy: number,
@@ -10,29 +13,12 @@ describe('FOOTPRINT-001: Circle-Rectangle Collision Detection', () => {
         rectX2: number,
         rectY2: number
     ): boolean {
-        const closestX = Math.max(rectX1, Math.min(cx, rectX2))
-        const closestY = Math.max(rectY1, Math.min(cy, rectY2))
-        const distanceX = cx - closestX
-        const distanceY = cy - closestY
-        const distanceSquared = distanceX * distanceX + distanceY * distanceY
-
-        if (distanceSquared < radius * radius) {
-            return true
-        }
-
-        if (
-            cx >= rectX1 &&
-            cx <= rectX2 &&
-            cy >= rectY1 &&
-            cy <= rectY2 &&
-            cx - radius >= rectX1 &&
-            cx + radius <= rectX2 &&
-            cy - radius >= rectY1 &&
-            cy + radius <= rectY2
-        ) {
-            return true
-        }
-        return false
+        return realIsCircleInObstacle(
+            [{ pixel_top_left: [rectX1, rectY1], pixel_bottom_right: [rectX2, rectY2] }],
+            cx,
+            cy,
+            radius
+        )
     }
 
     it('BUG-001: detects circle overlaps obstacle when center is outside but circle edge overlaps', () => {
