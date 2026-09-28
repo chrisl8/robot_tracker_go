@@ -716,12 +716,40 @@ ranked by severity. This file is the deliverable — a report, not an implementa
 
 ## 🟢 Over-complexity
 
-- **`internal/controller/executor.go`'s `BearingToCommand`** (~160 lines) is a
+- **[FIXED] `internal/controller/executor.go`'s `BearingToCommand`** (~160 lines) is a
   hand-tuned state machine (burst/wait/turn/nudge/spin-detection) with several
   interacting mutable fields and derived magic-number thresholds
   (`continuousTurnThresh := exitForwardThresh * 1.5`, etc.) — hard to verify by
   inspection; a good candidate for an explicit state-machine type with unit tests
   per state.
+  **Investigation:** confirmed the structural complaint — one 160-line
+  function inlined four concerns (burst dispatch, wait dispatch, a
+  "continuous turn" fast path, and the steady-state forward/backward/
+  turn/nudge rule switch) driven by mutable fields read and written from
+  scattered points inside itself. The "unit tests per state" gap was
+  already closed, though: `internal/controller/controller_test.go` has
+  ~15 test functions covering exactly these states/transitions (hysteresis,
+  burst, wait/timeout, continuous turn, nudge + cooldown, spin-in-forward-
+  mode, rear-facing/spin, turn pulse) — hand-tuned-from-real-hardware
+  coverage that made a safe refactor possible.
+  **Fix:** behavior-preserving structural refactor only — no threshold,
+  comparison, or branch ordering changed. Replaced the implicit
+  `waitingForUpdate bool` state with an explicit `steeringPhase` enum
+  (`phaseSteering`/`phaseBursting`/`phaseWaiting`) and split
+  `BearingToCommand` into a thin dispatcher plus three phase-handler
+  methods: `handleBurstPhase`, `handleWaitPhase`, and `decideSteering`
+  (continuous-turn fast path + the four-rule switch), sharing per-call
+  values via a `steeringInputs` struct instead of a 160-line stack of local
+  variables. One edge case needed explicit handling to stay
+  behavior-identical: the original `if e.burstRemaining > 0` dispatch check
+  meant a 1-frame burst (`BurstFrames <= 1`) never actually entered burst
+  dispatch on a later call; `decideSteering` now only transitions to
+  `phaseBursting` when `burstRemaining > 0` after the decrement, preserving
+  that. Added a paragraph to the `PathExecutor` doc comment pointing at the
+  phase-handler methods as where to look for how the documented states are
+  wired together. No test changes — the existing `BearingToCommand` suite
+  passes unchanged, which is the behavior-preservation check for this
+  refactor. `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **`WebServer` struct centralizes 4 unrelated responsibilities**: HTTP router,
   broadcast hub, obstacle store (with its own persistence), and calibration-state
   store — plus 13 injected `On*` callback fields used as ad-hoc dependency
