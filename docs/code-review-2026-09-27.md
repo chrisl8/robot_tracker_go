@@ -172,11 +172,17 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     cost against the true 8-connected-grid optimum
     (`min(dx,dy)*sqrt(2) + abs(dx-dy)`).
 
-14. **Divide-by-zero/NaN when two robots coincide.**
+14. **[FIXED] Divide-by-zero/NaN when two robots coincide.**
     `internal/planning/coordinator.go:190-199` — `adjustForConflict` divides by
     `dist` with only a `< 0.5` guard; if `dist == 0` (plausible after a tracking
     re-ID swap) this produces NaN that corrupts that robot's command. Lower
     priority since this code path is currently dead in production (see #17).
+    **Fix:** added a `coincidentEpsilon` (1e-6) guard — when `dist` falls below
+    it, the direction vector is not normalized (which would divide by ~0) but
+    instead falls back to a deterministic escape direction that differs by
+    robot ID, so the two coincident robots diverge instead of both nudging the
+    same way. Added `TestCoordinator_AdjustForConflict_CoincidentRobotsNoNaN`
+    and `TestCoordinator_AdjustForConflict_CoincidentRobotsDivergeDeterministically`.
 
 15. **`main()` shutdown path can double-`Stop()` and panic.**
     `cmd/main.go:1806-1817` — both a `defer rs.Stop()` and the SIGINT handler call

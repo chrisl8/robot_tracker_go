@@ -2,6 +2,12 @@ package planning
 
 import "math"
 
+// coincidentEpsilon is the distance below which two robot positions are
+// treated as the same point for conflict-avoidance purposes. Below this
+// threshold, the direction vector between them is not numerically
+// meaningful and must not be normalized by dividing by dist.
+const coincidentEpsilon = 1e-6
+
 type Coordinator struct {
 	robots            map[int]RobotState
 	goals             map[int][2]float64
@@ -192,10 +198,25 @@ func (c *Coordinator) adjustForConflict(robotID int, vel [2]float64, allCommands
 		dist := math.Sqrt(dx*dx + dy*dy)
 
 		if dist < 0.5 {
-			avoidX := -dx / dist * 0.1
-			avoidY := -dy / dist * 0.1
-			adjusted[0] += avoidX
-			adjusted[1] += avoidY
+			var dirX, dirY float64
+			if dist < coincidentEpsilon {
+				// The two robots occupy (numerically) the same position, e.g.
+				// right after a tracking re-ID swap. dx/dy carry no usable
+				// direction here, so dividing by dist would produce NaN/Inf and
+				// corrupt this robot's command. Fall back to a deterministic
+				// escape direction (opposite for the two robots involved, since
+				// each robot runs this same tie-break independently) instead of
+				// an unnormalized push.
+				if robotID < otherID {
+					dirX, dirY = -1, 0
+				} else {
+					dirX, dirY = 1, 0
+				}
+			} else {
+				dirX, dirY = -dx/dist, -dy/dist
+			}
+			adjusted[0] += dirX * 0.1
+			adjusted[1] += dirY * 0.1
 		}
 	}
 
