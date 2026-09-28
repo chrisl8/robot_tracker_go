@@ -37,6 +37,9 @@ type WebServer struct {
 	clientMutex   sync.RWMutex
 	isRunning     bool
 	stopChan      chan struct{}
+	wsPongWait    time.Duration
+	wsPingPeriod  time.Duration
+	wsWriteWait   time.Duration
 	lastTagCount  int
 	lastFPS       float64
 	lastUptimeSec float64
@@ -231,6 +234,24 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+const wsMaxMessageSize = 4096 // the only thing a client sends is a small {"command": "..."} JSON object
+
+// Default WebSocket liveness timings. These live as fields on WebServer
+// (defaulted below) rather than package-level vars so a test can shrink one
+// server's timers without racing another, concurrently-running server's
+// goroutines that read the same values.
+const (
+	// defaultWSPongWait is how long we tolerate silence from a client (no
+	// data frame, no pong) before treating the connection as dead.
+	defaultWSPongWait = 60 * time.Second
+	// defaultWSPingPeriod must be shorter than defaultWSPongWait so a ping
+	// always has time to be answered before the read deadline expires.
+	defaultWSPingPeriod = (defaultWSPongWait * 9) / 10
+	// defaultWSWriteWait bounds how long a single write (ping or broadcast
+	// message) may block on a client that has stopped reading.
+	defaultWSWriteWait = 10 * time.Second
+)
+
 func NewWebServer(addr string) *WebServer {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -238,12 +259,15 @@ func NewWebServer(addr string) *WebServer {
 	engine.Use(corsMiddleware())
 
 	server := &WebServer{
-		addr:      addr,
-		engine:    engine,
-		stream:    newMJPEGStream(),
-		clients:   make(map[*websocket.Conn]*sync.Mutex),
-		stopChan:  make(chan struct{}),
-		isRunning: false,
+		addr:         addr,
+		engine:       engine,
+		stream:       newMJPEGStream(),
+		clients:      make(map[*websocket.Conn]*sync.Mutex),
+		stopChan:     make(chan struct{}),
+		isRunning:    false,
+		wsPongWait:   defaultWSPongWait,
+		wsPingPeriod: defaultWSPingPeriod,
+		wsWriteWait:  defaultWSWriteWait,
 	}
 
 	server.setupRoutes()
@@ -323,11 +347,26 @@ func (s *WebServer) handleWebSocket(c *gin.Context) {
 		return
 	}
 
+	// A client that vanishes without a clean TCP close (sleep, NAT timeout,
+	// pulled network cable) never makes ReadMessage return an error on its
+	// own — without a deadline it just blocks forever, leaking this
+	// connection's goroutine and its s.clients entry, while BroadcastOverlay
+	// keeps trying to write to it every frame. SetReadDeadline plus a pong
+	// handler that renews it turns silence into a timeout error, and
+	// wsPinger below is what solicits those pongs.
+	conn.SetReadLimit(wsMaxMessageSize)
+	_ = conn.SetReadDeadline(time.Now().Add(s.wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(s.wsPongWait))
+	})
+
+	mu := &sync.Mutex{}
 	s.clientMutex.Lock()
-	s.clients[conn] = &sync.Mutex{}
+	s.clients[conn] = mu
 	s.clientMutex.Unlock()
 
 	go s.wsReader(conn)
+	go s.wsPinger(conn, mu)
 }
 
 func (s *WebServer) wsReader(conn *websocket.Conn) {
@@ -346,6 +385,38 @@ func (s *WebServer) wsReader(conn *websocket.Conn) {
 		var cmd CommandRequest
 		if err := json.Unmarshal(message, &cmd); err == nil && cmd.Command != "" {
 			s.broadcastCommand(cmd.Command)
+		}
+	}
+}
+
+// wsPinger periodically pings conn to detect a silently-dead connection (see
+// the comment in handleWebSocket) and to keep the read deadline from
+// expiring on an otherwise-idle-but-alive client. It shares mu with
+// BroadcastOverlay so writes to this connection are never interleaved
+// (gorilla/websocket panics if two goroutines write to the same connection
+// concurrently), and it exits once wsReader has removed conn from s.clients.
+func (s *WebServer) wsPinger(conn *websocket.Conn, mu *sync.Mutex) {
+	ticker := time.NewTicker(s.wsPingPeriod)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.clientMutex.RLock()
+		_, stillConnected := s.clients[conn]
+		s.clientMutex.RUnlock()
+		if !stillConnected {
+			return
+		}
+
+		mu.Lock()
+		_ = conn.SetWriteDeadline(time.Now().Add(s.wsWriteWait))
+		err := conn.WriteMessage(websocket.PingMessage, nil)
+		mu.Unlock()
+		if err != nil {
+			// The write failed (or blocked past its deadline); close so
+			// wsReader's blocked ReadMessage unblocks with an error and
+			// cleans up s.clients.
+			_ = conn.Close()
+			return
 		}
 	}
 }
@@ -373,8 +444,15 @@ func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
 
 	for conn, mu := range clients {
 		mu.Lock()
-		_ = conn.WriteJSON(msg)
+		_ = conn.SetWriteDeadline(time.Now().Add(s.wsWriteWait))
+		err := conn.WriteJSON(msg)
 		mu.Unlock()
+		if err != nil {
+			// Don't leave a connection that just failed to write sitting
+			// around until the next ping cycle notices it's dead — close it
+			// now so wsReader unblocks and cleans up s.clients.
+			_ = conn.Close()
+		}
 	}
 }
 

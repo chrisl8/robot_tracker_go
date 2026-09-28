@@ -122,12 +122,24 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     `desiredVel` resumes control. Added
     `TestLocalPlanner_CollisionAvoidance_BlendsGoalDirection`.
 
-11. **WebSocket connections leak on silent network death.**
+11. **[FIXED] WebSocket connections leak on silent network death.**
     `internal/ui/webserver.go:227-352` — no `SetReadLimit`, `SetReadDeadline`,
     `SetPongHandler`, or ping ticker. A client that vanishes without a clean TCP
     close (sleep, NAT timeout) leaves its goroutine and `s.clients` entry alive
     indefinitely; `BroadcastOverlay` keeps trying to write to the dead connection
     every frame.
+    **Fix:** `handleWebSocket` now sets `SetReadLimit`, a `SetReadDeadline`
+    (`wsPongWait`), and a `SetPongHandler` that renews it; a new `wsPinger`
+    goroutine per connection sends a ping every `wsPingPeriod` (sharing the
+    connection's write mutex with `BroadcastOverlay` so writes never
+    interleave) and closes the connection if a ping write fails or the read
+    deadline lapses with no pong, which unblocks `wsReader`'s `ReadMessage`
+    and lets its existing cleanup remove the `s.clients` entry.
+    `BroadcastOverlay` also now sets a `wsWriteWait` deadline on each send and
+    closes any connection whose write fails, instead of silently ignoring the
+    error. Added `TestWebServer_SilentlyDeadClientIsCleanedUp`, which connects
+    a client that never reads (so it can never answer a ping) and asserts the
+    server reclaims it once the shortened liveness timers elapse.
 
 12. **`WebServer.Stop()` doesn't actually stop the HTTP server.**
     `internal/ui/webserver.go` — `Stop()` closes an unused `stopChan` and sets a
