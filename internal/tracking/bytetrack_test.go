@@ -125,6 +125,32 @@ func TestByteTrack_Update_SameDetection(t *testing.T) {
 	}
 }
 
+func TestByteTrack_Update_MatchThreshBelowHalfIsHonored(t *testing.T) {
+	// Regression test: bytetrack.go used to re-gate every match with a
+	// hardcoded `< 0.5` after ComputeIoUCost had already applied the
+	// configured MatchThresh, making any MatchThresh below 0.5 a no-op.
+	// A MatchThresh of 0.3 must accept a match whose IoU falls in
+	// [0.3, 0.5) instead of silently spawning a new track for it.
+	config := &ByteTrackConfig{
+		TrackThresh: 0.5,
+		TrackBuffer: 30,
+		MatchThresh: 0.3,
+		FrameRate:   30,
+		MinBoxArea:  100,
+	}
+	bt := NewByteTrack(config)
+
+	bt.Update([]Detection{{Bbox: [4]int{0, 0, 100, 100}, Confidence: 0.6}}, 1000.0, 1)
+
+	// Shifted just enough that IoU ≈ 0.40 — inside the configured
+	// MatchThresh (0.3) but below the old hardcoded 0.5 re-gate.
+	result := bt.Update([]Detection{{Bbox: [4]int{43, 0, 143, 100}, Confidence: 0.6}}, 1001.0, 2)
+
+	if result.NumTrackers != 1 {
+		t.Errorf("IoU in [MatchThresh, 0.5) should still match the existing track, got %d trackers", result.NumTrackers)
+	}
+}
+
 func TestByteTrack_Update_LowConfidenceFiltered(t *testing.T) {
 	bt := NewByteTrack(nil)
 

@@ -95,12 +95,18 @@ ranked by severity. This file is the deliverable — a report, not an implementa
    followed. Added `TestHomography_SetFromValues_PreservesScale` and
    `TestHomography_SaveLoad_RoundTrip` to cover both cases.
 
-9. **`MatchThresh` config is effectively dead below 0.5 IoU.**
+9. **[FIXED] `MatchThresh` config is effectively dead below 0.5 IoU.**
    `internal/tracking/hungarian.go` computes cost against the configured
    `MatchThresh` (default 0.3), but `bytetrack.go:157,202` re-gates the result with
    a hardcoded `< 0.5`. Any IoU in `[0.3, 0.5)` — exactly the range the config was
    supposed to accept — is rejected anyway, causing more track ID churn than
    intended regardless of what a user configures.
+   **Fix:** `ComputeIoUCost` already encodes the "below `matchThresh`" case as a
+   sentinel cost (`NoMatchCost = 1.0`); `bytetrack.go`'s two match functions now
+   check `costMatrix[i][j] < NoMatchCost` instead of a hardcoded `< 0.5`, so a
+   configured `MatchThresh` anywhere in `(0, 1)` is honored. Added
+   `TestByteTrack_Update_MatchThreshBelowHalfIsHonored`, which fails against the
+   old hardcoded check and passes with the fix.
 
 10. **`computeCollisionAvoidance` ignores goal direction, causes oscillation.**
     `internal/planning/local.go:201-214` — `desiredVel`, `combinedRadius`, and

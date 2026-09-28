@@ -11,6 +11,13 @@ type Assignment struct {
 	Cost     float64
 }
 
+// NoMatchCost is the sentinel cost ComputeIoUCost assigns to any
+// detection/track pair whose IoU falls below the configured matchThresh.
+// Callers must reject assignments at exactly this cost (rather than
+// re-gating with their own hardcoded threshold) or a configured
+// matchThresh below that hardcoded value becomes unreachable.
+const NoMatchCost = 1.0
+
 //gocyclo:ignore
 func Hungarian(costMatrix [][]float64) *Assignment {
 	n := len(costMatrix)
@@ -143,7 +150,7 @@ func ComputeIoUCost(detections []Detection, tracks []Track, matchThresh float64)
 			if iou >= matchThresh {
 				cost[i][j] = 1.0 - iou
 			} else {
-				cost[i][j] = 1.0
+				cost[i][j] = NoMatchCost
 			}
 		}
 	}
