@@ -849,11 +849,34 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `Coordinator` = state; steering lives in `controller.BearingToCommand`) and
   corrected CLAUDE.md, README.md, PLAN.md, and the yaml comment. No behavior
   change. `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **`foregroundModel.step`** (~130 lines, `internal/detection/foreground_model.go:179-308`)
+- **[FIXED] `foregroundModel.step`** (~130 lines, `internal/detection/foreground_model.go:179-308`)
   inlines six per-pixel concerns in one dense loop. Defensible as a hot path, but
   it's why the newest shadow-suppression logic had to be threaded into the middle
   of an already-dense function rather than composed — each future "phase" gets
   riskier to add safely.
+  **Investigation:** confirmed, with one caveat. `step` was ~150 lines: ~30 of
+  per-frame constant setup, an ~85-line loop interleaving unknown-pixel
+  learning, threshold classification, shadow reclassification, border
+  exclusion, mask writing and background adaptation (each with its own
+  `if color != nil` BGR branches, duplicated in three places), and a ~15-line
+  guard tail. The caveat: it really is a hot path, and no benchmark existed,
+  so "extract everything into methods" couldn't be checked for cost. Test
+  coverage was already strong (17 model tests incl. shadow, guard, absorb,
+  warm-up ghost, restore), making a behavior-preserving refactor safe.
+  **Fix:** added `BenchmarkForegroundModel_StepGray`/`StepColor` first
+  (baseline ~47µs/~57µs per 160x90 frame, 0 allocs). Extracted per-frame
+  constants into `stepConsts`/`newStepConsts` (also carries `hasColor`,
+  `w`, `h`), `learnUnknown` and `setBgColor` (collapsing the repeated colour
+  writes), and `applyGuard`; `step` is now validate → alloc → warm or
+  (gain → consts → labelled per-pixel phases → guard). The first attempt also
+  made classify and adapt methods, but Go won't inline functions that size
+  and the per-pixel calls cost ~50% (47→72µs), so those two phases were
+  put back inline in the loop, clearly labelled as phases 2–4, with the
+  reason recorded in the `foregroundModel` doc comment (which now lists the
+  phase order and its ordering constraints). Final benchmark: within ~3% of
+  baseline, still 0 allocs. No threshold, comparison, or ordering changed;
+  existing tests pass unmodified. `./scripts/build.sh` and
+  `./scripts/test.sh --verbose` pass.
 - **`ForegroundDetector` has accreted OpenCV lifecycle + command queuing + debug
   rendering + blob extraction + background persistence** into one struct after 4+
   incremental phases (persistence scheduling alone is 5 pieces of loosely-related

@@ -15,6 +15,21 @@ import "math"
 //     leaves no ghost.
 //   - Global exposure normalisation from pixels that were background last frame.
 //   - Asymmetric threshold: darkening (shadows) must change more than brightening.
+//
+// Each warm frame (step) runs these per-pixel phases in order, labelled in
+// step's loop; the ordering is significant:
+//  1. learnUnknown — pixels with no background yet learn it once uncovered
+//  2. classify     — brightness threshold, then cast-shadow reclassification
+//     (isShadowColor), then frame-border exclusion
+//  3. output mask  — raw foreground minus robot/static masks
+//  4. adapt        — blend/absorb into the background using classify's final
+//     raw flag, never for robot-covered pixels
+//
+// and then applyGuard handles the whole-frame lighting-change guard. Phases 2
+// and 4 are deliberately inline in step's loop, not methods: Go will not
+// inline functions that size and a call per pixel cost ~50% on this hot path
+// (see BenchmarkForegroundModel_Step*). Keep new phases small enough to
+// inline, or measure.
 type foregroundModel struct {
 	p    ForegroundParams
 	w, h int
@@ -168,6 +183,51 @@ func (m *foregroundModel) restore(s modelState) bool {
 	return true
 }
 
+// stepConsts holds the values that are constant for one step() call, computed
+// once so the per-pixel helpers below don't recompute them (and so step's own
+// body stays about sequencing, not setup).
+type stepConsts struct {
+	w, h     int
+	border   int
+	hasColor bool // color frame supplied (and well-formed) for this step
+
+	g       float32 // exposure gain applied to the incoming frame
+	alpha   float32 // background adaptation rate for this dt
+	fdt     float32 // dt as float32, for fgSecs accumulation
+	thrUp   float32 // brightening threshold
+	thrDown float32 // darkening threshold (thrUp * DarkFactor)
+	absorb  float32 // AbsorbAfterSec
+
+	shadowGateOn                                 bool
+	shadowAlphaMin, shadowAlphaMax, shadowChroma float32
+}
+
+func (m *foregroundModel) newStepConsts(w, h int, dt, gain float64, hasColor bool) stepConsts {
+	sc := stepConsts{
+		w: w, h: h,
+		border:         m.p.BorderPx,
+		hasColor:       hasColor,
+		g:              float32(gain),
+		alpha:          float32(1 - math.Exp(-dt/math.Max(m.p.TauSec, 0.001))),
+		fdt:            float32(dt),
+		thrUp:          float32(m.p.Threshold),
+		thrDown:        float32(m.p.Threshold * m.p.DarkFactor),
+		absorb:         float32(m.p.AbsorbAfterSec),
+		shadowAlphaMin: float32(m.p.ShadowAlphaMin),
+		shadowAlphaMax: float32(m.p.ShadowAlphaMax),
+		shadowChroma:   float32(m.p.ShadowChromaMax),
+	}
+	// Per ForegroundParams' doc comment, leaving any of the three bounds at
+	// zero disables the gate entirely, rather than relying on each bound's
+	// incidental effect on the isShadowColor math (which for ShadowAlphaMin
+	// alone would loosen the gate, not disable it).
+	sc.shadowGateOn = sc.shadowAlphaMin > 0 && sc.shadowAlphaMax > 0 && sc.shadowChroma > 0
+	return sc
+}
+
+// bgr is one pixel's gain-corrected colour.
+type bgr struct{ b, g, r float32 }
+
 // step advances the model by one frame. gray is w*h working-resolution
 // pixels; robotMask and staticMask (nil or w*h, nonzero = covered) exclude
 // areas. color, if not nil, is the same pixels' BGR colour (w*h*3, packed
@@ -176,6 +236,9 @@ func (m *foregroundModel) restore(s modelState) bool {
 // same as nil) leaves darkening classified exactly as before it existed. The
 // returned mask (owned by the model, valid until the next call) is 255 where
 // a pixel counts as foreground outside the masks.
+//
+// A warm frame runs the per-pixel phases documented on foregroundModel and
+// then applyGuard.
 func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, staticMask []uint8, color []uint8) ([]uint8, modelStep) {
 	if len(gray) != w*h {
 		return nil, modelStep{}
@@ -199,68 +262,45 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 
 	gain := m.estimateGain(gray, robotMask)
 	m.gain = gain
-
-	alpha := float32(1 - math.Exp(-dt/math.Max(m.p.TauSec, 0.001)))
-	thrUp := float32(m.p.Threshold)
-	thrDown := float32(m.p.Threshold * m.p.DarkFactor)
-	absorb := float32(m.p.AbsorbAfterSec)
-	fdt := float32(dt)
-	border := m.p.BorderPx
-	g := float32(gain)
-	shadowAlphaMin := float32(m.p.ShadowAlphaMin)
-	shadowAlphaMax := float32(m.p.ShadowAlphaMax)
-	shadowChromaMax := float32(m.p.ShadowChromaMax)
-	// Per ForegroundParams' doc comment, leaving any of the three bounds at
-	// zero disables the gate entirely, rather than relying on each bound's
-	// incidental effect on the isShadowColor math (which for ShadowAlphaMin
-	// alone would loosen the gate, not disable it).
-	shadowGateOn := shadowAlphaMin > 0 && shadowAlphaMax > 0 && shadowChromaMax > 0
+	sc := m.newStepConsts(w, h, dt, gain, color != nil)
 
 	fgCount := 0
 	shadowCount := 0
 	for y := 0; y < h; y++ {
-		inBorderY := y < border || y >= h-border
 		row := y * w
 		for x := 0; x < w; x++ {
 			i := row + x
 			robot := robotMask != nil && robotMask[i] != 0
 
-			cur := float32(gray[i]) * g
-			var curB, curG, curR float32
+			cur := float32(gray[i]) * sc.g
+			var curC bgr
 			if color != nil {
-				curB = float32(color[i*3]) * g
-				curG = float32(color[i*3+1]) * g
-				curR = float32(color[i*3+2]) * g
+				curC = bgr{float32(color[i*3]) * sc.g, float32(color[i*3+1]) * sc.g, float32(color[i*3+2]) * sc.g}
 			}
+
 			if !m.known[i] {
-				// Unknown (covered at warm-up): learn as soon as it is uncovered.
-				if !robot {
-					m.bg[i] = cur
-					m.known[i] = true
-					if color != nil {
-						m.bgB[i], m.bgG[i], m.bgR[i] = curB, curG, curR
-					}
-				}
-				m.fg[i] = 0
-				m.prevRaw[i] = false
+				m.learnUnknown(i, robot, cur, curC, &sc)
 				continue
 			}
 
+			// Phase 2: classify (see foregroundModel doc). Inline, not a method,
+			// for the hot-path reason given there.
 			d := cur - m.bg[i]
-			raw := d > thrUp || d < -thrDown
-			if raw && d < 0 && color != nil && shadowGateOn &&
-				isShadowColor(curB, curG, curR, m.bgB[i], m.bgG[i], m.bgR[i], shadowAlphaMin, shadowAlphaMax, shadowChromaMax) {
+			raw := d > sc.thrUp || d < -sc.thrDown
+			if raw && d < 0 && sc.hasColor && sc.shadowGateOn &&
+				isShadowColor(curC.b, curC.g, curC.r, m.bgB[i], m.bgG[i], m.bgR[i], sc.shadowAlphaMin, sc.shadowAlphaMax, sc.shadowChroma) {
 				// Darker, but still just the background colour scaled down: a
 				// cast shadow, not a real change. Leave it classified as
 				// background rather than foreground.
 				raw = false
 				shadowCount++
 			}
-			if inBorderY || x < border || x >= w-border {
+			if y < sc.border || y >= h-sc.border || x < sc.border || x >= w-sc.border {
 				raw = false
 			}
 			m.prevRaw[i] = raw
 
+			// Phase 3: output mask.
 			masked := robot || (staticMask != nil && staticMask[i] != 0)
 			if raw && !masked {
 				m.fg[i] = 255
@@ -269,26 +309,25 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 				m.fg[i] = 0
 			}
 
+			// Phase 4: adapt the background (inline for the same reason).
 			switch {
 			case robot:
 				// Never learn a robot into the background.
 			case !raw:
-				m.bg[i] += alpha * d
-				if color != nil {
-					m.bgB[i] += alpha * (curB - m.bgB[i])
-					m.bgG[i] += alpha * (curG - m.bgG[i])
-					m.bgR[i] += alpha * (curR - m.bgR[i])
+				m.bg[i] += sc.alpha * d
+				if sc.hasColor {
+					m.bgB[i] += sc.alpha * (curC.b - m.bgB[i])
+					m.bgG[i] += sc.alpha * (curC.g - m.bgG[i])
+					m.bgR[i] += sc.alpha * (curC.r - m.bgR[i])
 				}
 				if m.fgSecs != nil {
 					m.fgSecs[i] = 0
 				}
 			case m.fgSecs != nil:
-				m.fgSecs[i] += fdt
-				if m.fgSecs[i] > absorb {
+				m.fgSecs[i] += sc.fdt
+				if m.fgSecs[i] > sc.absorb {
 					m.bg[i] = cur
-					if color != nil {
-						m.bgB[i], m.bgG[i], m.bgR[i] = curB, curG, curR
-					}
+					m.setBgColor(i, curC, &sc)
 					m.fgSecs[i] = 0
 				}
 			}
@@ -296,6 +335,34 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 	}
 
 	st := modelStep{Gain: gain, Fraction: float64(fgCount) / float64(w*h), ShadowSuppressed: shadowCount}
+	return m.fg, m.applyGuard(st, dt)
+}
+
+// setBgColor overwrites pixel i's background colour (no-op without colour).
+func (m *foregroundModel) setBgColor(i int, c bgr, sc *stepConsts) {
+	if sc.hasColor {
+		m.bgB[i], m.bgG[i], m.bgR[i] = c.b, c.g, c.r
+	}
+}
+
+// learnUnknown handles a pixel that was covered at warm-up and so has no
+// background yet: it is learned as soon as it is uncovered, and is never
+// foreground until then.
+func (m *foregroundModel) learnUnknown(i int, robot bool, cur float32, c bgr, sc *stepConsts) {
+	if !robot {
+		m.bg[i] = cur
+		m.known[i] = true
+		m.setBgColor(i, c, sc)
+	}
+	m.fg[i] = 0
+	m.prevRaw[i] = false
+}
+
+// applyGuard folds the frame's foreground fraction into st and runs the
+// lighting-change guard: while too much of the frame looks foreground the
+// frame is flagged Guarded, and if that lasts longer than GuardMaxSec the
+// model relearns from scratch (Rewarmed).
+func (m *foregroundModel) applyGuard(st modelStep, dt float64) modelStep {
 	if st.Fraction > m.p.GuardFraction {
 		st.Guarded = true
 		m.guardSecs += dt
@@ -309,7 +376,7 @@ func (m *foregroundModel) step(gray []uint8, w, h int, dt float64, robotMask, st
 	} else {
 		m.guardSecs = 0
 	}
-	return m.fg, st
+	return st
 }
 
 func (m *foregroundModel) warmStep(gray []uint8, dt float64, robotMask []uint8, color []uint8) ([]uint8, modelStep) {

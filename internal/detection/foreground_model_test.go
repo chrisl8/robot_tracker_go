@@ -669,3 +669,44 @@ func TestForegroundModel_ColorBlindCallsAreUnaffected(t *testing.T) {
 		t.Errorf("a soft darkening within dark_factor's threshold should stay background, got %d foreground pixels", n)
 	}
 }
+
+// benchStep measures the per-frame cost of a warm model's step (the per-pixel
+// hot path) over pre-rendered frames containing a bright object, a cast
+// shadow, and a robot-masked disc, so every per-pixel branch is exercised.
+func benchStep(b *testing.B, withColor bool) {
+	s := newColorScene(1, 90, 90, 90)
+	s.setRect(20, 20, 50, 50, 200, 200, 200)
+	s.scaleRect(80, 30, 120, 60, 0.6)
+	robot := discMask(130, 60, 10)
+
+	const nFrames = 16
+	grays := make([][]uint8, nFrames)
+	colors := make([][]uint8, nFrames)
+	for i := range grays {
+		grays[i], colors[i] = s.frames()
+	}
+	pick := func(i int) []uint8 {
+		if withColor {
+			return colors[i%nFrames]
+		}
+		return nil
+	}
+
+	m := testModel(nil)
+	quiet := newColorScene(2, 90, 90, 90)
+	for i := 0; i < 40; i++ {
+		g, c := quiet.frames()
+		if !withColor {
+			c = nil
+		}
+		m.step(g, tw, th, tdt, robot, nil, c)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m.step(grays[i%nFrames], tw, th, tdt, robot, nil, pick(i))
+	}
+}
+
+func BenchmarkForegroundModel_StepGray(b *testing.B)  { benchStep(b, false) }
+func BenchmarkForegroundModel_StepColor(b *testing.B) { benchStep(b, true) }
