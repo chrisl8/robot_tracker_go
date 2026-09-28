@@ -74,7 +74,7 @@ func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 		params.SetCornerRefinementMethod(1) // 1 = CORNER_REFINE_SUBPIX
 	}
 
-	if config.Family != "" {
+	if config.Family == "" {
 		config.Family = "tag36h11"
 	}
 

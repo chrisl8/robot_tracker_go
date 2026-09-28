@@ -214,12 +214,18 @@ ranked by severity. This file is the deliverable — a report, not an implementa
     forecloses the misconfiguration trap described above rather than a runtime
     bug fix. Updated `astar_test.go`/`planner_test.go` for the new field names.
 
-17. **AprilTag family config has an inverted-looking condition.**
+17. **[FIXED] AprilTag family config has an inverted-looking condition.**
     `internal/detection/apriltag.go:77-79` — `if config.Family != "" { config.Family
     = "tag36h11" }` forces the stored family to a constant whenever one *is*
     configured, backwards from the apparent intent (default only when unset).
     Doesn't break tag decoding (a separate switch handles the real dictionary
     selection) but corrupts a diagnostic/UI field.
+    **Fix:** flipped the condition to `if config.Family == ""`, so the stored
+    `family` field (used only for diagnostics/UI, per the switch above which
+    already handles the real dictionary selection independently) now defaults
+    to `tag36h11` only when unset and otherwise preserves whatever family was
+    configured. Added `TestNewAprilTagDetector_FamilyDefault`, which fails
+    against the old inverted check and passes with the fix.
 
 18. **Shadow-suppression "disable via zero" doesn't work.**
     `internal/detection/foreground_types.go:36-39` documents that leaving
