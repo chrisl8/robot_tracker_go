@@ -987,6 +987,96 @@ func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedD
 	return detections
 }
 
+// updateFPS advances the smoothed (EMA) FPS estimate in rs.stats using the
+// gap since the previous frame's frameStart. Shared by ProcessFrame and
+// ProcessDemoFrame so real and demo frame timing use identical math.
+func (rs *RobotSystem) updateFPS(frameStart time.Time) {
+	if !rs.stats.lastFrameTime.IsZero() {
+		if dt := frameStart.Sub(rs.stats.lastFrameTime).Seconds(); dt > 0 {
+			instantFPS := 1.0 / dt
+			const alpha = 0.1 // EMA smoothing factor
+			if rs.stats.smoothedFPS == 0 {
+				rs.stats.smoothedFPS = instantFPS
+			} else {
+				rs.stats.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.stats.smoothedFPS
+			}
+		}
+	}
+	rs.stats.lastFrameTime = frameStart
+}
+
+// updateTrackWorldPosition projects a confirmed track's pixel-space bbox
+// center into world coordinates, updates the position estimator and the
+// track's PixelRadius (by projecting the robot's configured world-space
+// footprint back through the homography), and returns the world position
+// plus the robot's configured diameter (falling back to 0.30m if the tag
+// isn't in config). Shared by ProcessFrame and ProcessDemoFrame so both use
+// identical per-track math.
+//
+// applyCenterOffset controls whether a configured CenterOffsetX/Y (which
+// compensates for the AprilTag not being mounted at the robot's true
+// rotational center) is applied to worldPos. It requires a smoothed heading
+// to already be available in rs.heading.lastHeading, so it must stay false
+// for a track this function computes heading for before computeTrackHeading
+// runs.
+func (rs *RobotSystem) updateTrackWorldPosition(track *tracking.Track, applyCenterOffset bool) (worldPos *position.Point2D, robotDiameter float64) {
+	robotDiameter = 0.30 // fallback
+	px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
+	worldPos = rs.position.positionEst.PixelToWorld(px, py)
+	rs.position.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
+	if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
+		// Compute pixel radius by projecting world-space footprint through homography
+		worldRadius := robotConfig.Diameter / 2
+		edgePx, edgePy := rs.position.positionEst.WorldToPixel(position.Point2D{
+			X: worldPos.X + worldRadius, Y: worldPos.Y,
+		})
+		dxR := float64(edgePx - px)
+		dyR := float64(edgePy - py)
+		track.PixelRadius = math.Sqrt(dxR*dxR + dyR*dyR)
+		robotDiameter = robotConfig.Diameter
+		// Apply center offset if configured (compensates for tag-to-robot-center distance / parallax)
+		if applyCenterOffset && (robotConfig.CenterOffsetX != 0 || robotConfig.CenterOffsetY != 0) {
+			if heading, ok := rs.heading.lastHeading[*track.TagID]; ok {
+				cosH := math.Cos(heading)
+				sinH := math.Sin(heading)
+				worldPos.X += robotConfig.CenterOffsetX*cosH - robotConfig.CenterOffsetY*sinH
+				worldPos.Y += robotConfig.CenterOffsetX*sinH + robotConfig.CenterOffsetY*cosH
+			}
+		}
+	}
+	track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+	return worldPos, robotDiameter
+}
+
+// broadcastFrameStats pushes per-frame tag/track counts and Arduino/FPS
+// status to the web server, throttling the status/tag broadcast to roughly
+// once a second via statusBroadcastDue(). Shared by ProcessFrame and
+// ProcessDemoFrame; extraDetectedTags lets ProcessDemoFrame append its
+// synthetic calibration-target tag markers.
+func (rs *RobotSystem) broadcastFrameStats(tagCount, trackCount int, tags []detection.AprilTag, width, height int, extraDetectedTags []ui.DetectedTagInfo) {
+	if rs.web.webServer == nil {
+		return
+	}
+	rs.web.webServer.UpdateStats(tagCount)
+
+	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
+	if rs.statusBroadcastDue() {
+		rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
+		rs.web.webServer.BroadcastStatus(trackCount, rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
+	}
+
+	detectedTags := make([]ui.DetectedTagInfo, 0, len(tags)+len(extraDetectedTags))
+	for _, tag := range tags {
+		detectedTags = append(detectedTags, ui.DetectedTagInfo{
+			ID:      tag.TagID,
+			Center:  [2]float64{tag.CenterX, tag.CenterY},
+			Corners: tag.Corners,
+		})
+	}
+	detectedTags = append(detectedTags, extraDetectedTags...)
+	rs.web.webServer.UpdateDetectedTags(detectedTags, width, height)
+}
+
 func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	if img == nil {
 		return
@@ -997,20 +1087,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	rs.stats.lastFrameNanos.Store(frameStart.UnixNano())
 	timestamp := float64(frameStart.UnixNano()) / 1e9
 
-	// Compute smoothed FPS via exponential moving average
-	if !rs.stats.lastFrameTime.IsZero() {
-		dt := frameStart.Sub(rs.stats.lastFrameTime).Seconds()
-		if dt > 0 {
-			instantFPS := 1.0 / dt
-			alpha := 0.1 // EMA smoothing factor
-			if rs.stats.smoothedFPS == 0 {
-				rs.stats.smoothedFPS = instantFPS
-			} else {
-				rs.stats.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.stats.smoothedFPS
-			}
-		}
-	}
-	rs.stats.lastFrameTime = frameStart
+	rs.updateFPS(frameStart)
 
 	bounds := img.Bounds()
 	width := bounds.Max.X - bounds.Min.X
@@ -1040,31 +1117,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 			rs.planning.CurrentRobotID = *track.TagID
 			if rs.position.positionEst != nil {
-				px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-				worldPos := rs.position.positionEst.PixelToWorld(px, py)
-				rs.position.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
-				robotDiameter := 0.30 // fallback
-				if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
-					// Compute pixel radius by projecting world-space footprint through homography
-					worldRadius := robotConfig.Diameter / 2
-					edgePx, edgePy := rs.position.positionEst.WorldToPixel(position.Point2D{
-						X: worldPos.X + worldRadius, Y: worldPos.Y,
-					})
-					dxR := float64(edgePx - px)
-					dyR := float64(edgePy - py)
-					track.PixelRadius = math.Sqrt(dxR*dxR + dyR*dyR)
-					robotDiameter = robotConfig.Diameter
-					// Apply center offset if configured (compensates for tag-to-robot-center distance / parallax)
-					if robotConfig.CenterOffsetX != 0 || robotConfig.CenterOffsetY != 0 {
-						if heading, ok := rs.heading.lastHeading[*track.TagID]; ok {
-							cosH := math.Cos(heading)
-							sinH := math.Sin(heading)
-							worldPos.X += robotConfig.CenterOffsetX*cosH - robotConfig.CenterOffsetY*sinH
-							worldPos.Y += robotConfig.CenterOffsetX*sinH + robotConfig.CenterOffsetY*cosH
-						}
-					}
-				}
-				track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
+				worldPos, robotDiameter := rs.updateTrackWorldPosition(track, true)
 				rs.planning.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
 
 				rs.computeTrackHeading(track, detectionResult.Tags)
@@ -1090,23 +1143,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		rs.web.webServer.PushFrame(img)
 	}
 
-	rs.web.webServer.UpdateStats(len(detectionResult.Tags))
-
-	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
-	if rs.statusBroadcastDue() {
-		rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
-		rs.web.webServer.BroadcastStatus(len(trackingResult.Tracks), rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
-	}
-
-	detectedTags := make([]ui.DetectedTagInfo, 0, len(detectionResult.Tags))
-	for _, tag := range detectionResult.Tags {
-		detectedTags = append(detectedTags, ui.DetectedTagInfo{
-			ID:      tag.TagID,
-			Center:  [2]float64{tag.CenterX, tag.CenterY},
-			Corners: tag.Corners,
-		})
-	}
-	rs.web.webServer.UpdateDetectedTags(detectedTags, width, height)
+	rs.broadcastFrameStats(len(detectionResult.Tags), len(trackingResult.Tracks), detectionResult.Tags, width, height, nil)
 
 	if rs.stats.frameNum%10 == 0 && rs.web.webServer != nil {
 		paths := rs.planning.planner.GetPaths()
@@ -1651,20 +1688,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 	frameStart := time.Now()
 	timestamp := float64(frameStart.UnixNano()) / 1e9
 
-	// Compute smoothed FPS via exponential moving average
-	if !rs.stats.lastFrameTime.IsZero() {
-		dt := frameStart.Sub(rs.stats.lastFrameTime).Seconds()
-		if dt > 0 {
-			instantFPS := 1.0 / dt
-			alpha := 0.1
-			if rs.stats.smoothedFPS == 0 {
-				rs.stats.smoothedFPS = instantFPS
-			} else {
-				rs.stats.smoothedFPS = alpha*instantFPS + (1-alpha)*rs.stats.smoothedFPS
-			}
-		}
-	}
-	rs.stats.lastFrameTime = frameStart
+	rs.updateFPS(frameStart)
 
 	width := img.Rect.Max.X
 	height := img.Rect.Max.Y
@@ -1703,19 +1727,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
 				rs.planning.CurrentRobotID = *track.TagID
 				if rs.position.positionEst != nil {
-					px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-					worldPos := rs.position.positionEst.PixelToWorld(px, py)
-					rs.position.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
-					track.WorldPos = [2]float64{worldPos.X, worldPos.Y}
-					if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
-						worldRadius := robotConfig.Diameter / 2
-						edgePx, edgePy := rs.position.positionEst.WorldToPixel(position.Point2D{
-							X: worldPos.X + worldRadius, Y: worldPos.Y,
-						})
-						dxR := float64(edgePx - px)
-						dyR := float64(edgePy - py)
-						track.PixelRadius = math.Sqrt(dxR*dxR + dyR*dyR)
-					}
+					rs.updateTrackWorldPosition(track, false)
 				}
 			}
 		}
@@ -1743,26 +1755,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		}
 	}
 
-	if rs.web.webServer != nil {
-		rs.web.webServer.UpdateStats(len(demoTags))
-
-		// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
-		if rs.statusBroadcastDue() {
-			rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
-			rs.web.webServer.BroadcastStatus(len(demoTags), rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
-		}
-
-		detectedTags := make([]ui.DetectedTagInfo, 0, len(demoTags))
-		for _, tag := range demoTags {
-			detectedTags = append(detectedTags, ui.DetectedTagInfo{
-				ID:      tag.TagID,
-				Center:  [2]float64{tag.CenterX, tag.CenterY},
-				Corners: tag.Corners,
-			})
-		}
-		detectedTags = append(detectedTags, demoCalibrationTagInfos(width, height)...)
-		rs.web.webServer.UpdateDetectedTags(detectedTags, width, height)
-	}
+	rs.broadcastFrameStats(len(demoTags), len(demoTags), demoTags, width, height, demoCalibrationTagInfos(width, height))
 }
 
 //gocyclo:ignore
