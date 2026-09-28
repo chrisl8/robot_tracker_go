@@ -19,6 +19,8 @@ type CommandQueue struct {
 	lastSentTime     time.Time
 	activeCommand    Command // currently desired command (re-sent each tick)
 	hasActiveCommand bool    // whether activeCommand is set
+	activeSince      time.Time
+	commandTTL       time.Duration // 0 disables; see SetCommandTTL
 	errorCount       int
 	mu               sync.Mutex
 }
@@ -43,7 +45,23 @@ func NewCommandQueue(controller *ArduinoController, intervalMs int, heartbeatTim
 		stopCh:           make(chan struct{}),
 		interval:         interval,
 		heartbeatTimeout: heartbeatTimeout,
+		commandTTL:       DefaultCommandTTL,
 	}
+}
+
+// DefaultCommandTTL is how long a movement command stays active without being
+// re-Enqueued. The heartbeat re-sends the active command to the robot on its
+// own, so without this a caller that disappears (browser closed, network
+// dropped, camera frozen) would leave the robot driving indefinitely. Real
+// callers refresh well inside it: the UI re-sends a held key every 250 ms and
+// the autonomous loop enqueues every frame.
+const DefaultCommandTTL = 2 * time.Second
+
+// SetCommandTTL overrides the active-command deadman; 0 disables it.
+func (q *CommandQueue) SetCommandTTL(d time.Duration) {
+	q.mu.Lock()
+	q.commandTTL = d
+	q.mu.Unlock()
 }
 
 func (q *CommandQueue) Start() {
@@ -116,6 +134,7 @@ func (q *CommandQueue) Enqueue(cmd Command) {
 	} else {
 		q.activeCommand = cmd
 		q.hasActiveCommand = true
+		q.activeSince = time.Now() // refreshed even when the write below is rate-limited
 	}
 	if cmd == q.lastCommand && time.Since(q.lastSentTime) < q.interval {
 		q.mu.Unlock()
@@ -163,6 +182,10 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 			q.sendCommand(cmd)
 
 		case <-ticker.C:
+			if q.expireStaleCommand() {
+				q.sendCommand(CommandStop)
+				continue
+			}
 			if q.controller.IsConnected() && time.Since(q.lastSentTime) > q.heartbeatTimeout {
 				q.mu.Lock()
 				active := q.hasActiveCommand
@@ -179,6 +202,19 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 			return
 		}
 	}
+}
+
+// expireStaleCommand drops the active command if nobody has refreshed it
+// within commandTTL, reporting whether it did (the caller then sends Stop).
+func (q *CommandQueue) expireStaleCommand() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if !q.hasActiveCommand || q.commandTTL <= 0 || time.Since(q.activeSince) <= q.commandTTL {
+		return false
+	}
+	q.hasActiveCommand = false
+	utils.Logf("Command %q not refreshed for %v: stopping robot", q.activeCommand, q.commandTTL)
+	return true
 }
 
 func (q *CommandQueue) sendCommand(cmd Command) {
@@ -202,6 +238,14 @@ func (q *CommandQueue) sendCommand(cmd Command) {
 		q.lastCommand = cmd
 		q.lastSentTime = time.Now()
 	}
+}
+
+// HasActiveCommand reports whether a movement command is currently being
+// held (and re-sent by the heartbeat).
+func (q *CommandQueue) HasActiveCommand() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.hasActiveCommand
 }
 
 func (q *CommandQueue) GetLastCommand() Command {

@@ -157,3 +157,56 @@ func TestCommandQueue_HaltMotion_StopsRobotAndKeepsQueueRunning(t *testing.T) {
 	q.Enqueue(CommandLeft)
 	waitFor(t, func() bool { return port.lastCommand() == CommandLeft })
 }
+
+func TestCommandQueue_Deadman_StopsRobotWhenCommandNotRefreshed(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.SetCommandTTL(100 * time.Millisecond)
+	q.Start()
+	defer q.Stop()
+
+	q.Enqueue(CommandForward)
+	waitFor(t, func() bool { return port.lastCommand() == CommandForward })
+
+	// Nobody refreshes it: the queue must stop the robot on its own.
+	waitFor(t, func() bool { return port.lastCommand() == CommandStop })
+}
+
+func TestCommandQueue_Deadman_RefreshKeepsRobotMoving(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.SetCommandTTL(150 * time.Millisecond)
+	q.Start()
+	defer q.Stop()
+
+	// Refresh every 40 ms for well over the TTL, like a held key or a frame loop.
+	end := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(end) {
+		q.Enqueue(CommandForward)
+		time.Sleep(40 * time.Millisecond)
+		for _, c := range port.commands() {
+			if c == CommandStop {
+				t.Fatal("robot was stopped even though the command was being refreshed")
+			}
+		}
+	}
+}
+
+func TestCommandQueue_Deadman_DisabledWithZeroTTL(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.SetCommandTTL(0)
+	q.Start()
+	defer q.Stop()
+
+	q.Enqueue(CommandForward)
+	time.Sleep(300 * time.Millisecond)
+
+	if got := port.lastCommand(); got != CommandForward {
+		t.Errorf("last command %q, want forward (deadman disabled)", got)
+	}
+}
+
+func TestNewCommandQueue_DeadmanOnByDefault(t *testing.T) {
+	q := NewCommandQueue(nil, 0, 0)
+	if q.commandTTL != DefaultCommandTTL || DefaultCommandTTL != 2*time.Second {
+		t.Errorf("commandTTL = %v, want the 2s default", q.commandTTL)
+	}
+}

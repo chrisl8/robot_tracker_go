@@ -2,6 +2,7 @@ package planning
 
 import (
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -433,6 +434,18 @@ func (p *Planner) GetGoal(robotID int) ([2]float64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.coordinator.GetGoal(robotID)
+}
+
+// RobotsWithGoals returns the IDs of all robots that currently have a goal.
+func (p *Planner) RobotsWithGoals() []int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ids := make([]int, 0, len(p.coordinator.goals))
+	for id := range p.coordinator.goals {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	return ids
 }
 
 func (p *Planner) CompletePath(robotID int) {

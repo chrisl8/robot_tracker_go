@@ -568,6 +568,18 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		worldPos := rs.position.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
 		utils.Debugf("DEST: pixel(%d,%d) -> world(%.2f,%.2f) BEFORE SetGoal",
 			int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
+		// One controller line drives one robot: the protocol has no robot
+		// address, and there is a single command queue and path executor. So
+		// only one robot may have a goal at a time; giving a new robot a
+		// goal releases the others. (Multi-robot control will need a
+		// controller per robot; see docs.) The UI likewise models a single
+		// destination, so the web server's copy is not touched here.
+		for _, other := range rs.planning.planner.RobotsWithGoals() {
+			if other != robotID {
+				utils.Logf("Releasing goal of robot %d: robot %d is now the controlled robot", other, robotID)
+				rs.planning.planner.CompletePath(other)
+			}
+		}
 		rs.planning.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
@@ -1359,6 +1371,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	}
 
 	commandIssued := false
+	anyPath := false
 	for i := range tracks {
 		track := &tracks[i]
 		if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
@@ -1368,6 +1381,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		robotID := *track.TagID
 
 		if _, hasPath := rs.planning.planner.GetNextWaypoint(robotID); hasPath {
+			anyPath = true
 			if rs.position.positionEst == nil {
 				continue
 			}
@@ -1461,9 +1475,14 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 
 			velocity := rs.estimateRobotVelocity(robotID, [2]float64{worldPos.X, worldPos.Y}, track.Timestamp)
 			rs.planning.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y}, velocity)
-		} else if rs.io.commandQueue != nil && rs.io.commandQueue.IsRunning() {
-			rs.io.commandQueue.ClearActiveCommand()
 		}
+	}
+
+	// Only clear the active command when no robot is following a path. Doing
+	// it per robot let a path-less robot wipe the command just issued for the
+	// robot that does have one.
+	if !anyPath && rs.io.commandQueue != nil && rs.io.commandQueue.IsRunning() {
+		rs.io.commandQueue.ClearActiveCommand()
 	}
 
 	// Safety: stop re-sending stale commands when tracking is lost for too long.

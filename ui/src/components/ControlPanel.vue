@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Gamepad2 } from 'lucide-vue-next'
@@ -12,9 +12,38 @@ const hasDestinationPending = computed(
 )
 
 const pressed = ref<string | null>(null)
+const pressedCommand = ref<string | null>(null)
+
+// The server stops the robot if a movement command isn't refreshed within
+// 2 s (so a dropped browser or network can't leave it driving). While a key or
+// D-pad button is held, re-send its command well inside that window.
+const HOLD_REFRESH_MS = 250
+
+// The movement command currently being held, or null. A held D-pad button
+// wins over the keyboard.
+function heldCommand(): string | null {
+    if (pressed.value !== null) return pressedCommand.value
+    const keys = uiStore.keyboard
+    if (keys.w) return 'F'
+    if (keys.s) return 'B'
+    if (keys.a) return 'L'
+    if (keys.d) return 'R'
+    return null
+}
+
+let holdTimer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
     robotStore.fetchControlState()
+    holdTimer = setInterval(() => {
+        if (robotStore.controlMode !== 'manual' || robotStore.emergencyStopped) return
+        const cmd = heldCommand()
+        if (cmd && cmd !== 'S') sendCommand(cmd)
+    }, HOLD_REFRESH_MS)
+})
+
+onUnmounted(() => {
+    clearInterval(holdTimer)
 })
 
 async function sendCommand(command: string): Promise<void> {
@@ -38,6 +67,7 @@ async function sendCommand(command: string): Promise<void> {
 
 function handleMouseDown(key: string, command: string): void {
     pressed.value = key
+    pressedCommand.value = command
     sendCommand(command)
 }
 
@@ -46,6 +76,7 @@ function handleMouseUp(): void {
     // keyboard) just because the pointer crossed an unpressed button.
     if (pressed.value === null) return
     pressed.value = null
+    pressedCommand.value = null
     sendCommand('S') // Stop on release
 }
 

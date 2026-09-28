@@ -513,3 +513,23 @@ func TestPlanner_RemoveObstacle_RemovesOnlyNamed(t *testing.T) {
 		t.Errorf("obstacles = %+v, want only b", got)
 	}
 }
+
+func TestPlanner_RobotsWithGoals(t *testing.T) {
+	planner := NewPlanner(nil)
+	if got := planner.RobotsWithGoals(); len(got) != 0 {
+		t.Fatalf("no goals set, got %v", got)
+	}
+
+	planner.SetGoal(3, [2]float64{1, 1})
+	planner.SetGoal(1, [2]float64{2, 2})
+	got := planner.RobotsWithGoals()
+	if len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Errorf("RobotsWithGoals = %v, want [1 3]", got)
+	}
+
+	planner.CompletePath(1)
+	got = planner.RobotsWithGoals()
+	if len(got) != 1 || got[0] != 3 {
+		t.Errorf("after CompletePath(1), RobotsWithGoals = %v, want [3]", got)
+	}
+}

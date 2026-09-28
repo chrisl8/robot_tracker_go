@@ -17,6 +17,8 @@ describe('ControlPanel keyboard safety', () => {
     let fetchMock: ReturnType<typeof vi.fn>
 
     beforeEach(() => {
+        // Before mounting, so the component's refresh interval is a fake one.
+        vi.useFakeTimers()
         fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
         vi.stubGlobal('fetch', fetchMock)
 
@@ -34,6 +36,7 @@ describe('ControlPanel keyboard safety', () => {
     })
 
     afterEach(() => {
+        vi.useRealTimers()
         app.unmount()
         root.remove()
         vi.unstubAllGlobals()
@@ -80,5 +83,54 @@ describe('ControlPanel keyboard safety', () => {
         await nextTick()
 
         expect(sentCommands(fetchMock)).toEqual(['F', 'S'])
+    })
+
+    describe('holding a command (server deadman refresh)', () => {
+        it('re-sends a held key well inside the 2 s server timeout', async () => {
+            useUIStore().setKey('w', true)
+            await nextTick()
+            expect(sentCommands(fetchMock)).toEqual(['F'])
+
+            await vi.advanceTimersByTimeAsync(1000)
+
+            const cmds = sentCommands(fetchMock)
+            expect(cmds.length).toBeGreaterThanOrEqual(4) // initial + ~4 refreshes/s
+            expect(new Set(cmds)).toEqual(new Set(['F']))
+        })
+
+        it('re-sends a held D-pad button', async () => {
+            const btn = root.querySelector('.dpad-btn.forward')!
+            btn.dispatchEvent(new MouseEvent('mousedown'))
+            await nextTick()
+
+            await vi.advanceTimersByTimeAsync(600)
+
+            expect(sentCommands(fetchMock).filter(c => c === 'F').length).toBeGreaterThanOrEqual(3)
+        })
+
+        it('stops re-sending once released', async () => {
+            const ui = useUIStore()
+            ui.setKey('w', true)
+            await nextTick()
+            ui.setKey('w', false)
+            await nextTick()
+            const before = sentCommands(fetchMock).length
+
+            await vi.advanceTimersByTimeAsync(1000)
+
+            expect(sentCommands(fetchMock).length).toBe(before)
+            expect(sentCommands(fetchMock).at(-1)).toBe('S')
+        })
+
+        it('does not refresh when not in manual mode', async () => {
+            useUIStore().setKey('w', true)
+            await nextTick()
+            useRobotStore().controlMode = 'hold'
+            const before = sentCommands(fetchMock).length
+
+            await vi.advanceTimersByTimeAsync(1000)
+
+            expect(sentCommands(fetchMock).length).toBe(before)
+        })
     })
 })
