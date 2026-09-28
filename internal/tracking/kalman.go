@@ -173,9 +173,13 @@ func (kf *KalmanFilter) GetCovariance() [4][4]float64 {
 	return kf.P
 }
 
+// bboxToCenter returns the bbox's center point. The sum is cast to float64
+// before dividing by 2, not after — integer division would truncate an odd
+// pixel sum toward zero and lose up to 0.5px per measurement, compounding
+// across frames into real-world position error.
 func bboxToCenter(bbox [4]int) (float64, float64) {
-	cx := float64((bbox[0] + bbox[2]) / 2)
-	cy := float64((bbox[1] + bbox[3]) / 2)
+	cx := float64(bbox[0]+bbox[2]) / 2.0
+	cy := float64(bbox[1]+bbox[3]) / 2.0
 	return cx, cy
 }
 

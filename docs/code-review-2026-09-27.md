@@ -639,9 +639,22 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `./scripts/test.sh --verbose` pass, including `internal/planning`'s
   existing VO/collision-avoidance regression tests (findings #4, #10)
   unchanged.
-- **Integer-division truncation** in `internal/tracking/kalman.go:176-179`
+- **[FIXED] Integer-division truncation** in `internal/tracking/kalman.go:176-179`
   (`bboxToCenter`) — divides before casting to float, losing up to 0.5px per
   measurement, compounding across frames into real-world position error.
+  **Investigation:** confirmed — `cx := float64((bbox[0] + bbox[2]) / 2)`
+  computes the sum in `int`, truncating toward zero for any odd sum, and
+  *then* converts to `float64`, so the fractional `.5px` is gone before it
+  ever reaches the Kalman filter. All existing `TestBboxToCenter` cases used
+  even sums and didn't catch it. Called on every detection every frame
+  (`bytetrack.go:85,112,222,235`), so the error is systematic, not
+  occasional.
+  **Fix:** swapped the order — cast each coordinate to `float64` first, then
+  add and divide by `2.0` — so the center is computed at full precision.
+  Added two odd-sum regression cases to `TestBboxToCenter`
+  (`internal/tracking/kalman_test.go`) that fail against the old code and
+  pass with the fix. `./scripts/build.sh` and `./scripts/test.sh --verbose`
+  pass.
 - **No `dt` handling in the Kalman filter** — constant-velocity model assumes
   `dt = 1` implicitly; variable frame timing (drops, latency) silently produces
   wrong velocity/covariance estimates with no documentation of the assumption.

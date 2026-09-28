@@ -161,6 +161,10 @@ func TestBboxToCenter(t *testing.T) {
 		{[4]int{0, 0, 100, 200}, 50, 100},
 		{[4]int{10, 20, 110, 220}, 60, 120},
 		{[4]int{0, 0, 0, 0}, 0, 0},
+		// Odd coordinate sums: regression test for integer-division
+		// truncation (dividing before casting to float loses the .5px).
+		{[4]int{0, 0, 101, 201}, 50.5, 100.5},
+		{[4]int{1, 1, 100, 200}, 50.5, 100.5},
 	}
 
 	for _, tt := range tests {
