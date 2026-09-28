@@ -91,9 +91,8 @@ func TestTrackingToPositionPipeline(t *testing.T) {
 
 func TestPlannerToControllerPipeline(t *testing.T) {
 	plannerConfig := &planning.PlannerConfig{
-		AStarConfig:            nil,
-		VelocityObstacleConfig: nil,
-		CollisionMargin:        0.05,
+		AStarConfig:     nil,
+		CollisionMargin: 0.05,
 	}
 	planner := planning.NewPlanner(plannerConfig)
 	if planner == nil {

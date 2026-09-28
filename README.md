@@ -10,7 +10,7 @@ Built for [Vorpal the Hexapod](https://log.ekpyroticfrood.net/vorpal-the-hexapod
 
 - **AprilTag identification** — each robot wears a unique tag; the system tracks multiple robots simultaneously
 - **Background-subtraction obstacle detection** — real-time detection of objects on the playing field
-- **A\* path planning** — global paths with velocity-obstacle local avoidance and multi-robot coordination
+- **A\* path planning** — global paths around static and detected dynamic obstacles, with bearing-based steering
 - **Vue 3 web UI** — live MJPEG video with canvas overlay showing tracks, paths, and obstacle boundaries; click anywhere to send a robot there
 - **Guided web calibration** — print five tags, drop them roughly in the boxes the wizard draws on the video, and it solves the pixel-to-floor mapping (no measuring) and reports its accuracy in centimeters
 - **Arduino serial control** — single ASCII commands (F/B/L/R/S) at 9600 baud
@@ -215,7 +215,7 @@ robot_tracker_go/
 │   ├── config/                 # YAML configuration loading
 │   ├── controller/             # Arduino serial communication
 │   ├── detection/              # AprilTag detection + background-subtraction obstacle detection
-│   ├── planning/               # A* path planning + velocity obstacles
+│   ├── planning/               # A* path planning
 │   ├── position/               # Homography calibration (pixel ↔ world) and calibration target fit
 │   ├── tracking/               # ByteTrack multi-object tracker + Kalman filter
 │   ├── ui/                     # Gin HTTP server, MJPEG stream, WebSocket, REST API

@@ -822,10 +822,33 @@ ranked by severity. This file is the deliverable — a report, not an implementa
   `trackAnimation.test.ts` and `utils/__tests__/canvasTransform.test.ts`.
   `CLAUDE.md` notes the new layout. Type-check, lint, `npm run test:run`,
   `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
-- **Unclear ownership between `Planner`, `Coordinator`, and `LocalPlanner`** — two
+- **[FIXED] Unclear ownership between `Planner`, `Coordinator`, and `LocalPlanner`** — two
   parallel local-avoidance pipelines exist (one live, one dead per the tech-debt
   section above); a newcomer must read all three files plus `main.go` to figure
   out which path actually runs.
+  **Investigation:** the headline premise was already mostly resolved by two
+  earlier tech-debt fixes ("Dead second collision-avoidance/coordination
+  system" and "Three near-duplicate compute velocity entry points"): the
+  Coordinator conflict resolver and every `LocalPlanner` entry point were gone,
+  leaving `Coordinator` a plain state store and `Planner` the A*/waypoint
+  owner. What remained was the third leg: `LocalPlanner` (`local.go`, 362
+  lines of velocity-obstacle math) still compiled, still constructed by
+  `NewPlanner`, exposed via `Planner.LocalPlanner()` and
+  `PlannerConfig.VelocityObstacleConfig`, but reachable only from its own
+  tests — exactly the "read three files to see what runs" trap. Also found
+  `Planner.CheckCollision`, `Planner.GetPathCost`, and
+  `Coordinator.GetRobotCount` with zero callers anywhere. README.md, PLAN.md,
+  and a config comment still advertised velocity-obstacle avoidance.
+  **Fix:** (user chose deletion) removed `local.go` and `local_test.go`
+  (including the regression tests for findings #4/#10, which guarded bugs in
+  the removed code; the VO math remains in git history), the `localPlanner`
+  field/constructor wiring, `Planner.LocalPlanner()`,
+  `PlannerConfig.VelocityObstacleConfig` (and its `nil` arguments in
+  `cmd/main.go` and `internal/integration_test.go`), and the three unused
+  methods above. Added an ownership doc comment on `Planner` (A* + waypoints;
+  `Coordinator` = state; steering lives in `controller.BearingToCommand`) and
+  corrected CLAUDE.md, README.md, PLAN.md, and the yaml comment. No behavior
+  change. `./scripts/build.sh` and `./scripts/test.sh --verbose` pass.
 - **`foregroundModel.step`** (~130 lines, `internal/detection/foreground_model.go:179-308`)
   inlines six per-pixel concerns in one dense loop. Defensible as a hot path, but
   it's why the newest shadow-suppression logic had to be threaded into the middle

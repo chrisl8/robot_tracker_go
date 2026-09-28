@@ -217,7 +217,7 @@ local_planning:
     draw_pause_indicator: true
     video_output_dir: "tests/videos"
 
-# Path Execution Settings (A* + LocalPlanner hybrid)
+# Path Execution Settings (A* waypoints + bearing-based steering)
 #
 # These values were empirically tuned with AprilTag-based heading detection.
 # AprilTag heading noise characteristics (measured):

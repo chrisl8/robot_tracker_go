@@ -10,7 +10,7 @@
 | Serial Protocol | Arduino command encoding (F/B/L/R/S) | Complete |
 | Position Estimation | Homography, pixel↔world transforms | Complete |
 | Multi-Object Tracking | ByteTrack, Kalman filter, Hungarian algorithm | Complete |
-| Path Planning | A*, LocalPlanner (Velocity Obstacles), Coordinator | Complete |
+| Path Planning | A*, Coordinator (state store) | Complete |
 | Dynamic Obstacles | Background-subtraction detection, collision avoidance | Complete |
 | Static Obstacles | UI drawing + YAML persistence | Complete |
 
@@ -80,7 +80,7 @@
                              [A* Path Planning]   [WebSocket UI]
                                     │                  │
                                     ▼                  ▼
-                        [LocalPlanner (VO)] ──> [Arduino Serial]
+                        [Bearing steering] ──> [Arduino Serial]
 ```
 
 ### Key Packages
@@ -92,7 +92,7 @@
 | `internal/position` | Homography, transforms | `types.go`, `homography.go`, `estimator.go` |
 | `internal/detection` | AprilTag + background-subtraction obstacles | `types.go`, `apriltag.go`, `foreground.go`, `pipeline.go` |
 | `internal/tracking` | Multi-object tracking | `types.go`, `kalman.go`, `hungarian.go`, `bytetrack.go` |
-| `internal/planning` | Path planning | `types.go`, `astar.go`, `local.go`, `coordinator.go`, `collision.go`, `planner.go` |
+| `internal/planning` | Path planning | `types.go`, `astar.go`, `coordinator.go`, `collision.go`, `planner.go` |
 | `internal/controller` | Serial control | `protocol.go`, `arduino.go`, `queue.go`, `executor.go` |
 | `internal/ui` | Web server | `webserver.go`, `embed.go`, `types.go` |
 
@@ -164,7 +164,7 @@ robot_tracker_go/
 │   ├── position/                  # Homography & transforms
 │   ├── detection/                 # AprilTag + background-subtraction obstacles
 │   ├── tracking/                 # ByteTrack
-│   ├── planning/                 # A* + LocalPlanner
+│   ├── planning/                 # A* + waypoints
 │   ├── controller/               # Arduino serial
 │   └── ui/                       # Web server + Vue UI
 ├── ui/                           # Vue 3 frontend source

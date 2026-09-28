@@ -66,10 +66,6 @@ func (c *Coordinator) UpdateRobots(positions map[int][2]float64, velocities map[
 	}
 }
 
-func (c *Coordinator) GetRobotCount() int {
-	return len(c.robots)
-}
-
 func (c *Coordinator) GetGoal(robotID int) ([2]float64, bool) {
 	goal, exists := c.goals[robotID]
 	return goal, exists

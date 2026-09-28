@@ -410,9 +410,8 @@ func (rs *RobotSystem) initTracker() {
 // initPlanner sets up the path planner.
 func (rs *RobotSystem) initPlanner() {
 	plannerConfig := &planning.PlannerConfig{
-		AStarConfig:            nil,
-		VelocityObstacleConfig: nil,
-		CollisionMargin:        0.08,
+		AStarConfig:     nil,
+		CollisionMargin: 0.08,
 	}
 	rs.planning.planner = planning.NewPlanner(plannerConfig)
 	utils.Logf("Planner initialized")

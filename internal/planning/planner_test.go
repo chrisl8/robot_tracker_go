@@ -27,10 +27,7 @@ func TestNewPlanner_WithConfig(t *testing.T) {
 		AStarConfig: &AStarConfig{
 			GridWidthMeters:  200,
 			GridHeightMeters: 200,
-			Resolution: 0.1,
-		},
-		VelocityObstacleConfig: &VelocityObstacleConfig{
-			MaxVelocity: 0.5,
+			Resolution:       0.1,
 		},
 		CollisionMargin: 0.1,
 	}
@@ -39,10 +36,6 @@ func TestNewPlanner_WithConfig(t *testing.T) {
 
 	if planner.globalPlanner == nil {
 		t.Error("globalPlanner should be initialized")
-	}
-
-	if planner.localPlanner == nil {
-		t.Error("localPlanner should be initialized")
 	}
 
 	if planner.collisionDetector == nil {
@@ -130,16 +123,6 @@ func TestPlanner_GetPaths(t *testing.T) {
 	}
 }
 
-func TestPlanner_LocalPlanner(t *testing.T) {
-	planner := NewPlanner(nil)
-
-	lp := planner.LocalPlanner()
-
-	if lp == nil {
-		t.Error("LocalPlanner should not return nil")
-	}
-}
-
 func TestPlanner_SetGoal_UpdatesCoordinator(t *testing.T) {
 	planner := NewPlanner(nil)
 
@@ -190,12 +173,12 @@ func TestPlanner_AdvancePastWaypoints(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		path          [][2]float64
-		pos           [2]float64
-		threshold     float64
-		wantMore      bool // expect more waypoints remaining
-		wantWpIndex   int  // expected currentWaypoint after call (-1 = path deleted)
+		name        string
+		path        [][2]float64
+		pos         [2]float64
+		threshold   float64
+		wantMore    bool // expect more waypoints remaining
+		wantWpIndex int  // expected currentWaypoint after call (-1 = path deleted)
 	}{
 		{
 			name:        "within threshold advances one",
