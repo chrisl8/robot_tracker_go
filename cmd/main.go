@@ -821,15 +821,15 @@ func (rs *RobotSystem) StartCamera() error {
 	utils.Logf("Starting camera...")
 	if rs.capture.cam == nil {
 		utils.Logf("No camera available")
-		rs.capture.cameraRunning = false
+		rs.capture.cameraRunning.Store(false)
 		return nil
 	}
 	if err := rs.capture.cam.Start(); err != nil {
 		utils.Logf("Failed to start camera: %v", err)
-		rs.capture.cameraRunning = false
+		rs.capture.cameraRunning.Store(false)
 		return err
 	}
-	rs.capture.cameraRunning = true
+	rs.capture.cameraRunning.Store(true)
 	utils.Logf("Camera started: %s", rs.capture.cam.GetName())
 	if !rs.demoMode {
 		rs.startFrameWatchdog()
@@ -898,6 +898,7 @@ func (rs *RobotSystem) startFrameWatchdog() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
 			ticks := 0
+			stallHalted := false
 			for {
 				select {
 				case <-stop:
@@ -911,8 +912,21 @@ func (rs *RobotSystem) startFrameWatchdog() {
 					if n := rs.stats.lastFrameNanos.Load(); n != 0 {
 						last = time.Unix(0, n)
 					}
-					if age := time.Since(last); age > frameStallThreshold && rs.web.webServer != nil {
+					age := time.Since(last)
+					if age > frameStallThreshold && rs.web.webServer != nil {
 						rs.web.webServer.BroadcastCameraStalled(time.Since(rs.stats.startTime).Seconds(), age.Seconds())
+					}
+					// Autonomous control only runs from the frame loop, so with no
+					// frames nothing would ever stop the robot. Halt it once per
+					// stall (not every tick, so it can be driven again by hand).
+					if age > frameStallThreshold && !stallHalted {
+						stallHalted = true
+						utils.Logf("Camera stalled for %.1fs: halting robot", age.Seconds())
+						if rs.io.commandQueue != nil {
+							rs.io.commandQueue.HaltMotion()
+						}
+					} else if age <= frameStallThreshold {
+						stallHalted = false
 					}
 				}
 			}
@@ -935,21 +949,23 @@ func (rs *RobotSystem) Stop() {
 				close(rs.stats.watchdogStop)
 			}
 		})
+		rs.capture.cameraRunning.Store(false)
+		// Wait for any in-flight frame and reject later ones, so the saves and
+		// Closes below never race the frame loop's use of the detector.
+		rs.capture.frameMu.Lock()
+		rs.capture.stopped = true
+		rs.capture.frameMu.Unlock()
 		if rs.detection.fg != nil {
 			// A final, blocking save so a clean shutdown never has to wait for
-			// the next periodic save to capture the current background. Done
-			// before anything stops producing frames, so it captures live state.
+			// the next periodic save to capture the current background.
 			rs.detection.fg.det.SaveNow()
 		}
-		rs.capture.cameraRunning = false
 		if rs.capture.cam != nil {
 			rs.capture.cam.Stop()
 		}
 		if rs.detection.fg != nil {
-			// Release the detector's OpenCV resources (previously never done on
-			// shutdown, leaking them). This comes after cameraRunning is false and
-			// the camera itself is stopped, so the frame loop is no longer calling
-			// into the detector by the time its Mats are closed.
+			// Release the detector's OpenCV resources. The frame loop can no
+			// longer be inside the detector (see frameMu above).
 			rs.detection.fg.det.Close()
 		}
 		if rs.io.commandQueue != nil {
@@ -1077,6 +1093,12 @@ func (rs *RobotSystem) broadcastFrameStats(tagCount, trackCount int, tags []dete
 }
 
 func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
+	rs.capture.frameMu.Lock()
+	defer rs.capture.frameMu.Unlock()
+	if rs.capture.stopped {
+		return
+	}
+
 	if img == nil {
 		return
 	}
@@ -1687,6 +1709,12 @@ func drawCircleOnRGBA(img *image.RGBA, cx, cy, r int, c color.RGBA) {
 }
 
 func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags []detection.AprilTag) {
+	rs.capture.frameMu.Lock()
+	defer rs.capture.frameMu.Unlock()
+	if rs.capture.stopped {
+		return
+	}
+
 	if img == nil {
 		return
 	}
@@ -1878,7 +1906,7 @@ func main() {
 			frameFailures := 0
 			minFrameInterval := time.Second / time.Duration(rs.cfg.EffectiveMaxFPS())
 			utils.Logf("Processing capped at %d fps", rs.cfg.EffectiveMaxFPS())
-			for rs.capture.cameraRunning {
+			for rs.capture.cameraRunning.Load() {
 				startTime := time.Now()
 				frame, err := rs.capture.cam.GetFrame()
 				if err != nil {

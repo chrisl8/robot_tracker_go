@@ -149,3 +149,70 @@ func TestCaptureLoop_StopEndsARecoveryInProgress(t *testing.T) {
 		t.Fatal("Stop did not return while the camera was trying to reopen")
 	}
 }
+
+func TestStop_IsIdempotent(t *testing.T) {
+	cam := newTestCamera(&fakeSource{}, 5, nil)
+	waitFor(t, "first frame", func() bool { return gotFrame(cam) })
+
+	cam.Stop()
+	cam.Stop() // used to panic: close of closed channel
+}
+
+// blockingSource's Read blocks until released and records whether the device
+// was closed while a Read was still in flight (a native use-after-free).
+type blockingSource struct {
+	inRead          atomic.Bool
+	closedWhileRead atomic.Bool
+	entered         chan struct{}
+	release         chan struct{}
+	closed          atomic.Bool
+}
+
+func (b *blockingSource) Read(m *gocv.Mat) bool {
+	b.inRead.Store(true)
+	defer b.inRead.Store(false)
+	select {
+	case b.entered <- struct{}{}:
+	default:
+	}
+	<-b.release
+	return false
+}
+
+func (b *blockingSource) Close() error {
+	if b.inRead.Load() {
+		b.closedWhileRead.Store(true)
+	}
+	b.closed.Store(true)
+	return nil
+}
+
+func (b *blockingSource) IsOpened() bool { return !b.closed.Load() }
+
+func TestStop_WaitsForInFlightReadBeforeClosingDevice(t *testing.T) {
+	src := &blockingSource{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	cam := newTestCamera(src, 1000, nil)
+	<-src.entered // capture loop is now blocked inside Read
+
+	stopped := make(chan struct{})
+	go func() { cam.Stop(); close(stopped) }()
+
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned while a Read was still in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(src.release) // let the Read finish
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return after the Read finished")
+	}
+	if src.closedWhileRead.Load() {
+		t.Error("device was closed while Read was in flight")
+	}
+	if !src.closed.Load() {
+		t.Error("device was never closed")
+	}
+}

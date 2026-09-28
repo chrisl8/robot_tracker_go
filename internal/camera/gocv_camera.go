@@ -49,7 +49,7 @@ type GoCVCamera struct {
 	width    int
 	height   int
 	fps      int
-	running  bool
+	running  bool // guarded by mu
 	cameraID int
 	url      string
 	isFile   bool
@@ -63,6 +63,7 @@ type GoCVCamera struct {
 	latestFrame *Frame
 	frameErr    error
 	stopCh      chan struct{}
+	stopOnce    sync.Once
 	wg          sync.WaitGroup
 }
 
@@ -115,6 +116,9 @@ func NewGoCVCamera(config CameraConfig) (*GoCVCamera, error) {
 func openUSBCapture(cameraID, width, height, fps int) (*gocv.VideoCapture, error) {
 	cap, err := gocv.VideoCaptureDevice(cameraID)
 	if err != nil || cap == nil || !cap.IsOpened() {
+		if cap != nil {
+			_ = cap.Close() // a failed open still allocates a native capture
+		}
 		hint := cameraPermissionHint()
 		return nil, fmt.Errorf("failed to open camera %d: %w%s", cameraID, &CameraError{Message: "camera not available"}, hint)
 	}
@@ -178,6 +182,9 @@ func NewGoCVIPCamera(url string, width, height, fps int) (*GoCVCamera, error) {
 func openStreamCapture(url string) (*gocv.VideoCapture, error) {
 	cap, err := gocv.VideoCaptureFile(url)
 	if err != nil || cap == nil || !cap.IsOpened() {
+		if cap != nil {
+			_ = cap.Close() // a failed open still allocates a native capture
+		}
 		return nil, fmt.Errorf("failed to open video file: %s: %w", url, &CameraError{Message: "file not accessible"})
 	}
 
@@ -291,16 +298,50 @@ func (c *GoCVCamera) reopenDevice() bool {
 	}
 }
 
+func (c *GoCVCamera) setRunning(v bool) {
+	c.mu.Lock()
+	c.running = v
+	c.mu.Unlock()
+}
+
+func (c *GoCVCamera) isRunning() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.running
+}
+
 func (c *GoCVCamera) Start() error {
-	c.running = true
+	c.setRunning(true)
 	return nil
 }
 
+// stopWaitTimeout bounds how long Stop waits for the capture loop to leave a
+// (possibly hung) device Read before closing the device anyway.
+const stopWaitTimeout = 3 * time.Second
+
+// Stop is safe to call more than once. It waits for the capture loop to exit
+// before closing the device, because closing a device another goroutine is
+// inside Read on is a native use-after-free; the wait is bounded so a wedged
+// camera can't hang shutdown.
 func (c *GoCVCamera) Stop() {
-	c.running = false
-	if c.stopCh != nil {
-		close(c.stopCh)
+	c.setRunning(false)
+	c.stopOnce.Do(func() {
+		if c.stopCh != nil {
+			close(c.stopCh)
+		}
+	})
+
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(stopWaitTimeout):
+		utils.Logf("Camera capture loop did not exit within %v; closing device anyway", stopWaitTimeout)
 	}
+
 	c.mu.Lock()
 	dev := c.device
 	c.device = nil
@@ -311,11 +352,10 @@ func (c *GoCVCamera) Stop() {
 	if c.cap != nil && c.cap.IsOpened() {
 		_ = c.cap.Close()
 	}
-	c.wg.Wait()
 }
 
 func (c *GoCVCamera) GetFrame() (*Frame, error) {
-	if !c.running {
+	if !c.isRunning() {
 		return nil, &CameraError{Message: "camera not running"}
 	}
 
@@ -352,7 +392,7 @@ func (c *GoCVCamera) GetFrame() (*Frame, error) {
 }
 
 func (c *GoCVCamera) GetFrameAsImage() (interface{}, error) {
-	if !c.running {
+	if !c.isRunning() {
 		return nil, &CameraError{Message: "camera not running"}
 	}
 
@@ -406,11 +446,11 @@ func (c *GoCVCamera) GetFPS() int {
 }
 
 func (c *GoCVCamera) IsRunning() bool {
-	return c.running
+	return c.isRunning()
 }
 
 func (c *GoCVCamera) GetRawJPEG() ([]byte, error) {
-	if !c.running {
+	if !c.isRunning() {
 		return nil, &CameraError{Message: "camera not running"}
 	}
 

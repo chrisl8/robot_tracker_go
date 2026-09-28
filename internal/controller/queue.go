@@ -137,6 +137,14 @@ func (q *CommandQueue) EmergencyStop() {
 	q.sendStopDirect()
 }
 
+// HaltMotion clears the active command and sends Stop immediately, but leaves
+// the queue running so control can resume afterwards. Used when the robot must
+// not keep moving on its last command, e.g. the camera has stalled.
+func (q *CommandQueue) HaltMotion() {
+	q.ClearActiveCommand()
+	q.sendStopDirect()
+}
+
 // ClearActiveCommand clears the active command without stopping the queue.
 // Used on mode transitions to stop re-sending movement commands.
 func (q *CommandQueue) ClearActiveCommand() {

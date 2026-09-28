@@ -36,6 +36,15 @@ func (p *recordingPort) commands() []Command {
 	return out
 }
 
+// lastCommand returns the most recent command written, or 0 if none.
+func (p *recordingPort) lastCommand() Command {
+	cmds := p.commands()
+	if len(cmds) == 0 {
+		return 0
+	}
+	return cmds[len(cmds)-1]
+}
+
 func newRecordingQueue() (*CommandQueue, *recordingPort) {
 	port := &recordingPort{}
 	ctrl := NewArduinoController("test", 0)
@@ -105,9 +114,8 @@ func TestCommandQueue_EmergencyStop_DropsBufferedCommands(t *testing.T) {
 		q.EmergencyStop()
 		time.Sleep(2 * time.Millisecond) // give the run loop a chance to misbehave
 
-		cmds := port.commands()
-		if len(cmds) == 0 || cmds[len(cmds)-1] != CommandStop {
-			t.Fatalf("iteration %d: last command %q, want stop", i, cmds)
+		if got := port.lastCommand(); got != CommandStop {
+			t.Fatalf("iteration %d: last command %q, want stop", i, got)
 		}
 	}
 }
@@ -118,9 +126,34 @@ func TestCommandQueue_CanRestartAfterStop(t *testing.T) {
 	q.Stop()
 	q.Start()
 	q.Enqueue(CommandForward)
-	waitFor(t, func() bool {
-		c := port.commands()
-		return len(c) > 0 && c[len(c)-1] == CommandForward
-	})
+	waitFor(t, func() bool { return port.lastCommand() == CommandForward })
 	q.Stop()
+}
+
+func TestCommandQueue_HaltMotion_StopsRobotAndKeepsQueueRunning(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.Start()
+	defer q.Stop()
+	q.Enqueue(CommandForward)
+	waitFor(t, func() bool { return len(port.commands()) == 1 })
+
+	q.HaltMotion()
+
+	if got := port.lastCommand(); got != CommandStop {
+		t.Errorf("last command %q, want stop", got)
+	}
+	if !q.IsRunning() {
+		t.Error("queue should still be running after HaltMotion")
+	}
+	// The heartbeat must not resurrect the old Forward.
+	q.mu.Lock()
+	active := q.hasActiveCommand
+	q.mu.Unlock()
+	if active {
+		t.Error("active command should be cleared")
+	}
+
+	// And it can be driven again afterwards.
+	q.Enqueue(CommandLeft)
+	waitFor(t, func() bool { return port.lastCommand() == CommandLeft })
 }

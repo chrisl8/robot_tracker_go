@@ -34,8 +34,15 @@ import (
 // cameraSubsystem owns the physical/virtual camera handle used for capture.
 type cameraSubsystem struct {
 	cam           camera.Camera
-	cameraRunning bool
+	cameraRunning atomic.Bool
 	cameraConfig  *camera.CameraConfig // stored for retry if initial open fails
+
+	// frameMu is held for the whole of ProcessFrame/ProcessDemoFrame. Stop()
+	// takes it (and sets stopped) so it never saves or closes the detector's
+	// OpenCV resources while a frame is still being processed, and so any
+	// frame arriving after shutdown began is dropped instead.
+	frameMu sync.Mutex
+	stopped bool // guarded by frameMu
 }
 
 // detectionSubsystem owns AprilTag detection and the background-subtraction
