@@ -301,9 +301,7 @@ type CommandRequest struct {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     originAllowed,
 }
 
 const wsMaxMessageSize = 4096 // the only thing a client sends is a small {"command": "..."} JSON object
@@ -328,7 +326,7 @@ func NewWebServer(addr string) *WebServer {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery())
-	engine.Use(corsMiddleware())
+	engine.Use(requestGuardMiddleware())
 
 	server := &WebServer{
 		router: webRouter{
@@ -347,19 +345,6 @@ func NewWebServer(addr string) *WebServer {
 
 	server.setupRoutes()
 	return server
-}
-
-func corsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusOK)
-			return
-		}
-		c.Next()
-	}
 }
 
 func (s *WebServer) setupRoutes() {
@@ -1206,6 +1191,10 @@ func (s *WebServer) Start() {
 		Addr:              s.router.addr,
 		Handler:           s.router.engine,
 		ReadHeaderTimeout: 5 * time.Second,
+		// No WriteTimeout: the MJPEG stream and WebSocket write for as long as
+		// the client stays connected.
+		ReadTimeout: 30 * time.Second,
+		IdleTimeout: 2 * time.Minute,
 	}
 	s.router.httpServerMu.Lock()
 	s.router.httpServer = srv
@@ -1364,21 +1353,18 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 
 	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
 
-	newObs := planning.NewRectObstacle(fmt.Sprintf("obstacle_%d", len(s.obstacles.list)+1), worldTL, worldBR)
+	newObs := planning.NewRectObstacle(uniqueObstacleName(s.obstacles.list, req.Name), worldTL, worldBR)
 	newObs.PixelsTopLeft = req.PixelTopLeft
 	newObs.PixelsBottomRight = req.PixelBottomRight
 
-	if req.Name != "" {
-		newObs.Name = req.Name
-	}
-
 	s.obstacles.list = append(s.obstacles.list, newObs)
 	s.obstacles.saved = false
+	count := len(s.obstacles.list)
 
 	s.obstacles.mutex.Unlock()
 	s.notifyObstaclesChanged()
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": len(s.obstacles.list)})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": newObs.Name, "count": count})
 }
 
 func (s *WebServer) handleObstacleDelete(c *gin.Context) {
