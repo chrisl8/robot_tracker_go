@@ -50,7 +50,7 @@ func TestGetObstaclesFilename(t *testing.T) {
 // override that doesn't exist on disk is ignored in favor of the per-camera
 // default; and the per-camera default itself falls back further to the
 // camera-agnostic default when no camera name is known. This is a
-// regression test for docs/code-review-2026-09-27.md's "obstacle-file path
+// regression test for docs/archived/code-review-2026-09-27.md's "obstacle-file path
 // resolution logic spread across three places" tech-debt finding.
 func TestResolveObstaclesPath(t *testing.T) {
 	dir := t.TempDir()

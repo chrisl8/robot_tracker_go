@@ -923,7 +923,7 @@ func (rs *RobotSystem) startFrameWatchdog() {
 // Stop shuts the system down. It is safe to call more than once, and safe to
 // call concurrently: main() both defers a call and calls it from the SIGINT/
 // SIGTERM handler goroutine, and the handler's os.Exit(0) only coincidentally
-// prevents both from running today (see docs/code-review-2026-09-27.md #15).
+// prevents both from running today (see docs/archived/code-review-2026-09-27.md #15).
 // stopOnce makes that safety an actual invariant rather than a side effect of
 // process-exit timing, so a future refactor (e.g. removing the os.Exit) can't
 // reintroduce a double-close panic.
@@ -1740,7 +1740,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 					// path planning and autonomous control (previously demo
 					// tracks were drawn/broadcast but never registered with
 					// the planner, so they never got a path, a heading, or
-					// autonomous driving -- see docs/code-review-2026-09-27.md
+					// autonomous driving -- see docs/archived/code-review-2026-09-27.md
 					// tech-debt #1).
 					worldPos, robotDiameter := rs.updateTrackWorldPosition(track, true)
 					if rs.planning.planner != nil {

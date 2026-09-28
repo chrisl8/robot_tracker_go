@@ -69,7 +69,7 @@ func demoTagAt(cx, cy float64) detection.AprilTag {
 
 // TestProcessDemoFrame_RegistersRobotAndRunsAutonomousControl guards
 // against the demo-mode divergence described in
-// docs/code-review-2026-09-27.md tech-debt #1: ProcessDemoFrame drew and
+// docs/archived/code-review-2026-09-27.md tech-debt #1: ProcessDemoFrame drew and
 // broadcast tracks but never called AddRobot/computeTrackHeading/
 // executeAutonomousControl, so demo robots never got a path, a heading, or
 // autonomous driving even with the UI switched to Autonomous. This feeds a

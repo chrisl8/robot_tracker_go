@@ -16,7 +16,7 @@ import (
 // switch from hand-built YAML text to yaml.Marshal: it checks the resulting
 // file still has the exact keys/nesting that
 // PositionEstimator.LoadObstacles's generic map-based parser expects
-// (docs/code-review-2026-09-27.md tech-debt: hand-rolled YAML string
+// (docs/archived/code-review-2026-09-27.md tech-debt: hand-rolled YAML string
 // building).
 func TestSaveObstaclesToFile_WritesParsableYAML(t *testing.T) {
 	server := NewWebServer(":0")

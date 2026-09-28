@@ -13,7 +13,7 @@ package planning
 // cmd/main.go — Planner's own thin wrappers around it (ComputeAllCommands,
 // ResolveConflicts) had zero callers either — so it was removed as dead code
 // (code review tech-debt: "Dead second collision-avoidance/coordination
-// system"). See docs/code-review-2026-09-27.md for the investigation.
+// system"). See docs/archived/code-review-2026-09-27.md for the investigation.
 type Coordinator struct {
 	robots    map[int]RobotState
 	goals     map[int][2]float64

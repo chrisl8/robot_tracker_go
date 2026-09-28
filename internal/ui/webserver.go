@@ -56,7 +56,7 @@ import (
 // GetObstaclesPath, and calibration.positionEstimator is also read by the
 // hub's BroadcastPaths. Fixing that pre-existing lack of synchronization is
 // a correctness change, out of scope here — see
-// docs/code-review-2026-09-27.md.
+// docs/archived/code-review-2026-09-27.md.
 type WebServer struct {
 	router      webRouter
 	hub         broadcastHub
@@ -1174,7 +1174,7 @@ func GetObstaclesFilename(cameraName string) string {
 // loadStaticObstacles), the position estimator's own obstacle copy
 // (RobotSystem.initPositionEstimator), and the web UI's save/clear handlers
 // (via GetObstaclesPath), so they can no longer drift out of sync (see
-// docs/code-review-2026-09-27.md).
+// docs/archived/code-review-2026-09-27.md).
 //
 // An explicitly configured path (ObstaclesConfig.File/Path, via GetPath())
 // is honored only if it points to a file that actually exists -- this lets

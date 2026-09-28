@@ -10,7 +10,7 @@ import (
 )
 
 // TestWebServer_StopShutsDownListener is the regression test for finding #12
-// in docs/code-review-2026-09-27.md: Stop() used to close an unused
+// in docs/archived/code-review-2026-09-27.md: Stop() used to close an unused
 // `stopChan` and flip a flag, but never stored or shut down the *http.Server
 // created inside Start()'s goroutine, so the HTTP/WS/MJPEG listener kept
 // accepting connections forever. Here we start a real listener, confirm it

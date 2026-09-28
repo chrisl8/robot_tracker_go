@@ -12,7 +12,7 @@ import (
 )
 
 // TestWebServer_SilentlyDeadClientIsCleanedUp is the regression test for
-// finding #11 in docs/code-review-2026-09-27.md: a client that vanishes
+// finding #11 in docs/archived/code-review-2026-09-27.md: a client that vanishes
 // without a clean TCP close (sleep, NAT timeout, cable pull) never makes
 // ReadMessage return on its own, so without a read deadline the server used
 // to leak that connection's goroutine and its s.clients entry forever. Here

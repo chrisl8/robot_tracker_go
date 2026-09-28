@@ -183,7 +183,7 @@ func TestDemoModeNeverUsesTheRealCalibrationFile(t *testing.T) {
 }
 
 // TestRobotSystem_Stop_IsIdempotent guards against the double-Stop() panic
-// described in docs/code-review-2026-09-27.md #15: main() both defers a call
+// described in docs/archived/code-review-2026-09-27.md #15: main() both defers a call
 // to Stop() and calls it from the SIGINT/SIGTERM handler goroutine, and only
 // the handler's os.Exit(0) happens to keep those from overlapping today. This
 // calls Stop() twice sequentially and many times concurrently, on a
