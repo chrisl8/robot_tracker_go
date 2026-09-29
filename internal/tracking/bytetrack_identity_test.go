@@ -160,3 +160,26 @@ func TestByteTrack_ResetClearsTimestamp(t *testing.T) {
 		t.Errorf("predictDt after Reset = %v, want the 1.0 first-frame default", got)
 	}
 }
+
+// Age is frames since creation, whether or not the track was matched that
+// frame. Matched tracks used to age twice per frame (Update and AgeTrack both
+// incremented it).
+func TestByteTrack_AgeCountsFramesSinceCreation(t *testing.T) {
+	bt := NewByteTrack(nil)
+	box := [4]int{100, 100, 160, 160}
+
+	res := &TrackingResult{}
+	for frame := 0; frame < 5; frame++ {
+		res = bt.Update([]Detection{tagged(box, 1, 1)}, float64(frame)*0.033, frame+1)
+	}
+	if got := mustTrackByTag(t, res, 1).Age; got != 5 {
+		t.Errorf("Age after 5 matched frames = %d, want 5", got)
+	}
+
+	for frame := 5; frame < 8; frame++ { // 3 frames with no detections
+		res = bt.Update(nil, float64(frame)*0.033, frame+1)
+	}
+	if got := mustTrackByTag(t, res, 1).Age; got != 8 {
+		t.Errorf("Age after 3 more unmatched frames = %d, want 8", got)
+	}
+}

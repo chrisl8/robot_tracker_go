@@ -49,13 +49,25 @@ func TestAStar_Plan_EmptyObstacles(t *testing.T) {
 	}
 }
 
+// Being at the goal is not a planning failure: the plan is just the goal itself.
 func TestAStar_Plan_SameStartGoal(t *testing.T) {
 	astar := NewAStar(nil)
 	point := [2]float64{1, 1}
-	_, found := astar.Plan(point, point, []Obstacle{}, 0)
+	path, found := astar.Plan(point, point, []Obstacle{}, 0)
 
-	if found {
-		t.Error("Plan should not find a path when start equals goal")
+	if !found || len(path) != 1 || path[0] != point {
+		t.Errorf("Plan(start == goal) = %v, %v; want the single goal waypoint", path, found)
+	}
+}
+
+// ...but a goal inside an obstacle is still a failure, even from the same cell.
+func TestAStar_Plan_SameStartGoalInsideObstacleFails(t *testing.T) {
+	astar := NewAStar(nil)
+	point := [2]float64{1, 1}
+	obstacles := []Obstacle{NewRectObstacle("box", [2]float64{0.9, 0.9}, [2]float64{1.1, 1.1})}
+
+	if _, found := astar.Plan(point, point, obstacles, 0); found {
+		t.Error("a goal inside an obstacle must not plan successfully")
 	}
 }
 

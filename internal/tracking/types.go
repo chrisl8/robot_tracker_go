@@ -104,7 +104,6 @@ func (t *Track) Update(bbox [4]int, timestamp, confidence float64) {
 	t.Timestamp = timestamp
 	t.Confidence = confidence
 	t.Hits++
-	t.Age++
 
 	t.History = append(t.History, TrackHistoryPoint{
 		Timestamp: timestamp,
@@ -120,6 +119,9 @@ func (t *Track) Update(bbox [4]int, timestamp, confidence float64) {
 	}
 }
 
+// AgeTrack advances Age by one frame. The tracker calls it once per track per
+// frame (matched or not), so Age is frames since creation. Update deliberately
+// does not age the track as well, or matched tracks would age twice per frame.
 func (t *Track) AgeTrack() {
 	t.Age++
 }

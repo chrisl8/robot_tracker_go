@@ -69,8 +69,8 @@ func TestTrack_Update(t *testing.T) {
 	if track.Confidence != 0.6 {
 		t.Errorf("Confidence = %f, want 0.6", track.Confidence)
 	}
-	if track.Age != 2 {
-		t.Errorf("Age = %d, want 2", track.Age)
+	if track.Age != 1 {
+		t.Errorf("Age = %d, want 1: Update must not age the track (AgeTrack does, once per frame)", track.Age)
 	}
 	if track.Hits != 2 {
 		t.Errorf("Hits = %d, want 2", track.Hits)

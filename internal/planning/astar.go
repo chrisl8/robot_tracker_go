@@ -81,8 +81,8 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 	offsetX := gridWidth / 2
 	offsetY := gridHeight / 2
 
-	startNode := &Node{Pos: [2]int{int(start[0]/a.config.Resolution) + offsetX, int(start[1]/a.config.Resolution) + offsetY}}
-	goalNode := &Node{Pos: [2]int{int(goal[0]/a.config.Resolution) + offsetX, int(goal[1]/a.config.Resolution) + offsetY}}
+	startNode := &Node{Pos: [2]int{a.cellIndex(start[0], offsetX), a.cellIndex(start[1], offsetY)}}
+	goalNode := &Node{Pos: [2]int{a.cellIndex(goal[0], offsetX), a.cellIndex(goal[1], offsetY)}}
 
 	utils.Debugf("A*: start world=(%.2f,%.2f) grid=(%d,%d), goal world=(%.2f,%.2f) grid=(%d,%d), gridSize=%dx%d, obstacles=%d\n",
 		start[0], start[1], startNode.Pos[0], startNode.Pos[1],
@@ -101,11 +101,6 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 		return nil, false
 	}
 
-	if startNode.Pos[0] == goalNode.Pos[0] && startNode.Pos[1] == goalNode.Pos[1] {
-		utils.Debugf("A*: FAILED - start == goal")
-		return nil, false
-	}
-
 	obstacleMap := make(map[[2]int]bool)
 	for _, obs := range obstacles {
 		gridObs := worldToGrid(obs, margin, a.config.Resolution, gridWidth, gridHeight)
@@ -117,6 +112,12 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 	if obstacleMap[goalNode.Pos] {
 		utils.Debugf("A*: FAILED - goal is inside obstacle")
 		return nil, false
+	}
+
+	// Already in the goal's cell: the plan is just to go to the goal. (This used
+	// to be reported as a planning failure.)
+	if startNode.Pos == goalNode.Pos {
+		return [][2]float64{goal}, true
 	}
 
 	// If the robot's current position is inside an expanded obstacle, clear
@@ -164,7 +165,7 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 	for openSet.Len() > 0 {
 		iterations++
 		if iterations > a.config.MaxIterations {
-			utils.Debugf("A*: FAILED - exceeded max iterations (%d)",a.config.MaxIterations)
+			utils.Debugf("A*: FAILED - exceeded max iterations (%d)", a.config.MaxIterations)
 			return nil, false
 		}
 
@@ -182,7 +183,10 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 
 		if current.Pos == goalNode.Pos {
 			path := a.reconstructPath(cameFrom, current, offsetX, offsetY)
-			utils.Debugf("A*: SUCCESS - found path with %d waypoints in %d iterations",len(path), iterations)
+			// Cell centres are on the grid's 5cm lattice; finish at the exact
+			// point the operator asked for.
+			path[len(path)-1] = goal
+			utils.Debugf("A*: SUCCESS - found path with %d waypoints in %d iterations", len(path), iterations)
 			return path, true
 		}
 
@@ -212,17 +216,39 @@ func (a *AStar) getNeighbors(node *Node, width, height int, obstacles map[[2]int
 		{1, 1}, {1, -1}, {-1, 1}, {-1, -1},
 	}
 
+	free := func(x, y int) bool {
+		return x >= 0 && x < width && y >= 0 && y < height && !obstacles[[2]int{x, y}]
+	}
+
 	neighbors := make([]*Node, 0)
 	for _, dir := range directions {
 		nx, ny := node.Pos[0]+dir[0], node.Pos[1]+dir[1]
-		pos := [2]int{nx, ny}
-
-		if nx >= 0 && nx < width && ny >= 0 && ny < height && !obstacles[pos] {
-			neighbors = append(neighbors, &Node{Pos: pos})
+		if !free(nx, ny) {
+			continue
 		}
+		// A diagonal move passes the corner shared with both orthogonal
+		// neighbours; if either is blocked the robot would clip that obstacle
+		// (or squeeze through a zero-width gap between two of them).
+		if dir[0] != 0 && dir[1] != 0 && (!free(node.Pos[0]+dir[0], node.Pos[1]) || !free(node.Pos[0], node.Pos[1]+dir[1])) {
+			continue
+		}
+		neighbors = append(neighbors, &Node{Pos: [2]int{nx, ny}})
 	}
 
 	return neighbors
+}
+
+// cellIndex is the grid index of the cell containing world coordinate v. It
+// floors (not truncates toward zero), matching how obstacles are rasterized in
+// worldToGrid; truncation put every negative coordinate one cell off.
+func (a *AStar) cellIndex(v float64, offset int) int {
+	return int(math.Floor(v/a.config.Resolution)) + offset
+}
+
+// cellCentre is the world coordinate of the centre of grid index idx, which is
+// the point worldToGrid tests against obstacles.
+func (a *AStar) cellCentre(idx, offset int) float64 {
+	return (float64(idx-offset) + 0.5) * a.config.Resolution
 }
 
 func (a *AStar) heuristic(aPos, bPos [2]int) float64 {
@@ -238,7 +264,7 @@ func (a *AStar) dist(aPos, bPos [2]int) float64 {
 func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, offsetX, offsetY int) [][2]float64 {
 	path := make([][2]float64, 0)
 
-	currentPos := [2]float64{float64(current.Pos[0]-offsetX) * a.config.Resolution, float64(current.Pos[1]-offsetY) * a.config.Resolution}
+	currentPos := [2]float64{a.cellCentre(current.Pos[0], offsetX), a.cellCentre(current.Pos[1], offsetY)}
 	path = append(path, currentPos)
 
 	for {
@@ -246,7 +272,7 @@ func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, offset
 			break
 		}
 		current = cameFrom[current.Pos]
-		pos := [2]float64{float64(current.Pos[0]-offsetX) * a.config.Resolution, float64(current.Pos[1]-offsetY) * a.config.Resolution}
+		pos := [2]float64{a.cellCentre(current.Pos[0], offsetX), a.cellCentre(current.Pos[1], offsetY)}
 		path = append(path, pos)
 	}
 
