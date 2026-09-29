@@ -95,6 +95,13 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
             reconnectTimeout = null
         }
         if (ws.value) {
+            // Detach first: close() fires onclose asynchronously, which would log a
+            // spurious "Disconnected" and schedule a reconnect for a socket we
+            // closed on purpose (forever, after the app unmounts).
+            ws.value.onopen = null
+            ws.value.onclose = null
+            ws.value.onerror = null
+            ws.value.onmessage = null
             ws.value.close()
             ws.value = null
         }

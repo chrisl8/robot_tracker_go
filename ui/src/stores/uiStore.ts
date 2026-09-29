@@ -12,6 +12,13 @@ import type {
     LogEntryType,
 } from '@/types/ui'
 
+// Date.now() alone collides when two toasts/entries are created in the same
+// millisecond, which gives Vue duplicate keys and makes removeToast remove the wrong one.
+let idCounter = 0
+function nextId(): string {
+    return `${Date.now()}-${idCounter++}`
+}
+
 export const useUIStore = defineStore('ui', () => {
     // State
     const panels = ref<PanelState>({
@@ -75,7 +82,7 @@ export const useUIStore = defineStore('ui', () => {
 
     // Actions - Toasts
     function showToast(message: string, type: ToastType = 'info', duration: number = 3000): void {
-        const id = Date.now().toString()
+        const id = nextId()
         const toast: Toast = { id, message, type, duration }
         toasts.value.push(toast)
 
@@ -149,7 +156,7 @@ export const useUIStore = defineStore('ui', () => {
     // Actions - Activity Log
     function addLogEntry(type: LogEntryType, message: string): void {
         const entry: LogEntry = {
-            id: Date.now().toString(),
+            id: nextId(),
             timestamp: new Date(),
             type,
             message,

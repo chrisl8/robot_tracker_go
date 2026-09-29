@@ -68,7 +68,9 @@ function onClearGoal(event: Event): void {
                 <div class="track-info">
                     <div class="track-label">
                         {{ getTrackLabel(track) }}
-                        <span v-if="track.tag_id" class="track-tag">Tag {{ track.tag_id }}</span>
+                        <span v-if="track.tag_id != null" class="track-tag"
+                            >Tag {{ track.tag_id }}</span
+                        >
                         <span v-if="isSelected(track.id)" class="track-selected">Selected</span>
                         <span v-if="hasDestination(track)" class="track-destination"
                             >Goal

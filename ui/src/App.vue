@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useTempObstacleStore } from '@/stores/tempObstacleStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useRobotStore } from '@/stores/robotStore'
 import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import VideoOverlay from '@/components/VideoOverlay.vue'
@@ -24,6 +25,7 @@ import AbsorbPopover from '@/components/AbsorbPopover.vue'
 const obstacleStore = useObstacleStore()
 const tempObstacleStore = useTempObstacleStore()
 const uiStore = useUIStore()
+const robotStore = useRobotStore()
 const fpsHealth = useFpsHealthStore()
 
 const streamUrl = ref('/stream')
@@ -53,6 +55,9 @@ async function loadInitialData(): Promise<void> {
 
         // Load temporary-obstacle detector state
         await tempObstacleStore.loadState()
+
+        // Mode / e-stop may have changed while we were disconnected
+        await robotStore.fetchControlState()
 
         // Load calibration status
         const calibrationResponse = await fetch('/api/calibration/status')

@@ -153,7 +153,7 @@ type WebServerCallbacks struct {
 	OnForegroundAbsorb    func(x, y int)
 	ForegroundDebugJPEG   func() []byte
 	ForegroundState       func() ForegroundState
-	OnDestinationSet      func(int, [2]float64)
+	OnDestinationSet      func(int, [2]float64) error
 	OnDestinationClear    func(int)
 	OnCalibrationComplete func(string)
 	OnCommand             func(string) error
@@ -178,6 +178,7 @@ type OverlayMessage struct {
 	Obstacles     *ObstaclesMessage         `json:"obstacles,omitempty"`
 	Destination   *DestinationMessage       `json:"destination,omitempty"`
 	TempObstacles *TempObstaclesMessage     `json:"temp_obstacles,omitempty"`
+	Control       *ControlStateResponse     `json:"control,omitempty"`
 }
 
 // TempObstacleResponse is one temporary (detected, not user-marked) obstacle.
@@ -697,6 +698,10 @@ func (s *WebServer) handleCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !isValidCommand(req.Command) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown command, must be one of F/B/L/R/S"})
+		return
+	}
 	if s.Callbacks.OnCommand != nil {
 		if err := s.Callbacks.OnCommand(req.Command); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -706,10 +711,24 @@ func (s *WebServer) handleCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "command": req.Command})
 }
 
+// frameSize is the current video frame size, or 0, 0 if not yet known.
+func (s *WebServer) frameSize() (int, int) {
+	if pe := s.calibration.positionEstimator; pe != nil {
+		return pe.FrameSize()
+	}
+	return 0, 0
+}
+
 func (s *WebServer) handleDestination(c *gin.Context) {
 	var req DestinationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	frameW, frameH := s.frameSize()
+	if problem := destinationProblem(req.RobotID, req.X, req.Y, frameW, frameH); problem != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": problem})
 		return
 	}
 
@@ -735,22 +754,25 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		}
 	}
 
-	s.destination.mutex.Lock()
-	s.destination.current = DestinationMessage{
-		RobotID: req.RobotID,
-		X:       req.X,
-		Y:       req.Y,
-		Valid:   true,
+	// Ask the app first: if it refuses (e.g. not calibrated) the destination
+	// must not be stored or shown, or the UI would display a goal the planner
+	// never received.
+	if s.Callbacks.OnDestinationSet != nil {
+		if err := s.Callbacks.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)}); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 	}
+
+	dest := DestinationMessage{RobotID: req.RobotID, X: req.X, Y: req.Y, Valid: true}
+	s.destination.mutex.Lock()
+	s.destination.current = dest
 	s.destination.mutex.Unlock()
 
-	if s.Callbacks.OnDestinationSet != nil {
-		s.Callbacks.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)})
-	}
-
+	// Broadcast a copy: the shared struct is rewritten by ClearDestination.
 	s.BroadcastOverlay(OverlayMessage{
 		Type:        "destination",
-		Destination: &s.destination.current,
+		Destination: &dest,
 	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": req})
@@ -826,13 +848,18 @@ func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize
 	s.calibration.tagSize = tagSize
 	s.calibration.mutex.Unlock()
 
+	mismatch := false
+	if pe := s.calibration.positionEstimator; pe != nil {
+		mismatch = pe.ResolutionMismatch()
+	}
 	s.BroadcastOverlay(OverlayMessage{
 		Type: "calibration",
 		Calibration: &CalibrationStatusMessage{
-			State:    state,
-			Message:  message,
-			Filename: filename,
-			TagSize:  tagSize,
+			State:              state,
+			Message:            message,
+			Filename:           filename,
+			TagSize:            tagSize,
+			ResolutionMismatch: mismatch,
 		},
 	})
 }
@@ -911,10 +938,11 @@ func (s *WebServer) BroadcastPaths() {
 }
 
 type CalibrationStatusMessage struct {
-	State    string  `json:"state"`
-	Message  string  `json:"message"`
-	Filename string  `json:"filename"`
-	TagSize  float64 `json:"tagSize"`
+	State              string  `json:"state"`
+	Message            string  `json:"message"`
+	Filename           string  `json:"filename"`
+	TagSize            float64 `json:"tagSize"`
+	ResolutionMismatch bool    `json:"resolutionMismatch"`
 }
 
 func (s *WebServer) handleCalibrationStatus(c *gin.Context) {
@@ -1059,6 +1087,11 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 	var req CalibrationComputeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, CalibrationComputeResponse{State: "error", Error: err.Error()})
+		return
+	}
+
+	if len(req.Tags) > maxCalibrationTags {
+		c.JSON(http.StatusBadRequest, CalibrationComputeResponse{State: "error", Error: fmt.Sprintf("too many tags (%d, max %d)", len(req.Tags), maxCalibrationTags)})
 		return
 	}
 
@@ -1303,7 +1336,10 @@ func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec 
 }
 
 func (s *WebServer) handleCalibrationCancel(c *gin.Context) {
-	s.SetCalibrationState("not_calibrated", "Click Settings to calibrate", "", 0)
+	pe := s.calibration.positionEstimator
+	calibrated := pe != nil && pe.IsCalibrated()
+	state, message, filename, tagSize := calibrationStateAfterCancel(calibrated, GetCalibrationFilename(s.calibration.cameraName))
+	s.SetCalibrationState(state, message, filename, tagSize)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "cancelled"})
 }
 
@@ -1349,6 +1385,12 @@ func (s *WebServer) handleObstacleAdd(c *gin.Context) {
 		return
 	}
 
+	frameW, frameH := s.frameSize()
+	if problem := pixelBoxProblem(req.PixelTopLeft, req.PixelBottomRight, frameW, frameH); problem != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": problem})
+		return
+	}
+
 	s.obstacles.mutex.Lock()
 
 	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
@@ -1378,6 +1420,11 @@ func (s *WebServer) handleObstacleDelete(c *gin.Context) {
 			newObs = append(newObs, obs)
 		}
 	}
+	if len(newObs) == len(s.obstacles.list) {
+		s.obstacles.mutex.Unlock()
+		c.JSON(http.StatusNotFound, gin.H{"error": "no obstacle with id " + id})
+		return
+	}
 	s.obstacles.list = newObs
 	s.obstacles.saved = false
 	count := len(newObs)
@@ -1396,19 +1443,36 @@ func (s *WebServer) handleObstacleUpdate(c *gin.Context) {
 		return
 	}
 
+	frameW, frameH := s.frameSize()
+	if problem := pixelBoxProblem(req.PixelTopLeft, req.PixelBottomRight, frameW, frameH); problem != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": problem})
+		return
+	}
+
 	s.obstacles.mutex.Lock()
 
 	worldTL, worldBR := s.pixelCornersToWorld(req.PixelTopLeft, req.PixelBottomRight)
 
-	for i, obs := range s.obstacles.list {
+	// Copy-on-write: snapshots of the list were handed to the planner callback
+	// and the file saver, so never mutate the shared backing array in place.
+	newList := append([]planning.Obstacle(nil), s.obstacles.list...)
+	found := false
+	for i, obs := range newList {
 		if obs.Name == id {
 			updated := planning.NewRectObstacle(id, worldTL, worldBR)
 			updated.PixelsTopLeft = req.PixelTopLeft
 			updated.PixelsBottomRight = req.PixelBottomRight
-			s.obstacles.list[i] = updated
+			newList[i] = updated
+			found = true
 			break
 		}
 	}
+	if !found {
+		s.obstacles.mutex.Unlock()
+		c.JSON(http.StatusNotFound, gin.H{"error": "no obstacle with id " + id})
+		return
+	}
+	s.obstacles.list = newList
 	s.obstacles.saved = false
 
 	s.obstacles.mutex.Unlock()
@@ -1561,6 +1625,7 @@ func (s *WebServer) handleSetMode(c *gin.Context) {
 			return
 		}
 	}
+	s.broadcastControlState()
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "mode": req.Mode})
 }
 
@@ -1568,6 +1633,7 @@ func (s *WebServer) handleEmergencyStop(c *gin.Context) {
 	if s.Callbacks.OnEmergencyStop != nil {
 		s.Callbacks.OnEmergencyStop()
 	}
+	s.broadcastControlState()
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "emergency_stopped": true})
 }
 
@@ -1578,7 +1644,22 @@ func (s *WebServer) handleClearEmergencyStop(c *gin.Context) {
 			return
 		}
 	}
+	s.broadcastControlState()
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "emergency_stopped": false})
+}
+
+// broadcastControlState tells every connected UI the current control mode and
+// e-stop state, so a second tab (or a reconnected one) doesn't keep showing
+// stale controls after another operator changed them.
+func (s *WebServer) broadcastControlState() {
+	mode, eStopped := "hold", false
+	if s.Callbacks.OnGetControlState != nil {
+		mode, eStopped = s.Callbacks.OnGetControlState()
+	}
+	s.BroadcastOverlay(OverlayMessage{
+		Type:    "control_state",
+		Control: &ControlStateResponse{Mode: mode, EmergencyStopped: eStopped},
+	})
 }
 
 func (s *WebServer) handleControlState(c *gin.Context) {

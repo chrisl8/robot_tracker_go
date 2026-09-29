@@ -264,6 +264,14 @@ func (e *PositionEstimator) SetFrameSize(width, height int) {
 	e.mu.Unlock()
 }
 
+// FrameSize returns the resolution of the frames currently being processed, or
+// 0, 0 before the first frame has been seen.
+func (e *PositionEstimator) FrameSize() (width, height int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.frameRes[0], e.frameRes[1]
+}
+
 // CalibratedResolution returns the resolution stored in the loaded
 // calibration file, if any.
 func (e *PositionEstimator) CalibratedResolution() (width, height int, ok bool) {

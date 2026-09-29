@@ -294,9 +294,10 @@ func (rs *RobotSystem) registerDemoCallbacks() {
 		utils.Debugf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
-	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) error {
 		utils.Logf("Demo mode: Destination set for robot %d at pixel(%d,%d)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]))
+		return nil
 	}
 }
 
@@ -538,10 +539,10 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		utils.Debugf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
 
-	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) {
+	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) error {
 		if rs.position.positionEst == nil || !rs.position.positionEst.IsCalibrated() {
 			utils.Logf("Cannot set destination: not calibrated")
-			return
+			return fmt.Errorf("cannot set a destination: the camera is not calibrated")
 		}
 		worldPos := rs.position.positionEst.PixelToWorld(int(pixelPos[0]), int(pixelPos[1]))
 		utils.Debugf("DEST: pixel(%d,%d) -> world(%.2f,%.2f) BEFORE SetGoal",
@@ -561,6 +562,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		rs.planning.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
+		return nil
 	}
 
 	rs.web.webServer.Callbacks.OnDestinationClear = func(robotID int) {

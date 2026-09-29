@@ -109,6 +109,13 @@ export const useRobotStore = defineStore('robot', () => {
             case 'destination_clear':
                 setDestination(null)
                 break
+            case 'control_state':
+                // Another operator (or tab) changed the mode / e-stop.
+                if (data.control) {
+                    controlMode.value = data.control.mode
+                    emergencyStopped.value = data.control.emergency_stopped
+                }
+                break
             case 'paths':
                 if (data.paths && Array.isArray(data.paths.paths)) {
                     paths.value = data.paths.paths
@@ -272,9 +279,11 @@ export const useRobotStore = defineStore('robot', () => {
                 uiStore.addLogEntry('info', 'Goal cleared for robot ' + robotId)
                 return true
             }
+            uiStore.showToast('Could not clear the goal', 'error')
             return false
         } catch (error) {
             console.error('Failed to clear destination:', error)
+            uiStore.showToast('Could not clear the goal: the server is unreachable', 'error')
             return false
         }
     }
@@ -296,11 +305,15 @@ export const useRobotStore = defineStore('robot', () => {
                 uiStore.addLogEntry('info', 'Mode changed to ' + mode)
                 return true
             }
-            const data = await response.json()
+            const data = await response.json().catch(() => ({}) as { error?: string })
             console.error('Failed to set mode:', data.error)
+            uiStore.showToast(`Could not change mode: ${data.error ?? response.status}`, 'error')
+            // Our view of the mode was probably stale; re-read the real one.
+            await fetchControlState()
             return false
         } catch (error) {
             console.error('Failed to set mode:', error)
+            uiStore.showToast('Could not change mode: the server is unreachable', 'error')
             return false
         }
     }

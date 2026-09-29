@@ -9,7 +9,8 @@ const robotStore = useRobotStore()
 const selectedTrack = computed(() => robotStore.selectedTrack)
 
 const headingDeg = computed(() => {
-    if (!selectedTrack.value?.heading) return '--'
+    // 0 rad (facing +x) is a real heading; only a missing value shows '--'.
+    if (selectedTrack.value?.heading == null) return '--'
     return `${((selectedTrack.value.heading * 180) / Math.PI).toFixed(1)}°`
 })
 

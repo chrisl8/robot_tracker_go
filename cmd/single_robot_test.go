@@ -87,8 +87,14 @@ func TestOnDestinationSet_ReleasesOtherRobotsGoals(t *testing.T) {
 	rs.planning.planner.AddRobot(8, [2]float64{2, 2}, 0.3)
 
 	set := rs.web.webServer.Callbacks.OnDestinationSet
-	set(demoAutonomyTagID, [2]float64{300, 300})
-	set(8, [2]float64{400, 400})
+	for _, dest := range []struct {
+		robot int
+		pos   [2]float64
+	}{{demoAutonomyTagID, [2]float64{300, 300}}, {8, [2]float64{400, 400}}} {
+		if err := set(dest.robot, dest.pos); err != nil {
+			t.Fatalf("OnDestinationSet(%d) = %v", dest.robot, err)
+		}
+	}
 
 	got := rs.planning.planner.RobotsWithGoals()
 	if len(got) != 1 || got[0] != 8 {
@@ -140,5 +146,22 @@ func TestDrawLineOnRGBA_ZeroLengthDoesNotPanic(t *testing.T) {
 
 	if img.RGBAAt(10, 10) != red {
 		t.Errorf("pixel at (10,10) = %v, want %v", img.RGBAAt(10, 10), red)
+	}
+}
+
+// An uncalibrated system must refuse a destination with an error, so the web
+// layer can tell the operator instead of showing a goal the planner never got.
+func TestOnDestinationSet_RefusesWhenNotCalibrated(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	rs.registerWebServerCallbacks()
+	rs.position.positionEst = nil
+
+	err := rs.web.webServer.Callbacks.OnDestinationSet(demoAutonomyTagID, [2]float64{100, 100})
+
+	if err == nil {
+		t.Fatal("expected an error when the camera is not calibrated")
+	}
+	if len(rs.planning.planner.RobotsWithGoals()) != 0 {
+		t.Error("no goal should have been set")
 	}
 }

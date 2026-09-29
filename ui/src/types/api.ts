@@ -132,6 +132,12 @@ export type WebSocketMessage =
     | DestinationClearMessage
     | PathsMessage
     | TempObstaclesMessage
+    | ControlStateMessage
+
+export interface ControlStateMessage {
+    type: 'control_state'
+    control: { mode: 'hold' | 'manual' | 'autonomous'; emergency_stopped: boolean }
+}
 
 export interface TrackMessage {
     type: 'track'

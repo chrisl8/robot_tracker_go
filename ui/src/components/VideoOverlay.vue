@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
 import { useCanvas, type CanvasPoint } from '@/composables/useCanvas'
 import type { AddObstacleRequest } from '@/types/api'
+import { clampToFrame } from '@/utils/coordinates'
 
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
@@ -78,8 +79,9 @@ async function addObstacle(
     const name = `obstacle_${obstacleStore.obstacleCount + 1}`
 
     // Convert canvas coordinates to natural video coordinates for resize-safe storage
-    const naturalTopLeft = canvasToNatural(topLeft[0], topLeft[1])
-    const naturalBottomRight = canvasToNatural(bottomRight[0], bottomRight[1])
+    // Dragging past the edge of the video must not create an obstacle outside the frame.
+    const naturalTopLeft = clampToFrame(canvasToNatural(topLeft[0], topLeft[1]))
+    const naturalBottomRight = clampToFrame(canvasToNatural(bottomRight[0], bottomRight[1]))
 
     const request: AddObstacleRequest = {
         pixel_top_left: [naturalTopLeft.x, naturalTopLeft.y],
@@ -132,7 +134,8 @@ function handleVideoLoad(): void {
 onMounted(() => {
     const video = document.getElementById('video') as HTMLImageElement
     if (video) {
-        video.addEventListener('loadeddata', handleVideoLoad)
+        // An <img> (the MJPEG stream) fires 'load'; it never fires 'loadeddata'.
+        video.addEventListener('load', handleVideoLoad)
         if (video.complete) {
             syncCanvasToVideo()
         }
@@ -155,6 +158,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     resizeObserver?.disconnect()
+    document.getElementById('video')?.removeEventListener('load', handleVideoLoad)
 })
 </script>
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useUIStore } from '../uiStore'
 import type { CalibrationTarget, DetectedTagInfo } from '@/types/api'
@@ -120,5 +120,43 @@ describe('uiStore calibration', () => {
         store.resetCalibrationWizard()
         expect(store.calibrationStep).toBe('print')
         expect(store.calibrationClearView).toBe(false)
+    })
+})
+
+describe('toast and log ids', () => {
+    beforeEach(() => {
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(1_700_000_000_000) // Date.now() frozen: same millisecond for everything
+    })
+    afterEach(() => vi.useRealTimers())
+
+    it('stay unique when created within the same millisecond', () => {
+        const store = useUIStore()
+        store.showToast('a', 'info', 60_000)
+        store.showToast('b', 'info', 60_000)
+        store.showToast('c', 'info', 60_000)
+
+        const ids = store.toasts.map(t => t.id)
+        expect(new Set(ids).size).toBe(3)
+    })
+
+    it('removing one toast removes only that toast', () => {
+        const store = useUIStore()
+        store.showToast('a', 'info', 60_000)
+        store.showToast('b', 'info', 60_000)
+        const [first, second] = store.toasts.map(t => t.id)
+
+        store.removeToast(second)
+
+        expect(store.toasts.map(t => t.id)).toEqual([first])
+    })
+
+    it('log entries get unique ids too', () => {
+        const store = useUIStore()
+        store.addLogEntry('info', 'one')
+        store.addLogEntry('info', 'two')
+
+        expect(new Set(store.activityLog.map(e => e.id)).size).toBe(store.activityLog.length)
     })
 })
