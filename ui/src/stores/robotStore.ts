@@ -5,6 +5,7 @@ import type {
     RobotStatus,
     WebSocketMessage,
     Destination,
+    DestinationRequest,
     TracksNestedResponse,
     PathMessage,
 } from '@/types/api'
@@ -217,15 +218,17 @@ export const useRobotStore = defineStore('robot', () => {
         // Use the shared canvasToNatural (utils/canvasTransform.ts), the same one useCanvas uses
         const naturalCoords = canvasToNaturalShared(canvasX, canvasY)
 
+        const request: DestinationRequest = {
+            robot_id: robotId,
+            x: naturalCoords.x,
+            y: naturalCoords.y,
+        }
+
         try {
             const response = await fetch('/api/destination', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    robot_id: robotId,
-                    x: naturalCoords.x,
-                    y: naturalCoords.y,
-                }),
+                body: JSON.stringify(request),
             })
 
             if (response.ok) {

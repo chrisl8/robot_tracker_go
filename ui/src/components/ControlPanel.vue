@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Gamepad2 } from 'lucide-vue-next'
+import type { CommandRequest, RobotCommand } from '@/types/api'
 
 const uiStore = useUIStore()
 const robotStore = useRobotStore()
@@ -12,7 +13,7 @@ const hasDestinationPending = computed(
 )
 
 const pressed = ref<string | null>(null)
-const pressedCommand = ref<string | null>(null)
+const pressedCommand = ref<RobotCommand | null>(null)
 
 // The server stops the robot if a movement command isn't refreshed within
 // 2 s (so a dropped browser or network can't leave it driving). While a key or
@@ -21,7 +22,7 @@ const HOLD_REFRESH_MS = 250
 
 // The movement command currently being held, or null. A held D-pad button
 // wins over the keyboard.
-function heldCommand(): string | null {
+function heldCommand(): RobotCommand | null {
     if (pressed.value !== null) return pressedCommand.value
     const keys = uiStore.keyboard
     if (keys.w) return 'F'
@@ -46,12 +47,13 @@ onUnmounted(() => {
     clearInterval(holdTimer)
 })
 
-async function sendCommand(command: string): Promise<void> {
+async function sendCommand(command: RobotCommand): Promise<void> {
+    const request: CommandRequest = { command }
     try {
         const response = await fetch('/api/command', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command }),
+            body: JSON.stringify(request),
         })
         if (!response.ok && command === 'S') {
             // A failed stop must not be silent: the robot may still be moving.
@@ -65,7 +67,7 @@ async function sendCommand(command: string): Promise<void> {
     }
 }
 
-function handleMouseDown(key: string, command: string): void {
+function handleMouseDown(key: string, command: RobotCommand): void {
     pressed.value = key
     pressedCommand.value = command
     sendCommand(command)

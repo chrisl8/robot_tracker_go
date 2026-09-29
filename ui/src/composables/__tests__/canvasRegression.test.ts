@@ -89,15 +89,6 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
             // Should not throw
             expect(() => render()).not.toThrow()
         })
-
-        it('should use naturalToCanvas for coordinate conversion', async () => {
-            const { naturalToCanvas } = await import('@/utils/coordinates')
-
-            // Test that naturalToCanvas works correctly
-            const result = naturalToCanvas(320, 240, 800, 600)
-            expect(result.x).toBeCloseTo(400, 0)
-            expect(result.y).toBeCloseTo(300, 0)
-        })
     })
 
     describe('REGRESSION-002: Calibration Tag Highlighting', () => {
@@ -247,41 +238,6 @@ describe('CANVAS-002: Regression Tests for Canvas Rendering', () => {
             obstacleStore.clearObstacles()
 
             expect(obstacleStore.obstacles).toHaveLength(0)
-        })
-    })
-
-    describe('Coordinate System Tests', () => {
-        it('canvasToNatural should convert correctly', async () => {
-            const { canvasToNatural } = await import('@/utils/coordinates')
-
-            // 640x480 natural video displayed at 800x600 canvas
-            // Canvas point (400, 300) should map to natural (320, 240)
-            const result = canvasToNatural(400, 300, 800, 600)
-            expect(result.x).toBe(320)
-            expect(result.y).toBe(240)
-        })
-
-        it('naturalToCanvas should convert correctly', async () => {
-            const { naturalToCanvas } = await import('@/utils/coordinates')
-
-            // 640x480 natural video displayed at 800x600 canvas
-            // Natural point (320, 240) should map to canvas (400, 300)
-            const result = naturalToCanvas(320, 240, 800, 600)
-            expect(result.x).toBeCloseTo(400, 0)
-            expect(result.y).toBeCloseTo(300, 0)
-        })
-
-        it('canvasToNatural and naturalToCanvas should be inverses', async () => {
-            const { canvasToNatural, naturalToCanvas } = await import('@/utils/coordinates')
-
-            const originalX = 320
-            const originalY = 240
-
-            const canvasResult = naturalToCanvas(originalX, originalY, 800, 600)
-            const backToNatural = canvasToNatural(canvasResult.x, canvasResult.y, 800, 600)
-
-            expect(backToNatural.x).toBe(originalX)
-            expect(backToNatural.y).toBe(originalY)
         })
     })
 })

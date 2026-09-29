@@ -16,8 +16,6 @@ import { createCalibrationRenderer } from './canvas/renderCalibration'
 import { createCanvasInteraction, type CanvasPoint } from './canvas/useCanvasInteraction'
 
 export type { CanvasPoint }
-// Re-exported for existing importers; the implementation lives in utils/canvasTransform.ts.
-export { canvasToNaturalShared }
 
 /**
  * The overlay canvas drawn on top of the video: tracks, paths, destination,

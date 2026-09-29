@@ -16,15 +16,6 @@ export interface PanelState {
     rightPanelOpen: boolean
 }
 
-export interface KeyboardShortcut {
-    key: string
-    ctrl?: boolean
-    shift?: boolean
-    alt?: boolean
-    action: () => void
-    description: string
-}
-
 export interface KeyboardState {
     w: boolean
     a: boolean

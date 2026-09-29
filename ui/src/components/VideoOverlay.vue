@@ -4,6 +4,7 @@ import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
 import { useCanvas, type CanvasPoint } from '@/composables/useCanvas'
+import type { AddObstacleRequest } from '@/types/api'
 
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()
@@ -80,16 +81,18 @@ async function addObstacle(
     const naturalTopLeft = canvasToNatural(topLeft[0], topLeft[1])
     const naturalBottomRight = canvasToNatural(bottomRight[0], bottomRight[1])
 
+    const request: AddObstacleRequest = {
+        pixel_top_left: [naturalTopLeft.x, naturalTopLeft.y],
+        pixel_bottom_right: [naturalBottomRight.x, naturalBottomRight.y],
+        name,
+        clearance: 0.02,
+    }
+
     try {
         const response = await fetch('/api/obstacles', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                pixel_top_left: [naturalTopLeft.x, naturalTopLeft.y],
-                pixel_bottom_right: [naturalBottomRight.x, naturalBottomRight.y],
-                name,
-                clearance: 0.02,
-            }),
+            body: JSON.stringify(request),
         })
 
         if (!response.ok) {

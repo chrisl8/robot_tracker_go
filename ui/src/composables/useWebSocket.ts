@@ -101,12 +101,6 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
         isConnected.value = false
     }
 
-    function send(data: unknown): void {
-        if (ws.value?.readyState === WebSocket.OPEN) {
-            ws.value.send(JSON.stringify(data))
-        }
-    }
-
     onMounted(() => {
         connect()
     })
@@ -120,6 +114,5 @@ export function useWebSocket(url: string, options: WebSocketOptions = {}) {
         isConnected,
         connect,
         disconnect,
-        send,
     }
 }

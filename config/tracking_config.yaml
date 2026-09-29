@@ -43,7 +43,6 @@ cameras:
 # AprilTag Settings
 april_tags:
   family: "tag36h11" # 587 unique IDs
-  nthreads: 4
   quad_decimate: 1.0 # No downsampling; preserves full resolution for distant/angled tags
   quad_sigma: 0.0 # Blur before decoding
   refine_edges: 1
@@ -96,54 +95,20 @@ tracking:
   frame_rate: 30
   mot20: False
   min_box_area: 100
-  camera_fps: 30
 
 # Position Estimation Settings
 position:
-  ground_plane_z: 0.0 # Z coordinate of ground plane
-  smoothing: true
-  smoothing_alpha: 0.3 # Exponential moving average factor
-  outlier_threshold: 0.1 # Maximum velocity for filtering (meters/frame)
   heading_smoothing_alpha: 1.0 # 1.0 = disabled (raw heading). DO NOT reduce below 1.0.
                                # EMA at 0.4 was tested and caused 20-40° heading lag during turns,
                                # leading to overshoot and 48s runs (vs 25s without smoothing).
                                # The "noise" during turns is partly real rotation, not just noise.
   heading_max_rate_deg: 0.0    # Max heading change per frame before rejection (0.0=disabled)
 
-# Output Settings
 # Processing
 processing:
   max_fps: 15 # cap on frames processed per second. Cuts CPU use, and keeps the
               # controller's frame-counted settings (burst/wait) behaving as tuned
               # at ~12 fps. Uncapped, the loop would run at the camera's 30 fps.
-
-output:
-  # Real-time UDP stream
-  udp:
-    enabled: false
-    host: "127.0.0.1"
-    port: 5005
-
-  # Log file
-  log:
-    enabled: true
-    path: "logs/trajectories.csv"
-    format: "csv"
-
-  # Display settings
-  display:
-    enabled: true
-    show_tracks: true
-    show_ids: true
-    show_trails: true
-    trail_length: 30
-    show_calibration: false
-
-# Multi-Camera Settings
-multi_camera:
-  enabled: false
-  sync_mode: "hardware" # "hardware" or "software"
-  handover_margin: 10 # Frames to keep track during handover
 
 # Controller Settings (Arduino Serial Communication)
 controller:
@@ -151,9 +116,8 @@ controller:
   serial:
     port: "auto" # "auto" for auto-detect, or specify "COM3", "/dev/ttyUSB0", "/dev/cu.usbserial-XXX"
     baudrate: 9600
-    timeout: 0.1 # seconds
   command_interval: 0.05 # seconds between commands (50ms)
-  heartbeat_timeout: 0.5 # seconds before sending STOP if no command received
+  heartbeat_timeout: 0.5 # seconds without a write before the active command (or STOP) is re-sent as a heartbeat
 
 # Robot Definitions
 # Each robot is identified by its AprilTag ID (tag_id)
@@ -162,8 +126,6 @@ robots:
   - tag_id: 1 # AprilTag ID for robot identification
     name: "robot_0"
     diameter: 0.30 # meters foot-to-foot (for obstacle avoidance)
-    speed: 0.15 # m/s (max forward speed)
-    turn_rate: 1.0 # rad/s (max turn speed)
     heading_offset_degrees: 180 # Vorpal walks opposite to its tag's up direction (measured); adjust if arrow doesn't point forward (try 90, -90, 180)
     center_offset_x: 0.0 # meters forward from tag center to robot center (for parallax correction)
     center_offset_y: 0.0 # meters left from tag center to robot center (for parallax correction)
@@ -172,50 +134,10 @@ robots:
   # - tag_id: 5
   #   name: "robot_5"
   #   diameter: 0.35
-  #   speed: 0.20
-  #   turn_rate: 1.5
-
-# Path Planning Settings
-planning:
-  step_size: 0.05 # meters per step
-  replan_interval: 0.5 # seconds
-  max_path_length: 1000 # steps
-  avoidance:
-    enabled: true
-    dynamic_obstacles: true # use foreground-detector obstacles
-    multi_robot_avoidance: "first_come_first_served"
 
 # Obstacle Configuration
 obstacles:
   file: "config/obstacles.yaml"
-  display: true
-  collision_margin: 0.02 # extra clearance around obstacles
-
-# API Settings
-api:
-  enabled: false # Set to true to enable WebSocket API
-  host: "0.0.0.0"
-  port: 8000
-  websocket_path: "/ws"
-
-# Local Planning Settings
-local_planning:
-  enabled: true
-  safety_margin: 0.15
-  max_speed: 0.15
-  time_horizon: 2.0
-  min_obstacle_confidence: 0.5
-  obstacle_classes:
-    - "person"
-    - "cup"
-    - "bottle"
-  debug:
-    enabled: true
-    draw_velocity_vector: true
-    draw_collision_cone: true
-    draw_obstacle_radius: true
-    draw_pause_indicator: true
-    video_output_dir: "tests/videos"
 
 # Path Execution Settings (A* waypoints + bearing-based steering)
 #
