@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,16 +16,31 @@ type recordingPort struct {
 	serial.Port
 	mu  sync.Mutex
 	buf []byte
+
+	failWrites atomic.Bool   // every Write returns an error while set
+	block      chan struct{} // if non-nil, Write blocks until it is closed
+	closed     atomic.Bool
 }
 
 func (p *recordingPort) Write(b []byte) (int, error) {
+	if p.failWrites.Load() {
+		return 0, errors.New("simulated write failure")
+	}
+	if p.block != nil {
+		<-p.block
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.buf = append(p.buf, b...)
 	return len(b), nil
 }
 
-func (p *recordingPort) Close() error { return nil }
+func (p *recordingPort) Close() error {
+	p.closed.Store(true)
+	return nil
+}
+
+func (p *recordingPort) SetReadTimeout(time.Duration) error { return nil }
 
 // commands returns the command bytes written so far (each is "<cmd>\r\n").
 func (p *recordingPort) commands() []Command {

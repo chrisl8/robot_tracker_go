@@ -10,6 +10,13 @@ import (
 	"go.bug.st/serial"
 )
 
+// Seams for tests: the real serial port opener and the post-open delay that
+// lets the Arduino finish resetting (opening the port resets most boards).
+var (
+	openSerial          = serial.Open
+	arduinoStartupDelay = ArduinoStartupDelay
+)
+
 type ArduinoController struct {
 	port      string
 	baudrate  int
@@ -51,7 +58,7 @@ func (c *ArduinoController) Connect() error {
 		BaudRate: c.baudrate,
 	}
 
-	sp, err := serial.Open(port, mode)
+	sp, err := openSerial(port, mode)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Arduino: %w", err)
 	}
@@ -63,7 +70,7 @@ func (c *ArduinoController) Connect() error {
 	c.connected = true
 	c.mu.Unlock()
 
-	time.Sleep(ArduinoStartupDelay)
+	time.Sleep(arduinoStartupDelay)
 
 	return nil
 }
@@ -100,59 +107,22 @@ func (c *ArduinoController) SendCommand(cmd Command) error {
 
 	data := []byte{byte(cmd), '\r', '\n'}
 	if err := c.writeAll(data); err != nil {
-		c.connected = false
+		c.dropConnectionLocked()
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
 
 	return nil
 }
 
-func (c *ArduinoController) SendMode(mode Mode) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.connected || c.serial == nil {
-		return ErrNotConnected
+// dropConnectionLocked closes and forgets the serial port after a failed
+// write. Merely flagging it disconnected left the handle open, so a
+// reconnect to the same port would fail as "busy". Callers hold c.mu.
+func (c *ArduinoController) dropConnectionLocked() {
+	if c.serial != nil {
+		_ = c.serial.Close()
+		c.serial = nil
 	}
-
-	data := []byte{byte(mode), '\r', '\n'}
-	if err := c.writeAll(data); err != nil {
-		c.connected = false
-		return fmt.Errorf("%w: %v", ErrSendFailed, err)
-	}
-
-	return nil
-}
-
-func (c *ArduinoController) SendSubmode(submode Submode) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.connected || c.serial == nil {
-		return ErrNotConnected
-	}
-
-	data := []byte{byte(submode), '\r', '\n'}
-	if err := c.writeAll(data); err != nil {
-		c.connected = false
-		return fmt.Errorf("%w: %v", ErrSendFailed, err)
-	}
-
-	return nil
-}
-
-func (c *ArduinoController) ToggleDebug() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.connected || c.serial == nil {
-		return ErrNotConnected
-	}
-
-	data := []byte{byte(CommandDebug), '\r', '\n'}
-	if err := c.writeAll(data); err != nil {
-		c.connected = false
-		return fmt.Errorf("%w: %v", ErrSendFailed, err)
-	}
-
-	return nil
+	c.connected = false
 }
 
 func (c *ArduinoController) IsConnected() bool {

@@ -23,6 +23,16 @@ type CommandQueue struct {
 	commandTTL       time.Duration // 0 disables; see SetCommandTTL
 	errorCount       int
 	mu               sync.Mutex
+
+	// sendMu serializes "check running, then write to the controller" against
+	// halt(), so a write already in flight can never land after the final
+	// Stop. It is separate from mu so that a serial write that blocks does not
+	// also freeze Enqueue, ClearActiveCommand and the callers that use them.
+	sendMu sync.Mutex
+
+	reconnectInterval    time.Duration
+	lastReconnectAttempt time.Time // run-loop goroutine only
+	reconnectFailures    int       // run-loop goroutine only
 }
 
 // NewCommandQueue builds a CommandQueue that re-sends the active (or stop)
@@ -46,8 +56,14 @@ func NewCommandQueue(controller *ArduinoController, intervalMs int, heartbeatTim
 		interval:         interval,
 		heartbeatTimeout: heartbeatTimeout,
 		commandTTL:       DefaultCommandTTL,
+
+		reconnectInterval: DefaultReconnectInterval,
 	}
 }
+
+// DefaultReconnectInterval is how often the run loop retries opening the
+// serial port while the Arduino is disconnected (unplugged, or a write failed).
+const DefaultReconnectInterval = 2 * time.Second
 
 // DefaultCommandTTL is how long a movement command stays active without being
 // re-Enqueued. The heartbeat re-sends the active command to the robot on its
@@ -87,6 +103,12 @@ func (q *CommandQueue) Start() {
 // command still buffered in commandCh can't reach the robot after the final
 // Stop.
 func (q *CommandQueue) halt() bool {
+	// Held for the whole method: this waits out a write already in flight, and
+	// keeps sendCommand from starting another until running is false, so the
+	// caller's final Stop can't be overtaken by a movement command.
+	q.sendMu.Lock()
+	defer q.sendMu.Unlock()
+
 	q.mu.Lock()
 	wasRunning := q.running
 	q.running = false
@@ -186,7 +208,11 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 				q.sendCommand(CommandStop)
 				continue
 			}
-			if q.controller.IsConnected() && time.Since(q.lastSentTime) > q.heartbeatTimeout {
+			if !q.controller.IsConnected() {
+				q.tryReconnect()
+				continue
+			}
+			if time.Since(q.lastSentTime) > q.heartbeatTimeout {
 				q.mu.Lock()
 				active := q.hasActiveCommand
 				cmd := q.activeCommand
@@ -218,26 +244,58 @@ func (q *CommandQueue) expireStaleCommand() bool {
 }
 
 func (q *CommandQueue) sendCommand(cmd Command) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	q.sendMu.Lock()
+	defer q.sendMu.Unlock()
 
-	if !q.running && cmd != CommandStop {
+	q.mu.Lock()
+	allowed := q.running || cmd == CommandStop
+	q.mu.Unlock()
+	if !allowed {
 		return
 	}
 
-	if err := q.controller.SendCommand(cmd); err != nil {
+	err := q.controller.SendCommand(cmd) // may block; q.mu is not held
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if err != nil {
 		q.errorCount++
 		if q.errorCount == 1 || q.errorCount%100 == 0 {
 			utils.Logf("Arduino send error (count=%d): %v", q.errorCount, err)
 		}
-	} else {
-		if q.errorCount > 0 {
-			utils.Logf("Arduino send recovered after %d errors", q.errorCount)
-			q.errorCount = 0
-		}
-		q.lastCommand = cmd
-		q.lastSentTime = time.Now()
+		return
 	}
+	if q.errorCount > 0 {
+		utils.Logf("Arduino send recovered after %d errors", q.errorCount)
+		q.errorCount = 0
+	}
+	q.lastCommand = cmd
+	q.lastSentTime = time.Now()
+}
+
+// tryReconnect reopens the serial port after a failed write, or if the Arduino
+// was never connected, at most once per reconnectInterval. The robot's state
+// is unknown after a reconnect (opening the port resets most Arduinos), so it
+// is told to Stop and any stale active command is dropped rather than
+// resumed; callers re-issue movement.
+func (q *CommandQueue) tryReconnect() {
+	if time.Since(q.lastReconnectAttempt) < q.reconnectInterval {
+		return
+	}
+	q.lastReconnectAttempt = time.Now()
+
+	if err := q.controller.Connect(); err != nil {
+		q.reconnectFailures++
+		if q.reconnectFailures == 1 || q.reconnectFailures%15 == 0 {
+			utils.Logf("Arduino reconnect failed (attempt %d): %v", q.reconnectFailures, err)
+		}
+		return
+	}
+	utils.Logf("Arduino connected (after %d failed attempts)", q.reconnectFailures)
+	q.reconnectFailures = 0
+
+	q.ClearActiveCommand()
+	q.sendCommand(CommandStop)
 }
 
 // HasActiveCommand reports whether a movement command is currently being
