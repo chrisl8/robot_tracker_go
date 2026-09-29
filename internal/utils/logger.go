@@ -6,14 +6,35 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 )
 
 var QuietMode bool
 
+// debugEnabled gates Debugf. Debug lines are emitted per frame (steering, paths,
+// track positions), so leaving them on in normal runs floods the log file and
+// costs time in the frame loop. It is off unless requested with --debug or the
+// ROBOT_TRACKER_DEBUG environment variable (so a LaunchAgent can enable it).
+var debugEnabled atomic.Bool
+
 func init() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("")
+	debugEnabled.Store(debugFromEnv(os.Getenv("ROBOT_TRACKER_DEBUG")))
 }
+
+// debugFromEnv interprets ROBOT_TRACKER_DEBUG: any non-empty value other than
+// "0" or "false" turns debug output on.
+func debugFromEnv(v string) bool {
+	return v != "" && v != "0" && !strings.EqualFold(v, "false")
+}
+
+// SetDebug turns Debugf output on or off.
+func SetDebug(on bool) { debugEnabled.Store(on) }
+
+// DebugEnabled reports whether Debugf output is on.
+func DebugEnabled() bool { return debugEnabled.Load() }
 
 func SetQuietMode(q bool) {
 	QuietMode = q
@@ -32,7 +53,12 @@ func Logf(format string, v ...interface{}) {
 	log.Printf(format, v...)
 }
 
+// Debugf logs a "DEBUG"-prefixed line, but only when debug output is enabled
+// (see SetDebug).
 func Debugf(format string, v ...interface{}) {
+	if !debugEnabled.Load() {
+		return
+	}
 	log.Printf("DEBUG "+format, v...)
 }
 

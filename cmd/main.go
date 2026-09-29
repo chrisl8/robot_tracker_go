@@ -107,6 +107,7 @@ func main() {
 	testCameraID := flag.Int("test-camera", -1, "Test specific camera by ID")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	quiet := flag.Bool("quiet", false, "Suppress all logging output")
+	debug := flag.Bool("debug", false, "Log per-frame debug detail (also enabled by ROBOT_TRACKER_DEBUG=1)")
 	logFile := flag.String("log-file", "", "Log to file with rotation (default: log to stderr)")
 	flag.Parse()
 
@@ -116,6 +117,10 @@ func main() {
 			log.Fatalf("Failed to set up log file: %v", err)
 		}
 		defer func() { _ = f.Close() }()
+	}
+
+	if *debug {
+		utils.SetDebug(true)
 	}
 
 	if *quiet {

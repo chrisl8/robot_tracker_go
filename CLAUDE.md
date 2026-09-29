@@ -55,6 +55,10 @@ The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems, 
 
 `config/tracking_config.yaml` — cameras, robot definitions (tag IDs, sizes), detection thresholds, planning parameters, serial settings.
 
+## Debug logging
+
+`utils.Debugf` (per-frame steering, path and track detail) is **off by default**: it is emitted for every frame, so leaving it on floods the log and slows the loop. Turn it on with `--debug` or `ROBOT_TRACKER_DEBUG=1` (the env var lets the LaunchAgent enable it without editing scripts). Normal `utils.Log`/`Logf` output is unaffected.
+
 ## Go Code Style
 
 - Import groups: stdlib → third-party → internal, separated by blank lines
