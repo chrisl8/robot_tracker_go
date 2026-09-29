@@ -3,9 +3,13 @@
 package main
 
 import (
+	"image"
+	"image/color"
 	"testing"
 
 	"github.com/chrisl8/robot_tracker_go/internal/controller"
+	"github.com/chrisl8/robot_tracker_go/internal/detection"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
 	"github.com/chrisl8/robot_tracker_go/internal/tracking"
 )
 
@@ -89,5 +93,52 @@ func TestOnDestinationSet_ReleasesOtherRobotsGoals(t *testing.T) {
 	got := rs.planning.planner.RobotsWithGoals()
 	if len(got) != 1 || got[0] != 8 {
 		t.Errorf("RobotsWithGoals = %v, want only robot 8", got)
+	}
+}
+
+// Goal/waypoint checks must use the track's WorldPos (which includes the
+// center_offset correction), not a fresh uncorrected projection of the bbox.
+// The bbox here is left at zero, which projects to world (0,0); WorldPos is at
+// the goal, so the robot must be treated as having arrived.
+func TestExecuteAutonomousControl_UsesTrackWorldPos(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	goal := [2]float64{5.2, 5.4}
+	rs.planning.planner.SetGoal(demoAutonomyTagID, goal)
+	rs.planning.planner.AddRobot(demoAutonomyTagID, [2]float64{3.2, 2.4}, 0.3)
+	if _, ok := rs.planning.planner.GetGoal(demoAutonomyTagID); !ok {
+		t.Fatal("test setup: goal not set")
+	}
+
+	track := confirmedTrack(1, demoAutonomyTagID)
+	track.WorldPos = goal
+
+	rs.executeAutonomousControl([]tracking.Track{track})
+
+	if _, ok := rs.planning.planner.GetGoal(demoAutonomyTagID); ok {
+		t.Error("robot at its goal (by WorldPos) should have completed the goal")
+	}
+}
+
+// The no-config demo fallback builds no planner; an obstacle edit from the UI
+// used to nil-deref it inside the HTTP handler.
+func TestDemoCallbacks_ObstaclesChangedToleratesNilPlanner(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	rs.planning.planner = nil
+	rs.detection.detectionPipe = detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
+	rs.registerDemoCallbacks()
+
+	rs.web.webServer.Callbacks.OnObstaclesChanged([]planning.Obstacle{
+		planning.NewRectObstacle("a", [2]float64{0, 0}, [2]float64{0.1, 0.1}),
+	})
+}
+
+func TestDrawLineOnRGBA_ZeroLengthDoesNotPanic(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 20, 20))
+	red := color.RGBA{R: 255, A: 255}
+
+	drawLineOnRGBA(img, image.Pt(10, 10), image.Pt(10, 10), red, 3)
+
+	if img.RGBAAt(10, 10) != red {
+		t.Errorf("pixel at (10,10) = %v, want %v", img.RGBAAt(10, 10), red)
 	}
 }

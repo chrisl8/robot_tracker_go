@@ -80,27 +80,50 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 	return p.planPathLocked(robotID, start, goal)
 }
 
+// marginLocked is how far paths must stay from obstacles for this robot: its
+// radius plus a safety margin for obstacle-detection bbox inaccuracy and chair
+// legs. Callers must hold p.mu.
+func (p *Planner) marginLocked(robotID int) float64 {
+	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
+		return robot.Diameter/2 + 0.12
+	}
+	return 0.15
+}
+
+// allObstaclesLocked returns static plus dynamic obstacles. Callers must hold p.mu.
+func (p *Planner) allObstaclesLocked() []Obstacle {
+	all := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
+	all = append(all, p.obstacles...)
+	return append(all, p.dynamicObstacles...)
+}
+
+// lineClearLocked reports whether the straight segment a->b keeps at least
+// margin away from every obstacle. Callers must hold p.mu.
+func (p *Planner) lineClearLocked(a, b [2]float64, margin float64) bool {
+	for _, obs := range p.allObstaclesLocked() {
+		if segmentIntersectsObstacle(a, b, obs, margin, 0.05) {
+			return false
+		}
+	}
+	return true
+}
+
 // planPathLocked is the unexported implementation of PlanPath. Callers must
 // already hold p.mu — it exists so other Planner methods can plan a path
 // without re-entering the lock.
 func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]float64, bool) {
-	// Expand obstacles by the robot's radius so the path keeps the full body clear.
-	// Add safety margin beyond the radius to account for obstacle-detection bbox inaccuracy and chair legs.
-	margin := 0.15
-	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
-		margin = robot.Diameter/2 + 0.12
-	}
-	allObstacles := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
-	allObstacles = append(allObstacles, p.obstacles...)
-	allObstacles = append(allObstacles, p.dynamicObstacles...)
+	margin := p.marginLocked(robotID)
+	allObstacles := p.allObstaclesLocked()
 	path, ok := p.globalPlanner.Plan(start, goal, allObstacles, margin)
 	if ok && len(path) > 2 {
 		before := len(path)
 		originalPath := make([][2]float64, len(path))
 		copy(originalPath, path)
 		simplified := SimplifyPath(path, 0.15)
+		// The validated path is final. Simplifying it again (same epsilon)
+		// would drop the very waypoints validation restored to keep a
+		// segment clear of an obstacle.
 		path = ValidateSimplifiedPath(originalPath, simplified, allObstacles, margin, 0.05)
-		path = SimplifyPath(path, 0.15)
 		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(allObstacles))
 	}
 	return path, ok
@@ -329,6 +352,7 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 
 	wpIdx := p.currentWaypoint[robotID]
 	advanced := 0
+	margin := p.marginLocked(robotID)
 
 	for wpIdx < len(path)-1 {
 		dx := path[wpIdx][0] - pos[0]
@@ -342,8 +366,15 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 			continue
 		}
 
+		// The two skips below only make sense when the robot can drive
+		// straight to the next waypoint. A path that detours around an
+		// obstacle deliberately has waypoints that are "behind" or farther than
+		// what follows, and skipping one would steer the robot into the
+		// obstacle.
+		canShortcut := wpIdx+1 < len(path) && p.lineClearLocked(pos, path[wpIdx+1], margin)
+
 		// Check if we overshot: closer to next waypoint than current one
-		if wpIdx+1 < len(path) {
+		if canShortcut {
 			nx := path[wpIdx+1][0] - pos[0]
 			ny := path[wpIdx+1][1] - pos[1]
 			distToNext := math.Sqrt(nx*nx + ny*ny)
@@ -356,7 +387,7 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 
 		// Check if current waypoint is behind direction of travel toward next waypoint.
 		// A negative dot product means the current wp is opposite the direction to the next wp.
-		if wpIdx+1 < len(path) {
+		if canShortcut {
 			dnx := path[wpIdx+1][0] - pos[0]
 			dny := path[wpIdx+1][1] - pos[1]
 			dcx := path[wpIdx][0] - pos[0]

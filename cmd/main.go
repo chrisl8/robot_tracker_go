@@ -281,9 +281,18 @@ func (rs *RobotSystem) initDemoMode() {
 	rs.web.webServer.Start()
 	utils.Log(getWebUIURLs("9086"))
 
+	rs.registerDemoCallbacks()
+}
+
+// registerDemoCallbacks wires the web server for the no-config demo fallback.
+// That path builds no planner, tracker or config, so the callbacks must
+// tolerate a nil planner.
+func (rs *RobotSystem) registerDemoCallbacks() {
 	rs.web.webServer.Callbacks.OnObstaclesChanged = func(obstacles []planning.Obstacle) {
 		utils.Debugf("DEBUG: OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
-		rs.planning.planner.SetObstacles(obstacles)
+		if rs.planning.planner != nil {
+			rs.planning.planner.SetObstacles(obstacles)
+		}
 
 		detectionObstacles := make([]detection.Obstacle, len(obstacles))
 		for i, obs := range obstacles {
@@ -1386,8 +1395,10 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				continue
 			}
 
-			px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
-			worldPos := rs.position.positionEst.PixelToWorld(px, py)
+			// Use the position ProcessFrame computed (it includes the robot's
+			// center_offset correction and is what the planner was given), not
+			// a fresh uncorrected projection of the bbox.
+			worldPos := position.Point2D{X: track.WorldPos[0], Y: track.WorldPos[1]}
 
 			// Stop and replan when dangerously close to an obstacle
 			if clearance := rs.planning.planner.GetClearance(robotID); clearance < 0.08 {
@@ -1693,6 +1704,12 @@ func drawDemoTagsOnImage(img *image.RGBA, tags []detection.AprilTag) *image.RGBA
 func drawLineOnRGBA(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int) {
 	dx := p2.X - p1.X
 	dy := p2.Y - p1.Y
+
+	// A zero-length segment would divide by dy == 0 below.
+	if dx == 0 && dy == 0 {
+		drawCircleOnRGBA(img, p1.X, p1.Y, width/2, c)
+		return
+	}
 
 	if utils.Abs(dx) > utils.Abs(dy) {
 		if p1.X > p2.X {

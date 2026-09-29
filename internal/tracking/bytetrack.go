@@ -1,5 +1,7 @@
 package tracking
 
+import "sort"
+
 type ByteTrackConfig struct {
 	TrackThresh float64
 	TrackBuffer int
@@ -82,7 +84,7 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 		tt.track.AgeTrack()
 	}
 
-	matchedDetections, unmatchedDetections, matchedTrackIDs := t.matchTracks(highConfDetections)
+	matchedDetections, matchedTrackIDs, unmatchedDetections := t.matchTracks(highConfDetections, false)
 
 	// Update matched tracks
 	for i, detIdx := range matchedDetections {
@@ -108,8 +110,9 @@ func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx i
 		}
 	}
 
-	// Match low-confidence detections
-	lowMatched, _, lowMatchedTrackIDs := t.matchTracksLowConf(lowConfDetections)
+	// Match low-confidence detections, but only against tracks that were not
+	// already updated (matched or created) this frame.
+	lowMatched, lowMatchedTrackIDs, _ := t.matchTracks(lowConfDetections, true)
 
 	for i, detIdx := range lowMatched {
 		if detIdx < len(lowConfDetections) {
@@ -160,87 +163,108 @@ func (t *ByteTrack) predictAllTracks(dt float64) {
 	}
 }
 
-func (t *ByteTrack) matchTracks(detections []Detection) (matchedDetections []int, unmatchedDetections []int, matchedTrackIDs []int) {
+// matchTracks associates detections with existing tracks. It returns the
+// indices of matched detections, the parallel track IDs they matched, and the
+// indices of unmatched detections (ascending). With onlyStale, tracks already
+// updated this frame (timeSinceUpdate == 0) are not candidates.
+//
+// Tag identity is authoritative: a detection carrying a tag ID goes to the
+// track holding that same tag, whatever the IoU, and IoU never pairs two
+// different tags. Only the remainder is matched by IoU (Hungarian). Tracks are
+// visited in ascending ID order so results don't depend on map iteration.
+func (t *ByteTrack) matchTracks(detections []Detection, onlyStale bool) (matched []int, matchedTrackIDs []int, unmatched []int) {
+	matched, matchedTrackIDs, unmatched = []int{}, []int{}, []int{}
 	if len(detections) == 0 {
-		return []int{}, []int{}, []int{}
+		return matched, matchedTrackIDs, unmatched
 	}
 
-	activeTracks := make([]Track, 0, len(t.tracks))
-	trackIDs := make([]int, 0, len(t.tracks))
-	for trackID, tt := range t.tracks {
-		activeTracks = append(activeTracks, *tt.track)
-		trackIDs = append(trackIDs, trackID)
+	type candidate struct {
+		id    int
+		track *Track
+	}
+	var cands []candidate
+	for id, tt := range t.tracks {
+		if tt == nil || tt.track == nil || (onlyStale && tt.timeSinceUpdate == 0) {
+			continue
+		}
+		cands = append(cands, candidate{id, tt.track})
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].id < cands[j].id })
+	trackIDs := make([]int, len(cands))
+	candidates := make([]*Track, len(cands)) // parallel to trackIDs
+	for j, c := range cands {
+		trackIDs[j], candidates[j] = c.id, c.track
 	}
 
-	costMatrix := ComputeIoUCost(detections, activeTracks, t.config.MatchThresh)
-	assignment := Hungarian(costMatrix)
+	detDone := make([]bool, len(detections))
+	trackDone := make([]bool, len(trackIDs))
 
-	matchedDetectionsResult := make([]int, 0)
-	matchedTrackIDsResult := make([]int, 0)
-	unmatchedDetectionsMap := make(map[int]bool)
-
-	for i := 0; i < len(detections); i++ {
-		unmatchedDetectionsMap[i] = true
-	}
-
-	for i, j := range assignment.RowToCol {
-		if j >= 0 && i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < NoMatchCost {
-			matchedDetectionsResult = append(matchedDetectionsResult, i)
-			matchedTrackIDsResult = append(matchedTrackIDsResult, trackIDs[j])
-			delete(unmatchedDetectionsMap, i)
+	// 1. Tag identity.
+	for i, det := range detections {
+		if det.TagID == nil {
+			continue
+		}
+		for j := range trackIDs {
+			tag := candidates[j].TagID
+			if !trackDone[j] && tag != nil && *tag == *det.TagID {
+				matched = append(matched, i)
+				matchedTrackIDs = append(matchedTrackIDs, trackIDs[j])
+				detDone[i], trackDone[j] = true, true
+				break
+			}
 		}
 	}
 
-	for idx := range unmatchedDetectionsMap {
-		unmatchedDetections = append(unmatchedDetections, idx)
-	}
-
-	return matchedDetectionsResult, unmatchedDetections, matchedTrackIDsResult
-}
-
-func (t *ByteTrack) matchTracksLowConf(detections []Detection) (matched []int, unmatchedDetections []int, matchedTrackIDs []int) {
-	if len(detections) == 0 {
-		return []int{}, []int{}, []int{}
-	}
-
-	activeTracks := make([]Track, 0, len(t.tracks))
-	trackIDs := make([]int, 0, len(t.tracks))
-	for trackID, tt := range t.tracks {
-		activeTracks = append(activeTracks, *tt.track)
-		trackIDs = append(trackIDs, trackID)
-	}
-
-	if len(activeTracks) == 0 {
-		for i := range detections {
-			unmatchedDetections = append(unmatchedDetections, i)
+	// 2. IoU over whatever is left.
+	var restDets []int
+	for i := range detections {
+		if !detDone[i] {
+			restDets = append(restDets, i)
 		}
-		return []int{}, unmatchedDetections, []int{}
 	}
-
-	costMatrix := ComputeIoUCost(detections, activeTracks, 0.3)
-	assignment := Hungarian(costMatrix)
-
-	matched = []int{}
-	matchedTrackIDs = []int{}
-	unmatchedDetectionsMap := make(map[int]bool)
-
-	for i := 0; i < len(detections); i++ {
-		unmatchedDetectionsMap[i] = true
-	}
-
-	for i, j := range assignment.RowToCol {
-		if j >= 0 && i < len(detections) && j < len(activeTracks) && costMatrix[i][j] < NoMatchCost {
-			matched = append(matched, i)
-			matchedTrackIDs = append(matchedTrackIDs, trackIDs[j])
-			delete(unmatchedDetectionsMap, i)
+	var restTracks []int
+	for j := range trackIDs {
+		if !trackDone[j] {
+			restTracks = append(restTracks, j)
 		}
 	}
 
-	for idx := range unmatchedDetectionsMap {
-		unmatchedDetections = append(unmatchedDetections, idx)
+	if len(restDets) > 0 && len(restTracks) > 0 {
+		dets := make([]Detection, len(restDets))
+		for k, i := range restDets {
+			dets[k] = detections[i]
+		}
+		tracks := make([]Track, len(restTracks))
+		for k, j := range restTracks {
+			tracks[k] = *candidates[j]
+		}
+
+		cost := ComputeIoUCost(dets, tracks, t.config.MatchThresh)
+		for k := range dets {
+			for l := range tracks {
+				if dets[k].TagID != nil && tracks[l].TagID != nil && *dets[k].TagID != *tracks[l].TagID {
+					cost[k][l] = NoMatchCost
+				}
+			}
+		}
+
+		assignment := Hungarian(cost)
+		for k, l := range assignment.RowToCol {
+			if l >= 0 && k < len(dets) && l < len(tracks) && cost[k][l] < NoMatchCost {
+				i, j := restDets[k], restTracks[l]
+				matched = append(matched, i)
+				matchedTrackIDs = append(matchedTrackIDs, trackIDs[j])
+				detDone[i] = true
+			}
+		}
 	}
 
-	return matched, unmatchedDetections, matchedTrackIDs
+	for i := range detections {
+		if !detDone[i] {
+			unmatched = append(unmatched, i)
+		}
+	}
+	return matched, matchedTrackIDs, unmatched
 }
 
 func (t *ByteTrack) createNewTrack(detection Detection, timestamp float64) {
@@ -303,6 +327,7 @@ func (t *ByteTrack) buildTrackingResult(timestamp float64, frameIdx int, numDete
 	for _, tt := range t.tracks {
 		tracks = append(tracks, *tt.track)
 	}
+	sort.Slice(tracks, func(i, j int) bool { return tracks[i].TrackID < tracks[j].TrackID })
 
 	return &TrackingResult{
 		Tracks:        tracks,
@@ -317,6 +342,8 @@ func (t *ByteTrack) Reset() {
 	t.tracks = make(map[int]*TrackedTrack)
 	t.nextTrackID = 0
 	t.frameCount = 0
+	t.lastTimestamp = 0
+	t.hasLastTimestamp = false
 }
 
 func (t *ByteTrack) GetTrackCount() int {
