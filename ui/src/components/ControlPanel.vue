@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Gamepad2 } from 'lucide-vue-next'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Gamepad2 } from '@lucide/vue'
 import type { CommandRequest, RobotCommand } from '@/types/api'
 
 const uiStore = useUIStore()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScanSearch } from 'lucide-vue-next'
+import { ScanSearch } from '@lucide/vue'
 import { useTempObstacleStore } from '@/stores/tempObstacleStore'
 
 const tempStore = useTempObstacleStore()

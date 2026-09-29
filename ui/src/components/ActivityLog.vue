@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
-import { ScrollText } from 'lucide-vue-next'
+import { ScrollText } from '@lucide/vue'
 import type { LogEntryType } from '@/types/ui'
 
 const uiStore = useUIStore()

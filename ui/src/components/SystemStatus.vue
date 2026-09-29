@@ -2,7 +2,7 @@
 import { useRobotStore } from '@/stores/robotStore'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
-import { Activity } from 'lucide-vue-next'
+import { Activity } from '@lucide/vue'
 
 const robotStore = useRobotStore()
 const obstacleStore = useObstacleStore()

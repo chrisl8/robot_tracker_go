@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useObstacleStore } from '@/stores/obstacleStore'
 import { useUIStore } from '@/stores/uiStore'
-import { ShieldAlert } from 'lucide-vue-next'
+import { ShieldAlert } from '@lucide/vue'
 
 const obstacleStore = useObstacleStore()
 const uiStore = useUIStore()

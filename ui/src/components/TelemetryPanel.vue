@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
-import { Gauge } from 'lucide-vue-next'
+import { Gauge } from '@lucide/vue'
 import CompassHeading from '@/components/CompassHeading.vue'
 
 const robotStore = useRobotStore()

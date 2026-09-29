@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { getTrackColor } from '@/types/robot'
-import { Crosshair, Tag, X } from 'lucide-vue-next'
+import { Crosshair, Tag, X } from '@lucide/vue'
 
 const robotStore = useRobotStore()
 

@@ -7,6 +7,6 @@
     "ignoreDependencies": [
         // Known false positives
         "@vueuse/core", // Used in CalibrationWizard.vue but not detected
-        "lucide-vue-next", // Tree-shaken icon imports not detected by knip
+        "@lucide/vue", // Icon imports in <script setup> blocks are not detected by knip
     ],
 }

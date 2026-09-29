@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRobotStore } from '@/stores/robotStore'
 import { useFpsHealthStore } from '@/stores/fpsHealthStore'
-import { Radio } from 'lucide-vue-next'
+import { Radio } from '@lucide/vue'
 
 const robotStore = useRobotStore()
 const fpsHealth = useFpsHealthStore()

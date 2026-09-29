@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { TriangleAlert, X } from 'lucide-vue-next'
+import { TriangleAlert, X } from '@lucide/vue'
 import { formatFps } from '@/composables/fpsHealth'
 import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { useRobotStore } from '@/stores/robotStore'
