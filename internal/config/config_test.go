@@ -218,3 +218,42 @@ func TestShippedConfigLoads(t *testing.T) {
 		t.Error("tracking threshold not configured")
 	}
 }
+
+func TestAddRobotIfMissing(t *testing.T) {
+	cfg := &Config{Robots: []RobotConfig{{TagID: 1, Name: "real", Diameter: 0.5}}}
+
+	if cfg.AddRobotIfMissing(RobotConfig{TagID: 1, Name: "other", Diameter: 0.1}) {
+		t.Error("adding an existing tag id must be a no-op")
+	}
+	if got := cfg.GetRobotByTagID(1); got == nil || got.Name != "real" || got.Diameter != 0.5 {
+		t.Errorf("explicit config was overridden: %+v", got)
+	}
+	if !cfg.AddRobotIfMissing(RobotConfig{TagID: 2, Name: "new"}) {
+		t.Error("a new tag id should be added")
+	}
+	if cfg.GetRobotByTagID(2) == nil || len(cfg.Robots) != 2 {
+		t.Errorf("robots = %+v", cfg.Robots)
+	}
+}
+
+// Lookups run on HTTP handler goroutines while demo mode may add robots after
+// the server has started. Run with -race.
+func TestAddRobotIfMissing_ConcurrentWithLookups(t *testing.T) {
+	cfg := &Config{}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 500; i++ {
+			cfg.AddRobotIfMissing(RobotConfig{TagID: i})
+		}
+		close(done)
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			_ = cfg.GetRobotByTagID(250)
+			_ = cfg.GetRobotByName("x")
+		}
+	}
+}

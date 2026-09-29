@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type APIRequestContext } from '@playwright/test'
 
 test.describe('Robot Tracker UI Integration', () => {
     test.beforeEach(async ({ page }) => {
@@ -230,28 +230,88 @@ test.describe('Destination Planning', () => {
     })
 })
 
-test.describe('Destination API', () => {
-    test('should accept destination POST request', async ({ request }) => {
-        const response = await request.post('http://localhost:9086/api/destination', {
-            data: {
-                robot_id: 1,
-                x: 320,
-                y: 240,
+const BASE = 'http://localhost:9086'
+
+// The demo may or may not already be calibrated (calibration_demo.yaml persists
+// between runs but is git-ignored, so a fresh checkout has none). Destinations
+// need a calibration, so make these tests independent of run order and of any
+// leftover file by calibrating through the API when needed.
+async function ensureDemoCalibrated(request: APIRequestContext): Promise<void> {
+    const status = await (await request.get(`${BASE}/api/calibration/status`)).json()
+    if (status.state === 'calibrated') return
+
+    // Polling detected-tags is what makes the demo present the calibration target.
+    let tags: { id: number; corners: number[][] }[] = []
+    await expect
+        .poll(
+            async () => {
+                const data = await (
+                    await request.get(`${BASE}/api/calibration/detected-tags`)
+                ).json()
+                const targetIds = new Set<number>(data.target.tags.map((t: { id: number }) => t.id))
+                tags = data.tags.filter((t: { id: number }) => targetIds.has(t.id))
+                return tags.length
             },
+            { timeout: 10000 }
+        )
+        .toBe(5)
+
+    const response = await request.post(`${BASE}/api/calibration/compute`, {
+        data: { tags: tags.map(t => ({ id: t.id, corners: t.corners })) },
+    })
+    expect(response.status()).toBe(200)
+}
+
+test.describe('Destination API', () => {
+    test.beforeEach(async ({ request }) => {
+        await ensureDemoCalibrated(request)
+    })
+
+    test('should accept destination POST request', async ({ request }) => {
+        const response = await request.post(`${BASE}/api/destination`, {
+            data: { robot_id: 1, x: 320, y: 240 },
         })
         expect(response.status()).toBe(200)
         const data = await response.json()
         expect(data.status).toBe('ok')
     })
 
-    test('should accept destination even without robot_id (defaults to 0)', async ({ request }) => {
-        const response = await request.post('http://localhost:9086/api/destination', {
-            data: {
-                x: 320,
-                y: 240,
-            },
+    // The demo's synthetic robots (tags 1-3) are registered as configured robots,
+    // so they follow the same rules as a real run.
+    test('should accept a destination for every demo robot', async ({ request }) => {
+        for (const robotId of [1, 2, 3]) {
+            const response = await request.post(`${BASE}/api/destination`, {
+                data: { robot_id: robotId, x: 320, y: 240 },
+            })
+            expect(response.status(), `robot ${robotId}`).toBe(200)
+        }
+    })
+
+    test('should reject a destination for a robot that is not configured', async ({ request }) => {
+        const response = await request.post(`${BASE}/api/destination`, {
+            data: { robot_id: 99, x: 320, y: 240 },
         })
-        // Go/gin doesn't enforce required fields by default
-        expect(response.status()).toBe(200)
+        expect(response.status()).toBe(409)
+        expect((await response.json()).error).toContain('not configured')
+    })
+
+    test('should reject a destination without robot_id', async ({ request }) => {
+        const response = await request.post(`${BASE}/api/destination`, {
+            data: { x: 320, y: 240 },
+        })
+        expect(response.status()).toBe(400)
+    })
+
+    test('should reject a destination outside the video frame', async ({ request }) => {
+        for (const point of [
+            { x: -1, y: 10 },
+            { x: 10, y: -1 },
+            { x: 100000, y: 10 },
+        ]) {
+            const response = await request.post(`${BASE}/api/destination`, {
+                data: { robot_id: 1, ...point },
+            })
+            expect(response.status(), JSON.stringify(point)).toBe(400)
+        }
     })
 })

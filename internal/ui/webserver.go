@@ -282,10 +282,12 @@ type CommandMessage struct {
 	Action string `json:"action"`
 }
 
+// DestinationRequest's fields are pointers so a missing field is a 400 rather
+// than silently becoming 0 (robot 0, or pixel (0,0)).
 type DestinationRequest struct {
-	RobotID int `json:"robot_id"`
-	X       int `json:"x"`
-	Y       int `json:"y"`
+	RobotID *int `json:"robot_id"`
+	X       *int `json:"x"`
+	Y       *int `json:"y"`
 }
 
 type DestinationMessage struct {
@@ -726,8 +728,14 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		return
 	}
 
+	if req.RobotID == nil || req.X == nil || req.Y == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "robot_id, x and y are all required"})
+		return
+	}
+	robotID, x, y := *req.RobotID, *req.X, *req.Y
+
 	frameW, frameH := s.frameSize()
-	if problem := destinationProblem(req.RobotID, req.X, req.Y, frameW, frameH); problem != "" {
+	if problem := destinationProblem(robotID, x, y, frameW, frameH); problem != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": problem})
 		return
 	}
@@ -737,8 +745,8 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 	s.obstacles.mutex.RUnlock()
 
 	if len(obstacles) > 0 {
-		destX := float64(req.X)
-		destY := float64(req.Y)
+		destX := float64(x)
+		destY := float64(y)
 
 		for _, obs := range obstacles {
 			if destX >= float64(obs.PixelsTopLeft[0]) && destX <= float64(obs.PixelsBottomRight[0]) &&
@@ -758,13 +766,13 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 	// must not be stored or shown, or the UI would display a goal the planner
 	// never received.
 	if s.Callbacks.OnDestinationSet != nil {
-		if err := s.Callbacks.OnDestinationSet(req.RobotID, [2]float64{float64(req.X), float64(req.Y)}); err != nil {
+		if err := s.Callbacks.OnDestinationSet(robotID, [2]float64{float64(x), float64(y)}); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
 	}
 
-	dest := DestinationMessage{RobotID: req.RobotID, X: req.X, Y: req.Y, Valid: true}
+	dest := DestinationMessage{RobotID: robotID, X: x, Y: y, Valid: true}
 	s.destination.mutex.Lock()
 	s.destination.current = dest
 	s.destination.mutex.Unlock()
@@ -775,7 +783,7 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 		Destination: &dest,
 	})
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": req})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": gin.H{"robot_id": robotID, "x": x, "y": y}})
 }
 
 func (s *WebServer) ClearDestination(robotID int) {
@@ -792,20 +800,25 @@ func (s *WebServer) ClearDestination(robotID int) {
 
 func (s *WebServer) handleDestinationClear(c *gin.Context) {
 	var req struct {
-		RobotID int `json:"robot_id"`
+		RobotID *int `json:"robot_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.RobotID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "robot_id is required"})
+		return
+	}
+	robotID := *req.RobotID
 
-	s.ClearDestination(req.RobotID)
+	s.ClearDestination(robotID)
 
 	if s.Callbacks.OnDestinationClear != nil {
-		s.Callbacks.OnDestinationClear(req.RobotID)
+		s.Callbacks.OnDestinationClear(robotID)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "robot_id": req.RobotID})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "robot_id": robotID})
 }
 
 func (s *WebServer) handleStatus(c *gin.Context) {

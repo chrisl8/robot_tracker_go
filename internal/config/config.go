@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -11,7 +12,10 @@ import (
 )
 
 type Config struct {
-	Robots        []RobotConfig       `yaml:"robots"`
+	Robots []RobotConfig `yaml:"robots"`
+	// robotsMu guards Robots against AddRobotIfMissing, which demo mode calls
+	// after the web server (whose handlers look robots up) has started.
+	robotsMu      sync.RWMutex
 	PathExecution PathExecutionConfig `yaml:"path_execution"`
 	AprilTags     AprilTagConfig      `yaml:"april_tags"`
 	Obstacles     ObstaclesConfig     `yaml:"obstacles"`
@@ -288,6 +292,8 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) GetRobotByTagID(tagID int) *RobotConfig {
+	c.robotsMu.RLock()
+	defer c.robotsMu.RUnlock()
 	for i := range c.Robots {
 		if c.Robots[i].TagID == tagID {
 			return &c.Robots[i]
@@ -296,7 +302,24 @@ func (c *Config) GetRobotByTagID(tagID int) *RobotConfig {
 	return nil
 }
 
+// AddRobotIfMissing appends r unless a robot with the same tag ID is already
+// configured (an explicit configuration always wins). It reports whether it
+// added one.
+func (c *Config) AddRobotIfMissing(r RobotConfig) bool {
+	c.robotsMu.Lock()
+	defer c.robotsMu.Unlock()
+	for i := range c.Robots {
+		if c.Robots[i].TagID == r.TagID {
+			return false
+		}
+	}
+	c.Robots = append(c.Robots, r)
+	return true
+}
+
 func (c *Config) GetRobotByName(name string) *RobotConfig {
+	c.robotsMu.RLock()
+	defer c.robotsMu.RUnlock()
 	for i := range c.Robots {
 		if c.Robots[i].Name == name {
 			return &c.Robots[i]

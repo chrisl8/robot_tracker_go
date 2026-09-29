@@ -387,3 +387,44 @@ func TestObstacleAPI_RejectsOutOfFrameAndEmptyBoxes(t *testing.T) {
 		t.Errorf("rejected update still changed the obstacle: %v", got)
 	}
 }
+
+// A missing field must be an error, not silently 0 (robot 0 / pixel (0,0)).
+func TestHandleDestination_RequiresAllFields(t *testing.T) {
+	s := serverWithFrame(t, 640, 480)
+	called := false
+	s.Callbacks.OnDestinationSet = func(int, [2]float64) error { called = true; return nil }
+
+	for _, body := range []string{
+		`{"x":10,"y":10}`,
+		`{"robot_id":1,"y":10}`,
+		`{"robot_id":1,"x":10}`,
+		`{}`,
+	} {
+		if w := postJSON(t, s, "POST", "/api/destination", body); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", body, w.Code)
+		}
+	}
+	if called {
+		t.Error("an incomplete request must not reach the app")
+	}
+	// Zero is a legitimate value when it is actually sent.
+	if w := postJSON(t, s, "POST", "/api/destination", `{"robot_id":0,"x":0,"y":0}`); w.Code != http.StatusOK {
+		t.Errorf("explicit zeros: status %d, want 200", w.Code)
+	}
+}
+
+func TestHandleDestinationClear_RequiresRobotID(t *testing.T) {
+	s := NewWebServer(":0")
+	cleared := false
+	s.Callbacks.OnDestinationClear = func(int) { cleared = true }
+
+	if w := postJSON(t, s, "DELETE", "/api/destination", `{}`); w.Code != http.StatusBadRequest {
+		t.Errorf("status %d, want 400", w.Code)
+	}
+	if cleared {
+		t.Error("a request without robot_id must not clear robot 0's goal")
+	}
+	if w := postJSON(t, s, "DELETE", "/api/destination", `{"robot_id":0}`); w.Code != http.StatusOK || !cleared {
+		t.Errorf("explicit robot_id 0: status %d cleared=%v, want 200 and cleared", w.Code, cleared)
+	}
+}

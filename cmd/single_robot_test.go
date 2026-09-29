@@ -5,8 +5,10 @@ package main
 import (
 	"image"
 	"image/color"
+	"strings"
 	"testing"
 
+	"github.com/chrisl8/robot_tracker_go/internal/config"
 	"github.com/chrisl8/robot_tracker_go/internal/controller"
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
 	"github.com/chrisl8/robot_tracker_go/internal/planning"
@@ -82,6 +84,7 @@ func TestExecuteAutonomousControl_ClearsCommandWhenNoRobotHasAPath(t *testing.T)
 // releases the previous one's.
 func TestOnDestinationSet_ReleasesOtherRobotsGoals(t *testing.T) {
 	rs := newDemoAutonomyRig(t)
+	rs.cfg.AddRobotIfMissing(config.RobotConfig{TagID: 8, Name: "second", Diameter: 0.3})
 	rs.registerWebServerCallbacks()
 	rs.planning.planner.AddRobot(demoAutonomyTagID, [2]float64{1, 1}, 0.3)
 	rs.planning.planner.AddRobot(8, [2]float64{2, 2}, 0.3)
@@ -164,4 +167,55 @@ func TestOnDestinationSet_RefusesWhenNotCalibrated(t *testing.T) {
 	if len(rs.planning.planner.RobotsWithGoals()) != 0 {
 		t.Error("no goal should have been set")
 	}
+}
+
+// Only configured robots may be given goals: an unknown tag would otherwise be
+// planned and driven with a default body size.
+func TestOnDestinationSet_RejectsUnconfiguredRobot(t *testing.T) {
+	rs := newDemoAutonomyRig(t) // configures only demoAutonomyTagID
+	rs.registerWebServerCallbacks()
+
+	err := rs.web.webServer.Callbacks.OnDestinationSet(99, [2]float64{100, 100})
+
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("err = %v, want a 'not configured' error", err)
+	}
+	if len(rs.planning.planner.RobotsWithGoals()) != 0 {
+		t.Error("no goal should be set for an unconfigured robot")
+	}
+	if err := rs.web.webServer.Callbacks.OnDestinationSet(demoAutonomyTagID, [2]float64{100, 100}); err != nil {
+		t.Errorf("a configured robot should be accepted, got %v", err)
+	}
+}
+
+// The demo's synthetic robots become real configured robots, so they follow the
+// same rules as a real run; an explicit config entry is never overridden.
+func TestRegisterDemoRobots(t *testing.T) {
+	cfg := &config.Config{Robots: []config.RobotConfig{{TagID: 1, Name: "real", Diameter: 0.55}}}
+	rs := NewRobotSystem(cfg)
+
+	rs.registerDemoRobots()
+	rs.registerDemoRobots() // idempotent
+
+	if len(cfg.Robots) != demoTagCount {
+		t.Fatalf("robots = %d, want %d (no duplicates)", len(cfg.Robots), demoTagCount)
+	}
+	for id := 1; id <= demoTagCount; id++ {
+		if cfg.GetRobotByTagID(id) == nil {
+			t.Errorf("demo tag %d is not a configured robot", id)
+		}
+	}
+	if got := cfg.GetRobotByTagID(1); got == nil || got.Name != "real" || got.Diameter != 0.55 {
+		t.Errorf("explicitly configured tag 1 was overridden: %+v", got)
+	}
+	// generateDemoTags must only emit tags the registration covers.
+	for _, tag := range generateDemoTags(640, 480, 10) {
+		if cfg.GetRobotByTagID(tag.TagID) == nil {
+			t.Errorf("generated demo tag %d is not registered as a robot", tag.TagID)
+		}
+	}
+}
+
+func TestRegisterDemoRobots_NilConfigIsSafe(t *testing.T) {
+	NewRobotSystem(nil).registerDemoRobots() // must not panic
 }

@@ -143,3 +143,18 @@ func TestExecuteAutonomousControl_DemoModeGuardOnlyBlocksWhenArduinoConnected(t 
 		t.Errorf("demo mode with no Arduino wired up should not be blocked by the guard, but rs.io.robotCommands was never set")
 	}
 }
+
+// Demo mode must tell the position estimator the frame size like the real
+// camera path does; the web API's range checks depend on it.
+func TestProcessDemoFrame_ReportsFrameSize(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	if w, h := rs.position.positionEst.FrameSize(); w != 0 || h != 0 {
+		t.Fatalf("test setup: frame size should start unknown, got %dx%d", w, h)
+	}
+
+	rs.ProcessDemoFrame(image.NewRGBA(image.Rect(0, 0, 640, 480)), 0, nil)
+
+	if w, h := rs.position.positionEst.FrameSize(); w != 640 || h != 480 {
+		t.Errorf("frame size after a demo frame = %dx%d, want 640x480", w, h)
+	}
+}

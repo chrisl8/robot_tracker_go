@@ -540,6 +540,9 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 	}
 
 	rs.web.webServer.Callbacks.OnDestinationSet = func(robotID int, pixelPos [2]float64) error {
+		if rs.cfg == nil || rs.cfg.GetRobotByTagID(robotID) == nil {
+			return fmt.Errorf("robot %d is not configured; add it under robots: in config/tracking_config.yaml", robotID)
+		}
 		if rs.position.positionEst == nil || !rs.position.positionEst.IsCalibrated() {
 			utils.Logf("Cannot set destination: not calibrated")
 			return fmt.Errorf("cannot set a destination: the camera is not calibrated")
@@ -1050,6 +1053,17 @@ func (rs *RobotSystem) updateTrackWorldPosition(track *tracking.Track, applyCent
 	return worldPos, robotDiameter
 }
 
+// noteFrameSize tells the position estimator the size of the frames being
+// processed. The calibration-resolution check and the web API's range checks
+// (destinations, obstacles) depend on it. Shared by ProcessFrame and
+// ProcessDemoFrame: the demo path used to skip it, which silently disabled the
+// API's upper-bound checks in demo mode.
+func (rs *RobotSystem) noteFrameSize(width, height int) {
+	if rs.position.positionEst != nil {
+		rs.position.positionEst.SetFrameSize(width, height)
+	}
+}
+
 // broadcastFrameStats pushes per-frame tag/track counts and Arduino/FPS
 // status to the web server, throttling the status/tag broadcast to roughly
 // once a second via statusBroadcastDue(). Shared by ProcessFrame and
@@ -1101,9 +1115,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	width := bounds.Max.X - bounds.Min.X
 	height := bounds.Max.Y - bounds.Min.Y
 
-	if rs.position.positionEst != nil {
-		rs.position.positionEst.SetFrameSize(width, height)
-	}
+	rs.noteFrameSize(width, height)
 
 	detectionResult := rs.detection.detectionPipe.Detect(frameData, width, height, timestamp, rs.stats.frameNum)
 	detectTime := time.Since(frameStart)
@@ -1551,11 +1563,34 @@ func generateTestPattern(width, height int, frameNum int) image.Image {
 	return img
 }
 
+// demoTagCount is how many synthetic robots the demo generates; their tag IDs
+// are 1..demoTagCount. registerDemoRobots makes them real configured robots so
+// the demo goes through exactly the same rules as a real run.
+const demoTagCount = 3
+
+// demoRobotDiameter is the body size (metres) given to registered demo robots.
+const demoRobotDiameter = 0.30
+
+// registerDemoRobots adds the demo's synthetic robots to the configuration,
+// leaving any robot the config already defines (e.g. tag 1) untouched. Without
+// this the demo's tags are "unconfigured" and, correctly, cannot be given goals.
+func (rs *RobotSystem) registerDemoRobots() {
+	if rs.cfg == nil {
+		return
+	}
+	for id := 1; id <= demoTagCount; id++ {
+		rs.cfg.AddRobotIfMissing(config.RobotConfig{
+			TagID:    id,
+			Name:     fmt.Sprintf("demo_robot_%d", id),
+			Diameter: demoRobotDiameter,
+		})
+	}
+}
+
 func generateDemoTags(width, height int, frameNum int) []detection.AprilTag {
 	tags := []detection.AprilTag{}
 
-	tagCount := 3
-	for i := 0; i < tagCount; i++ {
+	for i := 0; i < demoTagCount; i++ {
 		angle := float64(frameNum+i*100) * 0.01
 		radius := 100.0 + float64(i)*30
 		cx := float64(width)/2 + radius*float64(i-1)*0.2*float64(frameNum)*0.01
@@ -1686,6 +1721,7 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 
 	width := img.Rect.Max.X
 	height := img.Rect.Max.Y
+	rs.noteFrameSize(width, height)
 
 	result := &detection.DetectionResult{
 		Tags:            demoTags,
@@ -1817,6 +1853,9 @@ func main() {
 
 	rs := NewRobotSystem(cfg)
 	rs.demoMode = *demoMode
+	if rs.demoMode {
+		rs.registerDemoRobots()
+	}
 	if cfg != nil {
 		if err := rs.Initialize(); err != nil {
 			utils.Logf("Warning: Failed to initialize robot system: %v", err)
@@ -1901,6 +1940,7 @@ func main() {
 		// Also covers falling back to demo because the camera never opened:
 		// calibrating on synthetic frames must not overwrite the real file.
 		rs.demoMode = true
+		rs.registerDemoRobots()
 		if rs.web.webServer != nil {
 			rs.web.webServer.SetCameraName(demoCameraName)
 		}
