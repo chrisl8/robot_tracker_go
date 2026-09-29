@@ -1,0 +1,149 @@
+//go:build gocv
+
+package main
+
+import (
+	"math"
+	"time"
+
+	"github.com/chrisl8/robot_tracker_go/internal/controller"
+	"github.com/chrisl8/robot_tracker_go/internal/position"
+	"github.com/chrisl8/robot_tracker_go/internal/tracking"
+	"github.com/chrisl8/robot_tracker_go/internal/utils"
+)
+
+// executeAutonomousControl handles path-following for all tracked robots.
+func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
+	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
+		return
+	}
+	// Demo mode can fall back from a real camera that's temporarily
+	// unavailable while a real Arduino stays connected (Initialize() wires
+	// up Arduino/commandQueue regardless of demo vs. real-camera mode). Never
+	// let synthetic demo-tag positions drive real hardware.
+	if rs.demoMode && rs.io.arduino != nil && rs.io.arduino.IsConnected() {
+		utils.Logf("Refusing autonomous control: demo mode is active with a real Arduino connected")
+		return
+	}
+
+	commandIssued := false
+	anyPath := false
+	for i := range tracks {
+		track := &tracks[i]
+		if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
+			continue
+		}
+
+		robotID := *track.TagID
+
+		if _, hasPath := rs.planning.planner.GetNextWaypoint(robotID); hasPath {
+			anyPath = true
+			if rs.position.positionEst == nil {
+				continue
+			}
+
+			// Use the position ProcessFrame computed (it includes the robot's
+			// center_offset correction and is what the planner was given), not
+			// a fresh uncorrected projection of the bbox.
+			worldPos := position.Point2D{X: track.WorldPos[0], Y: track.WorldPos[1]}
+
+			// Stop and replan when dangerously close to an obstacle
+			if clearance := rs.planning.planner.GetClearance(robotID); clearance < 0.08 {
+				utils.Logf("PROXIMITY WARNING: Robot %d clearance=%.3fm — stopping and replanning", robotID, clearance)
+				if rs.io.commandQueue != nil {
+					rs.io.commandQueue.Enqueue(controller.CommandStop)
+					commandIssued = true
+				}
+				rs.io.robotCommands[robotID] = "stopped"
+				// Replan at most once every 3 seconds to avoid thrashing
+				if lastReplan, ok := rs.planning.lastReplanTime[robotID]; !ok || time.Since(lastReplan) > 3*time.Second {
+					if goal, hasGoal := rs.planning.planner.GetGoal(robotID); hasGoal {
+						rs.planning.planner.ClearPathOnly(robotID)
+						pos := [2]float64{worldPos.X, worldPos.Y}
+						if newPath, ok := rs.planning.planner.PlanPath(robotID, pos, goal); ok {
+							rs.planning.planner.SetPath(robotID, newPath)
+							utils.Logf("Robot %d replanned: %d waypoints from (%.2f,%.2f)", robotID, len(newPath), pos[0], pos[1])
+						} else {
+							utils.Logf("Robot %d replan FAILED from (%.2f,%.2f) to (%.2f,%.2f)", robotID, pos[0], pos[1], goal[0], goal[1])
+						}
+						rs.planning.lastReplanTime[robotID] = time.Now()
+					}
+				}
+				continue
+			}
+
+			// Check if robot is close to final destination
+			if goal, hasGoal := rs.planning.planner.GetGoal(robotID); hasGoal {
+				dx := worldPos.X - goal[0]
+				dy := worldPos.Y - goal[1]
+				distToGoal := math.Sqrt(dx*dx + dy*dy)
+				if distToGoal < rs.io.waypointThreshold {
+					rs.planning.planner.CompletePath(robotID)
+					rs.web.webServer.ClearDestination(robotID)
+					utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
+					if rs.io.commandQueue != nil {
+						rs.io.commandQueue.Enqueue(controller.CommandStop)
+						commandIssued = true
+					}
+					rs.io.robotCommands[robotID] = "stopped"
+					continue
+				}
+			}
+
+			// Advance past any reached or overshot waypoints
+			if !rs.planning.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.io.waypointThreshold) {
+				utils.Logf("Robot %d reached final waypoint, stopping", robotID)
+				if rs.io.commandQueue != nil {
+					rs.io.commandQueue.Enqueue(controller.CommandStop)
+					commandIssued = true
+				}
+				rs.io.robotCommands[robotID] = "stopped"
+				continue
+			}
+
+			// Get updated waypoint after advancing
+			waypoint, stillHasPath := rs.planning.planner.GetNextWaypoint(robotID)
+			if !stillHasPath {
+				continue
+			}
+
+			// Heading-based steering: turn to face waypoint, then drive forward
+			dx := waypoint[0] - worldPos.X
+			dy := waypoint[1] - worldPos.Y
+			bearingToWaypoint := math.Atan2(dy, dx)
+
+			if rs.io.pathExecutor != nil && rs.io.commandQueue != nil {
+				delta := rs.heading.headingDelta[robotID]
+				cmd := rs.io.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
+				rs.io.commandQueue.Enqueue(cmd)
+				commandIssued = true
+				switch cmd {
+				case controller.CommandForward:
+					rs.io.robotCommands[robotID] = "forward"
+				case controller.CommandBackward:
+					rs.io.robotCommands[robotID] = "backward"
+				case controller.CommandLeft:
+					rs.io.robotCommands[robotID] = "rotating_left"
+				case controller.CommandRight:
+					rs.io.robotCommands[robotID] = "rotating_right"
+				case controller.CommandStop:
+					rs.io.robotCommands[robotID] = "stopped"
+				}
+			}
+		}
+	}
+
+	// Only clear the active command when no robot is following a path. Doing
+	// it per robot let a path-less robot wipe the command just issued for the
+	// robot that does have one.
+	if !anyPath && rs.io.commandQueue != nil && rs.io.commandQueue.IsRunning() {
+		rs.io.commandQueue.ClearActiveCommand()
+	}
+
+	// Safety: stop re-sending stale commands when tracking is lost for too long.
+	if commandIssued {
+		rs.io.lastCommandTime = time.Now()
+	} else if rs.io.commandQueue != nil && time.Since(rs.io.lastCommandTime) > rs.io.trackingLostTimeout {
+		rs.io.commandQueue.ClearActiveCommand()
+	}
+}
