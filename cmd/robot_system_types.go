@@ -57,28 +57,20 @@ type trackingSubsystem struct {
 	tracker tracking.Tracker
 }
 
-// planningSubsystem owns the path planner and the currently-selected
-// goal/robot the operator UI is pointed at.
+// planningSubsystem owns the path planner.
 type planningSubsystem struct {
 	planner        *planning.Planner
-	CurrentRobotID int
-	CurrentGoal    [2]float64
 	lastReplanTime map[int]time.Time // robotID -> last proximity replan time
 }
 
-// obstaclesSubsystem owns the static (config-file) and dynamic
-// (detector-fed) obstacle lists.
+// obstaclesSubsystem owns the static (config-file) obstacle list.
 type obstaclesSubsystem struct {
-	DynamicObstacles []*planning.DynamicObstacle
-	StaticObstacles  []planning.Obstacle
+	StaticObstacles []planning.Obstacle
 }
 
-// positionSubsystem owns pixel<->world coordinate calibration and the
-// last-known world positions used for velocity estimation.
+// positionSubsystem owns pixel<->world coordinate calibration.
 type positionSubsystem struct {
-	positionEst       *position.PositionEstimator
-	lastRobotWorldPos map[int][2]float64 // robotID -> last world position, for velocity estimation
-	lastRobotPosTime  map[int]float64    // robotID -> track timestamp of lastRobotWorldPos
+	positionEst *position.PositionEstimator
 }
 
 // controlIOSubsystem owns the Arduino serial connection, its command queue,

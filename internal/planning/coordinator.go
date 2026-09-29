@@ -44,34 +44,12 @@ func (c *Coordinator) SetObstacles(obstacles []Obstacle) {
 	c.obstacles = obstacles
 }
 
-func (c *Coordinator) RemoveRobot(id int) {
-	delete(c.robots, id)
-	delete(c.goals, id)
-}
-
 func (c *Coordinator) GetRobotState(id int) (RobotState, bool) {
 	state, exists := c.robots[id]
 	return state, exists
 }
 
-func (c *Coordinator) UpdateRobots(positions map[int][2]float64, velocities map[int][2]float64) {
-	for id, pos := range positions {
-		if robot, exists := c.robots[id]; exists {
-			robot.Position = pos
-			if vel, hasVel := velocities[id]; hasVel {
-				robot.Velocity = Velocity{VX: vel[0], VY: vel[1]}
-			}
-			c.robots[id] = robot
-		}
-	}
-}
-
 func (c *Coordinator) GetGoal(robotID int) ([2]float64, bool) {
 	goal, exists := c.goals[robotID]
 	return goal, exists
-}
-
-func (c *Coordinator) ClearAll() {
-	c.robots = make(map[int]RobotState)
-	c.goals = make(map[int][2]float64)
 }

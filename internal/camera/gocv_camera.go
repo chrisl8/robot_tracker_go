@@ -42,6 +42,9 @@ func cameraPermissionHint() string {
 		"\n  You may need to restart your terminal after granting permission."
 }
 
+// GoCVCamera is the only Camera implementation.
+var _ Camera = (*GoCVCamera)(nil)
+
 type GoCVCamera struct {
 	cap      *gocv.VideoCapture
 	device   frameSource // guarded by mu once the capture loop runs

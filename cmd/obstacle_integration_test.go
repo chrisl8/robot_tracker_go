@@ -128,28 +128,6 @@ func TestEmptyObstacles(t *testing.T) {
 	}
 }
 
-func TestDemoToDetection(t *testing.T) {
-	demo := []DemoObstacle{
-		{Name: "Person", X: 320, Y: 240, Width: 80, Height: 120},
-		{Name: "Cup", X: 500, Y: 400, Width: 30, Height: 30},
-	}
-
-	conv := convertDemoObstaclesToDetection(demo)
-
-	if len(conv) != 2 {
-		t.Fatalf("expected 2, got %d", len(conv))
-	}
-	if conv[0].ID != "Person" {
-		t.Errorf("got %s", conv[0].ID)
-	}
-	if conv[0].PixelTopLeft != [2]int{280, 180} {
-		t.Errorf("got %v", conv[0].PixelTopLeft)
-	}
-	if conv[1].ID != "Cup" {
-		t.Errorf("got %s", conv[1].ID)
-	}
-}
-
 func TestObstaclesWithWorldCoords(t *testing.T) {
 	obs := []planning.Obstacle{
 		{

@@ -270,14 +270,14 @@ func TestProcessForeground_TightOrientedObstacleReachesThePlanner(t *testing.T) 
 	// 25 px / 100 px/m = 0.25 m from centre (3.2, 1.8), so its AABB spans
 	// roughly +-0.18m on each axis around the centre once rotated 45deg).
 	clearPoint := [2]float64{3.2 + 0.05, 1.8 - 0.30} // near the AABB edge, off the stick's axis
-	r.rs.planning.planner.UpdateRobotState(1, clearPoint, [2]float64{0, 0})
+	r.rs.planning.planner.AddRobot(1, clearPoint, 0.1)
 	if c := r.rs.planning.planner.GetClearance(1); c < 0.02 {
 		t.Errorf("point %v should be clear of the real stick shape, clearance = %.3fm", clearPoint, c)
 	}
 
 	// Sanity: a point actually on the stick's axis is correctly blocked.
 	onStick := [2]float64{3.2, 1.8}
-	r.rs.planning.planner.UpdateRobotState(1, onStick, [2]float64{0, 0})
+	r.rs.planning.planner.AddRobot(1, onStick, 0.1)
 	if c := r.rs.planning.planner.GetClearance(1); c > 0 {
 		t.Errorf("point %v is on the real stick, want clearance <= 0, got %.3fm", onStick, c)
 	}

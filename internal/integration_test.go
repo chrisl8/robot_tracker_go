@@ -91,8 +91,7 @@ func TestTrackingToPositionPipeline(t *testing.T) {
 
 func TestPlannerToControllerPipeline(t *testing.T) {
 	plannerConfig := &planning.PlannerConfig{
-		AStarConfig:     nil,
-		CollisionMargin: 0.05,
+		AStarConfig: nil,
 	}
 	planner := planning.NewPlanner(plannerConfig)
 	if planner == nil {
@@ -162,9 +161,7 @@ func TestFullPipelineIntegration(t *testing.T) {
 		MinBoxArea:  cfg.Tracking.MinBoxArea,
 		MOT20:       cfg.Tracking.MOT20,
 	})
-	planner := planning.NewPlanner(&planning.PlannerConfig{
-		CollisionMargin: 0.05,
-	})
+	planner := planning.NewPlanner(&planning.PlannerConfig{})
 
 	if pipeline == nil || tracker == nil || planner == nil {
 		t.Fatal("Failed to create pipeline components")

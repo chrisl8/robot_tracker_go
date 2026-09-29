@@ -10,8 +10,7 @@ import (
 )
 
 type PlannerConfig struct {
-	AStarConfig     *AStarConfig
-	CollisionMargin float64
+	AStarConfig *AStarConfig
 }
 
 // Planner owns global path planning: A* (globalPlanner) over static and
@@ -29,14 +28,13 @@ type PlannerConfig struct {
 // below, including everything reachable through coordinator, since
 // coordinator is private to this package and only ever touched from here.
 type Planner struct {
-	mu                sync.Mutex
-	globalPlanner     *AStar
-	coordinator       *Coordinator
-	collisionDetector *CollisionDetector
-	obstacles         []Obstacle
-	dynamicObstacles  []Obstacle
-	paths             map[int][][2]float64 // robotID -> list of waypoints
-	currentWaypoint   map[int]int          // robotID -> index into paths
+	mu               sync.Mutex
+	globalPlanner    *AStar
+	coordinator      *Coordinator
+	obstacles        []Obstacle
+	dynamicObstacles []Obstacle
+	paths            map[int][][2]float64 // robotID -> list of waypoints
+	currentWaypoint  map[int]int          // robotID -> index into paths
 
 	// Rate limiting for replans triggered by changing dynamic obstacles.
 	clock             func() time.Time
@@ -63,10 +61,8 @@ func NewPlanner(config *PlannerConfig) *Planner {
 
 	if config != nil {
 		planner.globalPlanner = NewAStar(config.AStarConfig)
-		planner.collisionDetector = NewCollisionDetector(config.CollisionMargin)
 	} else {
 		planner.globalPlanner = NewAStar(nil)
-		planner.collisionDetector = NewCollisionDetector(0)
 	}
 
 	planner.coordinator = NewCoordinator()
@@ -129,13 +125,6 @@ func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]floa
 	return path, ok
 }
 
-func (p *Planner) AddObstacle(obstacle Obstacle) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.obstacles = append(p.obstacles, obstacle)
-	p.coordinator.SetObstacles(p.obstacles)
-}
-
 func (p *Planner) SetObstacles(obstacles []Obstacle) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -175,7 +164,6 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 	defer p.mu.Unlock()
 	robot := RobotState{
 		Position: position,
-		Velocity: Velocity{0, 0},
 		RobotID:  id,
 		Diameter: diameter,
 	}
@@ -216,30 +204,6 @@ func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 	}
 }
 
-func (p *Planner) UpdateRobotState(robotID int, position [2]float64, velocity [2]float64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	positions := map[int][2]float64{robotID: position}
-	velocities := map[int][2]float64{robotID: velocity}
-	p.coordinator.UpdateRobots(positions, velocities)
-}
-
-func (p *Planner) GetRobotState(robotID int) (RobotState, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.coordinator.GetRobotState(robotID)
-}
-
-func (p *Planner) GetAllRobotStates() map[int]RobotState {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	states := make(map[int]RobotState, len(p.coordinator.robots))
-	for id, state := range p.coordinator.robots {
-		states[id] = state
-	}
-	return states
-}
-
 // replanAllPathsLocked requires the caller to already hold p.mu.
 func (p *Planner) replanAllPathsLocked() {
 	p.replans++
@@ -260,41 +224,6 @@ func (p *Planner) replanAllPathsLocked() {
 	}
 }
 
-func (p *Planner) RemoveObstacle(name string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	newObstacles := make([]Obstacle, 0, len(p.obstacles))
-	for _, obs := range p.obstacles {
-		if obs.Name != name {
-			newObstacles = append(newObstacles, obs)
-		}
-	}
-	p.obstacles = newObstacles
-	p.coordinator.SetObstacles(p.obstacles)
-	p.replanAllPathsLocked()
-}
-
-func (p *Planner) ClearObstacles() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.obstacles = make([]Obstacle, 0)
-	p.coordinator.SetObstacles(p.obstacles)
-	p.replanAllPathsLocked()
-}
-
-func (p *Planner) ClearAll() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.obstacles = make([]Obstacle, 0)
-	p.coordinator.ClearAll()
-}
-
-func (p *Planner) GetObstacles() []Obstacle {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.obstacles
-}
-
 // GetClearance returns the minimum distance from the robot's edge to any obstacle surface.
 func (p *Planner) GetClearance(robotID int) float64 {
 	p.mu.Lock()
@@ -306,7 +235,7 @@ func (p *Planner) GetClearance(robotID int) float64 {
 	allObstacles := make([]Obstacle, 0, len(p.obstacles)+len(p.dynamicObstacles))
 	allObstacles = append(allObstacles, p.obstacles...)
 	allObstacles = append(allObstacles, p.dynamicObstacles...)
-	return p.collisionDetector.GetClearance(robot, allObstacles)
+	return clearance(robot, allObstacles)
 }
 
 func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
@@ -321,23 +250,6 @@ func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
 		return [2]float64{0, 0}, false
 	}
 	return path[wpIndex], true
-}
-
-func (p *Planner) AdvanceWaypoint(robotID int) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.currentWaypoint[robotID]++
-	path, hasPath := p.paths[robotID]
-	if !hasPath {
-		return false
-	}
-	if p.currentWaypoint[robotID] >= len(path) {
-		delete(p.paths, robotID)
-		delete(p.currentWaypoint, robotID)
-		p.coordinator.ClearGoal(robotID)
-		return false
-	}
-	return true
 }
 
 // AdvancePastWaypoints skips past any waypoints the robot has reached or overshot.

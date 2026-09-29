@@ -35,88 +35,23 @@ func NewRectObstacle(name string, worldTopLeft, worldBottomRight [2]float64) Obs
 	}
 }
 
+// RobotState is what the planner knows about a robot.
 type RobotState struct {
 	Position [2]float64
-	Velocity Velocity
 	RobotID  int
 	Diameter float64
 }
 
-type Velocity struct {
-	VX, VY float64
-}
-
-type CollisionDetector struct {
-	margin float64
-}
-
-func NewCollisionDetector(margin float64) *CollisionDetector {
-	if margin == 0 {
-		margin = 0.05
-	}
-	return &CollisionDetector{margin: margin}
-}
-
-func (d *CollisionDetector) IsCollision(robot RobotState, obstacle Obstacle) bool {
+// clearance returns the smallest gap in metres between the robot's body (a
+// circle of its Diameter) and any obstacle footprint; negative means they
+// overlap. With no obstacles it returns a very large value.
+func clearance(robot RobotState, obstacles []Obstacle) float64 {
 	robotRadius := robot.Diameter / 2
-	return distanceToQuad(robot.Position, obstacle.Quad) < robotRadius+d.margin
-}
-
-func (d *CollisionDetector) IsCollisionWithPath(robot RobotState, path [][2]float64, obstacle Obstacle) bool {
-	for _, point := range path {
-		tempRobot := robot
-		tempRobot.Position = point
-		if d.IsCollision(tempRobot, obstacle) {
-			return true
-		}
-	}
-	return false
-}
-
-func (d *CollisionDetector) CheckAllCollisions(robot RobotState, obstacles []Obstacle) []Obstacle {
-	collisions := make([]Obstacle, 0)
+	minGap := 1e10
 	for _, obs := range obstacles {
-		if d.IsCollision(robot, obs) {
-			collisions = append(collisions, obs)
+		if gap := distanceToQuad(robot.Position, obs.Quad) - robotRadius; gap < minGap {
+			minGap = gap
 		}
 	}
-	return collisions
-}
-
-func (d *CollisionDetector) WillCollide(robot RobotState, velocity [2]float64, obstacles []Obstacle, timeHorizon float64) bool {
-	futurePos := [2]float64{
-		robot.Position[0] + velocity[0]*timeHorizon,
-		robot.Position[1] + velocity[1]*timeHorizon,
-	}
-
-	tempRobot := robot
-	tempRobot.Position = futurePos
-
-	for _, obs := range obstacles {
-		if d.IsCollision(tempRobot, obs) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (d *CollisionDetector) DistanceToObstacle(robot RobotState, obstacle Obstacle) float64 {
-	robotRadius := robot.Diameter / 2
-	return distanceToQuad(robot.Position, obstacle.Quad) - robotRadius
-}
-
-func (d *CollisionDetector) IsPointInObstacle(point [2]float64, obstacle Obstacle) bool {
-	return quadContains(point, obstacle.Quad)
-}
-
-func (d *CollisionDetector) GetClearance(robot RobotState, obstacles []Obstacle) float64 {
-	minDist := 1e10
-	for _, obs := range obstacles {
-		dist := d.DistanceToObstacle(robot, obs)
-		if dist < minDist {
-			minDist = dist
-		}
-	}
-	return minDist
+	return minGap
 }

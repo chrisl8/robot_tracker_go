@@ -107,12 +107,7 @@ func NewRobotSystem(cfg *config.Config) *RobotSystem {
 	return &RobotSystem{
 		cfg: cfg,
 		planning: planningSubsystem{
-			CurrentGoal:    [2]float64{0, 0},
 			lastReplanTime: make(map[int]time.Time),
-		},
-		position: positionSubsystem{
-			lastRobotWorldPos: make(map[int][2]float64),
-			lastRobotPosTime:  make(map[int]float64),
 		},
 		io: controlIOSubsystem{
 			robotCommands: make(map[int]string),
@@ -294,19 +289,7 @@ func (rs *RobotSystem) registerDemoCallbacks() {
 			rs.planning.planner.SetObstacles(obstacles)
 		}
 
-		detectionObstacles := make([]detection.Obstacle, len(obstacles))
-		for i, obs := range obstacles {
-			utils.Debugf("DEBUG: Converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
-				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
-			detectionObstacles[i] = detection.Obstacle{
-				ID:               obs.Name,
-				PixelTopLeft:     [2]int{obs.PixelsTopLeft[0], obs.PixelsTopLeft[1]},
-				PixelBottomRight: [2]int{obs.PixelsBottomRight[0], obs.PixelsBottomRight[1]},
-				WorldTopLeft:     obs.WorldTopLeft,
-				WorldBottomRight: obs.WorldBottomRight,
-				Clearance:        0.05,
-			}
-		}
+		detectionObstacles := convertPlanningObstaclesToDetection(obstacles)
 		rs.detection.detectionPipe.SetObstacles(detectionObstacles)
 		utils.Debugf("DEBUG: SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
@@ -419,8 +402,7 @@ func (rs *RobotSystem) initTracker() {
 // initPlanner sets up the path planner.
 func (rs *RobotSystem) initPlanner() {
 	plannerConfig := &planning.PlannerConfig{
-		AStarConfig:     nil,
-		CollisionMargin: 0.08,
+		AStarConfig: nil,
 	}
 	rs.planning.planner = planning.NewPlanner(plannerConfig)
 	utils.Logf("Planner initialized")
@@ -552,19 +534,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		utils.Debugf("DEBUG: Initialize() OnObstaclesChanged callback triggered with %d obstacles", len(obstacles))
 		rs.planning.planner.SetObstacles(obstacles)
 
-		detectionObstacles := make([]detection.Obstacle, len(obstacles))
-		for i, obs := range obstacles {
-			utils.Debugf("DEBUG: Initialize() converting obstacle '%s': pixels [%d,%d] to [%d,%d]",
-				obs.Name, obs.PixelsTopLeft[0], obs.PixelsTopLeft[1], obs.PixelsBottomRight[0], obs.PixelsBottomRight[1])
-			detectionObstacles[i] = detection.Obstacle{
-				ID:               obs.Name,
-				PixelTopLeft:     [2]int{obs.PixelsTopLeft[0], obs.PixelsTopLeft[1]},
-				PixelBottomRight: [2]int{obs.PixelsBottomRight[0], obs.PixelsBottomRight[1]},
-				WorldTopLeft:     obs.WorldTopLeft,
-				WorldBottomRight: obs.WorldBottomRight,
-				Clearance:        0.05,
-			}
-		}
+		detectionObstacles := convertPlanningObstaclesToDetection(obstacles)
 		rs.detection.detectionPipe.SetObstacles(detectionObstacles)
 		utils.Debugf("DEBUG: Initialize() SetObstacles called with %d detection obstacles", len(detectionObstacles))
 	}
@@ -1014,10 +984,6 @@ func (rs *RobotSystem) convertFusedToTrackingDetections(fused []detection.FusedD
 		if f.TagID != nil {
 			det.TagID = f.TagID
 		}
-		if f.ClassName != "" {
-			classID := int(f.Confidence * 100)
-			det.ClassID = classID
-		}
 		detections = append(detections, det)
 	}
 	return detections
@@ -1135,13 +1101,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	width := bounds.Max.X - bounds.Min.X
 	height := bounds.Max.Y - bounds.Min.Y
 
-	rgbaImg, ok := img.(*image.RGBA)
-	if rgbaImg == nil {
-		rgbaImg = image.NewRGBA(bounds)
-		draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
-	}
-	_ = ok
-
 	if rs.position.positionEst != nil {
 		rs.position.positionEst.SetFrameSize(width, height)
 	}
@@ -1157,7 +1116,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	for i := range trackingResult.Tracks {
 		track := &trackingResult.Tracks[i]
 		if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
-			rs.planning.CurrentRobotID = *track.TagID
 			if rs.position.positionEst != nil {
 				worldPos, robotDiameter := rs.updateTrackWorldPosition(track, true)
 				rs.planning.planner.AddRobot(*track.TagID, [2]float64{worldPos.X, worldPos.Y}, robotDiameter)
@@ -1188,11 +1146,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	rs.broadcastFrameStats(len(detectionResult.Tags), len(trackingResult.Tracks), detectionResult.Tags, width, height, nil)
 
 	if rs.stats.frameNum%10 == 0 && rs.web.webServer != nil {
-		paths := rs.planning.planner.GetPaths()
-		totalWaypoints := 0
-		for _, path := range paths {
-			totalWaypoints += len(path)
-		}
 		rs.web.webServer.BroadcastPaths()
 	}
 
@@ -1338,33 +1291,6 @@ func (rs *RobotSystem) applyHeadingSmoothing(track *tracking.Track, tagID int) {
 	rs.heading.smoothedHeading[tagID] = track.Heading
 }
 
-// estimateRobotVelocity computes a robot's world-frame velocity (m/s) from the
-// change in its tracked world position since the last call, using the track's
-// own timestamp so the estimate isn't skewed by processing jitter. It caches
-// the position/timestamp for next time. A too-small or non-positive dt (first
-// sighting, duplicate frame, clock oddity) yields zero rather than a spike.
-func (rs *RobotSystem) estimateRobotVelocity(robotID int, worldPos [2]float64, timestamp float64) [2]float64 {
-	prevPos, hadPrev := rs.position.lastRobotWorldPos[robotID]
-	prevTime, hadTime := rs.position.lastRobotPosTime[robotID]
-
-	rs.position.lastRobotWorldPos[robotID] = worldPos
-	rs.position.lastRobotPosTime[robotID] = timestamp
-
-	if !hadPrev || !hadTime {
-		return [2]float64{0, 0}
-	}
-
-	dt := timestamp - prevTime
-	if dt < 1e-3 {
-		return [2]float64{0, 0}
-	}
-
-	return [2]float64{
-		(worldPos[0] - prevPos[0]) / dt,
-		(worldPos[1] - prevPos[1]) / dt,
-	}
-}
-
 // executeAutonomousControl handles path-following for all tracked robots.
 func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
@@ -1483,9 +1409,6 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 					rs.io.robotCommands[robotID] = "stopped"
 				}
 			}
-
-			velocity := rs.estimateRobotVelocity(robotID, [2]float64{worldPos.X, worldPos.Y}, track.Timestamp)
-			rs.planning.planner.UpdateRobotState(robotID, [2]float64{worldPos.X, worldPos.Y}, velocity)
 		}
 	}
 
@@ -1796,7 +1719,6 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		for i := range trackingResult.Tracks {
 			track := &trackingResult.Tracks[i]
 			if track.State == tracking.TrackStateConfirmed && track.TagID != nil {
-				rs.planning.CurrentRobotID = *track.TagID
 				if rs.position.positionEst != nil {
 					// Mirror ProcessFrame's per-track wiring: register the
 					// robot with the planner and compute its heading, so a
@@ -1849,7 +1771,6 @@ func main() {
 	listPorts := flag.Bool("list-ports", false, "List available serial ports")
 	listCamerasFlag := flag.Bool("list-cameras", false, "List available cameras")
 	testCameraID := flag.Int("test-camera", -1, "Test specific camera by ID")
-	flag.String("web-port", ":9086", "Web server port")
 	demoMode := flag.Bool("demo", false, "Run demo mode with test pattern")
 	quiet := flag.Bool("quiet", false, "Suppress all logging output")
 	logFile := flag.String("log-file", "", "Log to file with rotation (default: log to stderr)")
@@ -1938,7 +1859,6 @@ func main() {
 			*demoMode = true
 		} else {
 			utils.Logf("Starting real camera capture...")
-			frameNum := 0
 			frameFailures := 0
 			minFrameInterval := time.Second / time.Duration(rs.cfg.EffectiveMaxFPS())
 			utils.Logf("Processing capped at %d fps", rs.cfg.EffectiveMaxFPS())
@@ -1970,7 +1890,6 @@ func main() {
 					continue
 				}
 				rs.ProcessFrame(img, frame.Data)
-				frameNum++
 				if elapsed := time.Since(startTime); elapsed < minFrameInterval {
 					time.Sleep(minFrameInterval - elapsed)
 				}
@@ -1987,7 +1906,7 @@ func main() {
 		}
 	}
 
-	for *demoMode {
+	if *demoMode {
 		utils.Log("Demo mode: Generating test pattern with AprilTag visualization...")
 		_ = rs.StartCamera()
 		frameNum := 0

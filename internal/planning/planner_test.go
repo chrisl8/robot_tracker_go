@@ -29,17 +29,12 @@ func TestNewPlanner_WithConfig(t *testing.T) {
 			GridHeightMeters: 200,
 			Resolution:       0.1,
 		},
-		CollisionMargin: 0.1,
 	}
 
 	planner := NewPlanner(config)
 
 	if planner.globalPlanner == nil {
 		t.Error("globalPlanner should be initialized")
-	}
-
-	if planner.collisionDetector == nil {
-		t.Error("collisionDetector should be initialized")
 	}
 }
 
@@ -61,48 +56,6 @@ func TestPlanner_GetNextWaypoint_NoPath(t *testing.T) {
 	_, hasPath := planner.GetNextWaypoint(999)
 	if hasPath {
 		t.Error("GetNextWaypoint should return false when robot has no path")
-	}
-}
-
-func TestPlanner_AdvanceWaypoint(t *testing.T) {
-	planner := NewPlanner(nil)
-
-	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
-	planner.SetGoal(1, [2]float64{3, 3})
-
-	_, hasPath := planner.GetNextWaypoint(1)
-	if !hasPath {
-		t.Fatal("Should have path after SetGoal")
-	}
-
-	planner.AdvanceWaypoint(1)
-
-	_, hasPath2 := planner.GetNextWaypoint(1)
-	if !hasPath2 {
-		t.Error("Should still have path after first advance")
-	}
-}
-
-func TestPlanner_AdvanceWaypoint_CompletesPath(t *testing.T) {
-	planner := NewPlanner(nil)
-
-	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
-	planner.SetGoal(1, [2]float64{1.5, 1.5})
-
-	path := planner.paths[1]
-	numWaypoints := len(path)
-	for i := 0; i < numWaypoints; i++ {
-		planner.AdvanceWaypoint(1)
-	}
-
-	_, hasPath := planner.GetNextWaypoint(1)
-	if hasPath {
-		t.Error("Should not have path after completing all waypoints")
-	}
-
-	_, hasGoal := planner.coordinator.goals[1]
-	if hasGoal {
-		t.Error("Goal should be removed after path completion")
 	}
 }
 
@@ -328,8 +281,8 @@ func TestPlanner_SetPath(t *testing.T) {
 		t.Errorf("First waypoint = %v, want %v", wp, customPath[0])
 	}
 
-	// Advance and verify second waypoint
-	planner.AdvanceWaypoint(1)
+	// Advance (robot reaches the first waypoint) and verify second waypoint
+	planner.AdvancePastWaypoints(1, customPath[0], 0.1)
 	wp, _ = planner.GetNextWaypoint(1)
 	if wp != customPath[1] {
 		t.Errorf("Second waypoint = %v, want %v", wp, customPath[1])
@@ -355,7 +308,7 @@ func TestPlanner_ConcurrentAccess(t *testing.T) {
 			planner.AddRobot(1, [2]float64{float64(i) * 0.01, 0}, 0.18)
 			planner.AdvancePastWaypoints(1, [2]float64{float64(i) * 0.01, 0}, 0.1)
 			planner.GetPathsWithGoals()
-			planner.GetAllRobotStates()
+			planner.GetClearance(1)
 		}
 	}()
 
@@ -383,8 +336,8 @@ func TestPlanner_SetPath_OverwriteExisting(t *testing.T) {
 	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
 	planner.SetGoal(1, [2]float64{3, 3})
 
-	// Advance past first waypoint
-	planner.AdvanceWaypoint(1)
+	// Advance past first waypoint (the robot is standing on it)
+	planner.AdvancePastWaypoints(1, [2]float64{1, 1}, 0.5)
 
 	// Overwrite with new path — should reset waypoint index to 0
 	newPath := [][2]float64{{0, 0}, {5, 5}}
@@ -484,33 +437,6 @@ func TestPlanner_SetDynamicObstacles_DoesNotStormReplans(t *testing.T) {
 	p.SetDynamicObstacles([]Obstacle{moved2})
 	if p.replans != 3 {
 		t.Errorf("replan repeated with nothing new (replans=%d)", p.replans)
-	}
-}
-
-// RemoveObstacle sized its slice with len-1, which panics ("cap out of
-// range") when the planner has no obstacles.
-func TestPlanner_RemoveObstacle_EmptyDoesNotPanic(t *testing.T) {
-	planner := NewPlanner(nil)
-
-	planner.RemoveObstacle("nonexistent")
-
-	if got := len(planner.GetObstacles()); got != 0 {
-		t.Errorf("obstacles = %d, want 0", got)
-	}
-}
-
-func TestPlanner_RemoveObstacle_RemovesOnlyNamed(t *testing.T) {
-	planner := NewPlanner(nil)
-	planner.SetObstacles([]Obstacle{
-		NewRectObstacle("a", [2]float64{0, 0}, [2]float64{0.1, 0.1}),
-		NewRectObstacle("b", [2]float64{1, 1}, [2]float64{1.1, 1.1}),
-	})
-
-	planner.RemoveObstacle("a")
-
-	got := planner.GetObstacles()
-	if len(got) != 1 || got[0].Name != "b" {
-		t.Errorf("obstacles = %+v, want only b", got)
 	}
 }
 
