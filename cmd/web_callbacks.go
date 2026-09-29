@@ -73,6 +73,9 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 				return
 			}
 			rs.web.webServer.SetPositionEstimator(rs.position.positionEst)
+			// Obstacles are stored in pixels; their floor coordinates depend on
+			// the calibration that was just replaced.
+			rs.web.webServer.RecomputeObstacleWorld()
 			utils.Logf("Calibration reloaded: IsCalibrated=%v", rs.position.positionEst.IsCalibrated())
 			if rs.detection.fg != nil {
 				// The floor mapping changed: relearn the background and forget obstacles.
@@ -249,6 +252,9 @@ func (rs *RobotSystem) loadStaticObstacles() {
 	if len(rs.obstacles.StaticObstacles) > 0 {
 		utils.Logf("Loaded %d static obstacles from %s, calling SetObstacles", len(rs.obstacles.StaticObstacles), obstaclesPath)
 		rs.web.webServer.SetObstacles(rs.obstacles.StaticObstacles)
+		// The file's world coordinates date from whenever it was saved; redo
+		// them from the pixel boxes under the calibration now loaded.
+		rs.web.webServer.RecomputeObstacleWorld()
 	}
 }
 

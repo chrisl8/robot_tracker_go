@@ -4,13 +4,9 @@ package ui
 
 type OverlayMessage struct {
 	Type          string                    `json:"type"`
-	BBox          *BBoxMessage              `json:"bbox,omitempty"`
-	Track         *TrackMessage             `json:"track,omitempty"`
 	Tracks        *TracksMessage            `json:"tracks,omitempty"`
-	Path          *PathMessage              `json:"path,omitempty"`
 	Paths         *PathsMessage             `json:"paths,omitempty"`
 	Status        *StatusMessage            `json:"status,omitempty"`
-	Command       *CommandMessage           `json:"command,omitempty"`
 	Calibration   *CalibrationStatusMessage `json:"calibration,omitempty"`
 	Obstacles     *ObstaclesMessage         `json:"obstacles,omitempty"`
 	Destination   *DestinationMessage       `json:"destination,omitempty"`
@@ -65,16 +61,6 @@ type ObstaclesMessage struct {
 	Count     int                `json:"count"`
 }
 
-type BBoxMessage struct {
-	X1         int     `json:"x1"`
-	Y1         int     `json:"y1"`
-	X2         int     `json:"x2"`
-	Y2         int     `json:"y2"`
-	Label      string  `json:"label"`
-	Color      string  `json:"color"`
-	Confidence float64 `json:"confidence"`
-}
-
 type TrackMessage struct {
 	ID            int            `json:"id"`
 	TagID         *int           `json:"tag_id,omitempty"`
@@ -113,10 +99,6 @@ type StatusMessage struct {
 	// of seconds; FPS is then 0 and FrameAgeSec says for how long.
 	CameraStalled bool    `json:"cameraStalled,omitempty"`
 	FrameAgeSec   float64 `json:"frameAgeSec,omitempty"`
-}
-
-type CommandMessage struct {
-	Action string `json:"action"`
 }
 
 type DestinationMessage struct {

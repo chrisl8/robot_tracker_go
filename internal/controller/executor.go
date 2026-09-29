@@ -6,11 +6,6 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
-type Velocity struct {
-	VX float64
-	VY float64
-}
-
 // PathExecutor converts bearing-to-waypoint into discrete robot commands (F/B/L/R/S).
 //
 // Key design decisions driven by real-world AprilTag heading noise measurements:
@@ -46,8 +41,6 @@ type Velocity struct {
 // look for how the states above are wired together; each handler owns one
 // concern from the list above.
 type PathExecutor struct {
-	maxSpeed            float64
-	turnSpeed           float64
 	SpinThresholdDeg    float64 // heading delta (°/frame) above which robot is "spinning"
 	BurstFrames         int     // frames of continuous turning per burst
 	MaxWaitFrames       int     // frames to wait after burst for heading to update
@@ -71,10 +64,8 @@ const (
 	phaseWaiting                       // post-burst: waiting for heading to catch up (handleWaitPhase)
 )
 
-func NewPathExecutor(maxSpeed, turnSpeed float64) *PathExecutor {
+func NewPathExecutor() *PathExecutor {
 	return &PathExecutor{
-		maxSpeed:            maxSpeed,
-		turnSpeed:           turnSpeed,
 		SpinThresholdDeg:    10.0, // conservative default; config overrides to 20° for AprilTag noise
 		BurstFrames:         3,    // conservative default; config overrides to 2 for tighter turns
 		MaxWaitFrames:       3,    // conservative default; config overrides to 2
@@ -82,12 +73,18 @@ func NewPathExecutor(maxSpeed, turnSpeed float64) *PathExecutor {
 	}
 }
 
-func (e *PathExecutor) MaxSpeed() float64 {
-	return e.maxSpeed
-}
-
-func (e *PathExecutor) TurnSpeed() float64 {
-	return e.turnSpeed
+// Reset forgets the burst/wait phase and the turn/nudge hysteresis. Call it
+// whenever steering stops (goal reached or cleared, control released, robot
+// or its tag lost), so the next run starts fresh instead of finishing a stale
+// burst or drive-while-waiting from the previous one.
+func (e *PathExecutor) Reset() {
+	e.isTurning = false
+	e.nudgeCooldown = 0
+	e.phase = phaseSteering
+	e.waitHeading = 0
+	e.waitFrames = 0
+	e.burstRemaining = 0
+	e.burstCmd = CommandStop
 }
 
 func (e *PathExecutor) BearingToCommand(robotHeading, bearingToWaypoint, headingDelta float64) Command {

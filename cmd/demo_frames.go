@@ -340,18 +340,10 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 
 	if rs.detection.detectionPipe != nil && rs.web.webServer != nil && rs.web.webServer.CalibrationViewActive() {
 		rs.web.webServer.PushFrame(img)
-	} else if rs.detection.detectionPipe != nil && rs.web.webServer != nil {
-		overlay := rs.detection.detectionPipe.DrawResults(img.Pix, width, height, result)
-		if overlay != nil {
-			overlayImg := decodeToImage(overlay, width, height)
-			if overlayImg != nil {
-				rs.web.webServer.PushFrame(overlayImg)
-			} else {
-				rs.web.webServer.PushFrame(img)
-			}
-		} else {
-			rs.web.webServer.PushFrame(img)
-		}
+	} else if rs.web.webServer != nil {
+		// The demo tags are already drawn into img, and the UI canvas draws the
+		// obstacles, so the frame goes out as it is.
+		rs.web.webServer.PushFrame(img)
 	}
 
 	rs.broadcastFrameStats(len(demoTags), len(demoTags), demoTags, width, height, demoCalibrationTagInfos(width, height))

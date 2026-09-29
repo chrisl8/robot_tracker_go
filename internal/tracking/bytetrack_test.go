@@ -26,9 +26,7 @@ func TestNewByteTrack_WithConfig(t *testing.T) {
 		TrackThresh: 0.7,
 		TrackBuffer: 60,
 		MatchThresh: 0.6,
-		FrameRate:   15,
 		MinBoxArea:  200,
-		MOT20:       true,
 	}
 	bt := NewByteTrack(config)
 
@@ -135,7 +133,6 @@ func TestByteTrack_Update_MatchThreshBelowHalfIsHonored(t *testing.T) {
 		TrackThresh: 0.5,
 		TrackBuffer: 30,
 		MatchThresh: 0.3,
-		FrameRate:   30,
 		MinBoxArea:  100,
 	}
 	bt := NewByteTrack(config)
@@ -311,32 +308,6 @@ func TestByteTrack_PredictAllTracks_UsesGivenDt(t *testing.T) {
 	}
 }
 
-func TestByteTrackConfig_Default(t *testing.T) {
-	config := &ByteTrackConfig{
-		TrackThresh: 0.5,
-		TrackBuffer: 30,
-		MatchThresh: 0.8,
-		FrameRate:   30,
-		MinBoxArea:  100,
-	}
-
-	if config.TrackThresh != 0.5 {
-		t.Errorf("TrackThresh = %f, want 0.5", config.TrackThresh)
-	}
-	if config.TrackBuffer != 30 {
-		t.Errorf("TrackBuffer = %d, want 30", config.TrackBuffer)
-	}
-	if config.MatchThresh != 0.8 {
-		t.Errorf("MatchThresh = %f, want 0.8", config.MatchThresh)
-	}
-	if config.FrameRate != 30 {
-		t.Errorf("FrameRate = %d, want 30", config.FrameRate)
-	}
-	if config.MinBoxArea != 100 {
-		t.Errorf("MinBoxArea = %d, want 100", config.MinBoxArea)
-	}
-}
-
 func TestTrackedTrack_Struct(t *testing.T) {
 	tt := &TrackedTrack{
 		track:           NewTrack(1, [4]int{10, 20, 100, 200}, 1000.0, 0.6),
@@ -382,5 +353,46 @@ func TestByteTrack_Update_MultipleFrames(t *testing.T) {
 		if result.FrameIdx != i+1 {
 			t.Errorf("FrameIdx = %d, want %d", result.FrameIdx, i+1)
 		}
+	}
+}
+
+// A track whose detections stop must not keep reporting "confirmed" for the
+// whole track buffer: autonomous driving acts only on confirmed tracks, so a
+// robot whose tag vanished would otherwise be driven from a frozen position.
+func TestByteTrack_ReportsTrackLostAfterMissedFrames(t *testing.T) {
+	bt := NewByteTrack(nil) // TrackBuffer 30
+	tag := 5
+	det := []Detection{{Bbox: [4]int{100, 100, 140, 140}, Confidence: 1, TagID: &tag}}
+
+	ts := 0.066
+	res := bt.Update(det, ts, 0)
+	for i := 1; i < 4; i++ {
+		ts += 0.066
+		res = bt.Update(det, ts, i)
+	}
+	if len(res.Tracks) != 1 || res.Tracks[0].State != TrackStateConfirmed {
+		t.Fatalf("setup: want one confirmed track, got %+v", res.Tracks)
+	}
+
+	for miss := 1; miss <= LostAfterMissedFrames+2; miss++ {
+		ts += 0.066
+		res = bt.Update(nil, ts, 10+miss)
+		if len(res.Tracks) != 1 {
+			t.Fatalf("miss %d: tracker dropped the track early", miss)
+		}
+		want := TrackStateConfirmed
+		if miss > LostAfterMissedFrames {
+			want = TrackStateLost
+		}
+		if got := res.Tracks[0].State; got != want {
+			t.Errorf("after %d missed frames: state %s, want %s", miss, res.Tracks[0].StateString(), (&Track{State: want}).StateString())
+		}
+	}
+
+	// Seen again: confirmed straight away, same track.
+	ts += 0.066
+	res = bt.Update(det, ts, 99)
+	if len(res.Tracks) != 1 || res.Tracks[0].State != TrackStateConfirmed {
+		t.Errorf("after re-acquisition: %+v, want one confirmed track", res.Tracks)
 	}
 }

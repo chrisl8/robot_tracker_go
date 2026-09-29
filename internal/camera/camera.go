@@ -5,18 +5,18 @@ type Frame struct {
 	Width    int
 	Height   int
 	Channels int
+	// Seq numbers the frames a camera produces, starting at 1; it is 0 for a
+	// source that does not number them. GetFrame can return the same frame
+	// repeatedly, so a consumer that sees the same non-zero Seq again has not
+	// been given a new frame.
+	Seq uint64
 }
 
 type Camera interface {
 	Start() error
 	Stop()
 	GetFrame() (*Frame, error)
-	GetRawJPEG() ([]byte, error)
 	GetName() string
-	IsConnected() bool
-	GetWidth() int
-	GetHeight() int
-	GetFPS() int
 }
 
 type CameraConfig struct {

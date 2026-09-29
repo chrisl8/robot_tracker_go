@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
 	"github.com/chrisl8/robot_tracker_go/internal/position"
 )
 
@@ -426,5 +427,49 @@ func TestHandleDestinationClear_RequiresRobotID(t *testing.T) {
 	}
 	if w := postJSON(t, s, "DELETE", "/api/destination", `{"robot_id":0}`); w.Code != http.StatusOK || !cleared {
 		t.Errorf("explicit robot_id 0: status %d cleared=%v, want 200 and cleared", w.Code, cleared)
+	}
+}
+
+// Obstacles are drawn in pixels but planned in world coordinates. After a
+// recalibration the world coordinates computed under the old calibration must
+// be redone, or the planner avoids a different patch of floor than the UI
+// shows.
+func TestRecomputeObstacleWorld_FollowsTheCurrentCalibration(t *testing.T) {
+	s := serverWithFrame(t, 640, 480)
+	var pushed []planning.Obstacle
+	s.Callbacks.OnObstaclesChanged = func(o []planning.Obstacle) { pushed = o }
+
+	// Added before any calibration: world coordinates fall back to pixels.
+	postJSON(t, s, "POST", "/api/obstacles", `{"name":"box","pixel_top_left":[100,200],"pixel_bottom_right":[300,400]}`)
+	if got := s.GetObstacles()[0].WorldBottomRight; got != [2]float64{300, 400} {
+		t.Fatalf("setup: uncalibrated world corner = %v, want the pixel fallback", got)
+	}
+
+	// Calibrate (100 px per metre) and recompute, as OnCalibrationComplete does.
+	s.estimator().GetHomography().SetFromValues(0.01, 0, 0, 0, 0.01, 0, 0, 0, 1)
+	s.RecomputeObstacleWorld()
+
+	got := s.GetObstacles()[0]
+	if got.WorldTopLeft != [2]float64{1, 2} || got.WorldBottomRight != [2]float64{3, 4} {
+		t.Errorf("world box = %v..%v, want (1,2)..(3,4)", got.WorldTopLeft, got.WorldBottomRight)
+	}
+	if got.PixelsTopLeft != [2]int{100, 200} || got.Name != "box" {
+		t.Errorf("pixel box or name changed: %+v", got)
+	}
+	if len(pushed) != 1 || pushed[0].WorldBottomRight != [2]float64{3, 4} {
+		t.Errorf("planner was not given the recomputed obstacles: %+v", pushed)
+	}
+}
+
+func TestRecomputeObstacleWorld_UncalibratedLeavesObstaclesAlone(t *testing.T) {
+	s := serverWithFrame(t, 640, 480)
+	postJSON(t, s, "POST", "/api/obstacles", `{"name":"box","pixel_top_left":[100,200],"pixel_bottom_right":[300,400]}`)
+	notified := false
+	s.Callbacks.OnObstaclesChanged = func([]planning.Obstacle) { notified = true }
+
+	s.RecomputeObstacleWorld()
+
+	if notified {
+		t.Error("nothing changed, but the planner was notified")
 	}
 }

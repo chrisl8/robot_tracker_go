@@ -69,13 +69,10 @@ func TestDrawResultsWithObstacles(t *testing.T) {
 	}
 
 	imgData := make([]byte, 640*480*3)
-	output := pipeline.DrawResults(imgData, 640, 480, result)
+	output, drawn := pipeline.DrawResults(imgData, 640, 480, result)
 
-	if output == nil {
-		t.Error("DrawResults returned nil")
-	}
-	if len(output) != len(imgData) {
-		t.Errorf("length %d != %d", len(output), len(imgData))
+	if !drawn || len(output) == 0 {
+		t.Errorf("DrawResults with an obstacle set: drawn=%v, %d bytes", drawn, len(output))
 	}
 }
 
@@ -141,10 +138,8 @@ func TestFullObstacleAddFlow(t *testing.T) {
 	}
 
 	imgData := make([]byte, 640*480*3)
-	output := pipeline.DrawResults(imgData, 640, 480, result)
-
-	if output == nil {
-		t.Error("DrawResults returned nil")
+	if _, drawn := pipeline.DrawResults(imgData, 640, 480, result); !drawn {
+		t.Error("the obstacle the user added is not drawn")
 	}
 }
 

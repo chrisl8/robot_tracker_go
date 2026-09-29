@@ -64,7 +64,7 @@ func TestPathExecutor_BearingToCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := NewPathExecutor(0.15, 1.0)
+			executor := NewPathExecutor()
 			got := executor.BearingToCommand(tt.heading, tt.bearing, tt.headingDelta)
 			if got != tt.want {
 				t.Errorf("BearingToCommand(heading=%.1f°, bearing=%.1f°, delta=%.1f°) = %c, want %c",
@@ -78,7 +78,7 @@ func TestBearingToCommand_SpinInForwardMode(t *testing.T) {
 	deg := math.Pi / 180
 
 	t.Run("spin suppressed while driving forward", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 
 		// First call: small bearing → enters forward mode (isTurning=false)
 		cmd := executor.BearingToCommand(0, 10*deg, 0)
@@ -95,7 +95,7 @@ func TestBearingToCommand_SpinInForwardMode(t *testing.T) {
 	})
 
 	t.Run("spin active during turning", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 
 		// Enter turn mode: large angle → burst
 		cmd := executor.BearingToCommand(0, 80*deg, 0)
@@ -120,7 +120,7 @@ func TestBearingToCommand_TurnPulse(t *testing.T) {
 	deg := math.Pi / 180
 
 	t.Run("burst then wait then re-evaluate", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 
 		// Frames 1-3: burst of 3 turn commands
 		for i := 1; i <= 3; i++ {
@@ -145,7 +145,7 @@ func TestBearingToCommand_TurnPulse(t *testing.T) {
 	})
 
 	t.Run("timeout exits wait mode", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 
 		// Frames 1-3: burst of 3 turn commands
 		for i := 1; i <= 3; i++ {
@@ -172,7 +172,7 @@ func TestBearingToCommand_TurnPulse(t *testing.T) {
 	})
 
 	t.Run("burst continuation sends same command", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 
 		// Frame 1: start burst turning left
 		cmd := executor.BearingToCommand(0, -80*deg, 0)
@@ -190,7 +190,7 @@ func TestBearingToCommand_TurnPulse(t *testing.T) {
 	})
 
 	t.Run("no wait for non-turn commands", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 
 		// Forward command should not enter wait mode
 		cmd := executor.BearingToCommand(0, 10*deg, 0)
@@ -210,7 +210,7 @@ func TestBearingToCommand_Hysteresis(t *testing.T) {
 	deg := math.Pi / 180
 
 	t.Run("stays forward despite noise crossing entry threshold", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0 // enter=25°, exit=35° (25+10)
 
 		// Start aligned → forward (enters forward mode, isTurning=false)
@@ -240,7 +240,7 @@ func TestBearingToCommand_Hysteresis(t *testing.T) {
 	})
 
 	t.Run("must align tightly before re-entering forward", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0 // enter=25°, exit=35° (25+10)
 
 		// Start with large angle → turn (enters turning mode)
@@ -285,7 +285,7 @@ func TestBearingToCommand_ContinuousTurn(t *testing.T) {
 	deg := math.Pi / 180
 
 	t.Run("large angle sends continuous turn without burst/wait", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0 // exit=35°, continuous=52.5°
 
 		// 80° off target — above 52.5° continuous threshold, below 135° rear threshold
@@ -299,7 +299,7 @@ func TestBearingToCommand_ContinuousTurn(t *testing.T) {
 	})
 
 	t.Run("continuous turn left", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0
 
 		for i := 1; i <= 5; i++ {
@@ -311,7 +311,7 @@ func TestBearingToCommand_ContinuousTurn(t *testing.T) {
 	})
 
 	t.Run("transitions from continuous to burst/wait as angle decreases", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0 // exit=40°, continuous=60°
 
 		// Start with large angle — continuous turn
@@ -344,7 +344,7 @@ func TestBearingToCommand_ContinuousTurn(t *testing.T) {
 	})
 
 	t.Run("spin detection blocks continuous turn but allows burst turn", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0
 
 		// First put executor into turning mode with a large angle (continuous turn)
@@ -366,7 +366,7 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 	deg := math.Pi / 180
 
 	t.Run("nudge right when drifting past threshold", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0 // exit=40°, nudge=20°
 
 		// Start aligned → forward (enters forward mode)
@@ -389,7 +389,7 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 	})
 
 	t.Run("nudge left when drifting negative", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0
 
 		// Start forward
@@ -403,7 +403,7 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 	})
 
 	t.Run("cooldown prevents rapid nudging", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0
 
 		// Enter forward mode
@@ -431,7 +431,7 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 	})
 
 	t.Run("no nudge below threshold", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0 // nudge=17.5°
 
 		// Enter forward mode
@@ -447,7 +447,7 @@ func TestBearingToCommand_Nudge(t *testing.T) {
 	})
 
 	t.Run("stays in forward mode within hysteresis band", func(t *testing.T) {
-		executor := NewPathExecutor(0.15, 1.0)
+		executor := NewPathExecutor()
 		executor.ForwardThresholdDeg = 25.0
 
 		// Enter forward mode with well-aligned heading

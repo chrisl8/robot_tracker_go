@@ -20,7 +20,7 @@ type DestinationRequest struct {
 
 // frameSize is the current video frame size, or 0, 0 if not yet known.
 func (s *WebServer) frameSize() (int, int) {
-	if pe := s.calibration.positionEstimator; pe != nil {
+	if pe := s.estimator(); pe != nil {
 		return pe.FrameSize()
 	}
 	return 0, 0

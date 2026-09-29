@@ -28,6 +28,8 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 
 	commandIssued := false
 	anyPath := false
+	steered := false
+	inView := make(map[int]bool) // robots with a confirmed track this frame
 	for i := range tracks {
 		track := &tracks[i]
 		if track.State != tracking.TrackStateConfirmed || track.TagID == nil {
@@ -35,6 +37,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		}
 
 		robotID := *track.TagID
+		inView[robotID] = true
 
 		if _, hasPath := rs.planning.planner.GetNextWaypoint(robotID); hasPath {
 			anyPath = true
@@ -114,6 +117,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 
 			if rs.io.pathExecutor != nil && rs.io.commandQueue != nil {
 				delta := rs.heading.headingDelta[robotID]
+				steered = true
 				cmd := rs.io.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
 				rs.io.commandQueue.Enqueue(cmd)
 				commandIssued = true
@@ -131,6 +135,28 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				}
 			}
 		}
+	}
+
+	// A robot that has a goal but was not confirmed in view this frame (tag
+	// lost, occluded, or never seen) must not keep driving on the last command:
+	// stop it now rather than waiting for the deadman.
+	for _, robotID := range rs.planning.planner.RobotsWithGoals() {
+		if inView[robotID] {
+			continue
+		}
+		if rs.io.commandQueue != nil && rs.io.robotCommands[robotID] != "stopped" {
+			utils.Logf("Robot %d has a goal but is not confirmed in view: stopping", robotID)
+		}
+		if rs.io.commandQueue != nil {
+			rs.io.commandQueue.Enqueue(controller.CommandStop)
+		}
+		rs.io.robotCommands[robotID] = "stopped"
+	}
+
+	// Steering state (burst/wait phase, turn hysteresis) belongs to one
+	// continuous run; a frame with no steering ends it.
+	if !steered && rs.io.pathExecutor != nil {
+		rs.io.pathExecutor.Reset()
 	}
 
 	// Only clear the active command when no robot is following a path. Doing

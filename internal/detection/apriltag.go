@@ -3,11 +3,9 @@
 package detection
 
 import (
-	"bytes"
 	"image"
 	"image/color"
 	"image/draw"
-	"image/jpeg"
 	"math"
 
 	"gocv.io/x/gocv"
@@ -53,20 +51,20 @@ func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 	// same frames, with identical detections and corners. 0.03 still finds tags
 	// down to a ~10 px edge.
 	params.SetMinMarkerPerimeterRate(0.03)
-	params.SetPolygonalApproxAccuracyRate(0.08)            // default 0.03; tolerate perspective distortion
-	params.SetMinCornerDistanceRate(0.02)                  // default 0.05; tolerate compressed corners
+	params.SetPolygonalApproxAccuracyRate(0.08)           // default 0.03; tolerate perspective distortion
+	params.SetMinCornerDistanceRate(0.02)                 // default 0.05; tolerate compressed corners
 	params.SetAprilTagCriticalRad(30.0 * math.Pi / 180.0) // default 10°; accept steeper angles
-	params.SetAprilTagMaxLineFitMse(20.0)                  // default 10.0; tolerate worse line fit from angle
-	params.SetAprilTagMinWhiteBlackDiff(3)                 // default 5; accept lower contrast between cells
+	params.SetAprilTagMaxLineFitMse(20.0)                 // default 10.0; tolerate worse line fit from angle
+	params.SetAprilTagMinWhiteBlackDiff(3)                // default 5; accept lower contrast between cells
 
 	// Expand adaptive thresholding to try more window sizes
 	params.SetAdaptiveThreshWinSizeMax(53) // default 23; try larger windows for distant tags
 	params.SetAdaptiveThreshWinSizeStep(4) // default 10; finer search across window sizes
 
 	// Tolerate lower contrast and more decoding errors
-	params.SetMinOtsuStdDev(3.0)                       // default 5.0; accept low-contrast regions
-	params.SetMaxErroneousBitsInBorderRate(0.5)         // default 0.35; tolerate perspective-distorted borders
-	params.SetErrorCorrectionRate(1.0)                  // default 0.6; maximum error correction
+	params.SetMinOtsuStdDev(3.0)                         // default 5.0; accept low-contrast regions
+	params.SetMaxErroneousBitsInBorderRate(0.5)          // default 0.35; tolerate perspective-distorted borders
+	params.SetErrorCorrectionRate(1.0)                   // default 0.6; maximum error correction
 	params.SetPerspectiveRemovePixelPerCell(8)           // default 4; higher resolution bit sampling
 	params.SetPerspectiveRemoveIgnoredMarginPerCell(0.2) // default 0.13; ignore more cell margin for blurry tags
 
@@ -151,22 +149,8 @@ func (d *AprilTagDetector) Detect(image []byte, width, height int) []AprilTag {
 	return tags
 }
 
-func (d *AprilTagDetector) DrawTags(imgData []byte, width, height int, tags []AprilTag) []byte {
-	if len(imgData) == 0 || len(tags) == 0 {
-		return imgData
-	}
-
-	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
-	for i := 0; i < width*height; i++ {
-		b := imgData[i*3]
-		g := imgData[i*3+1]
-		r := imgData[i*3+2]
-		rgba.Pix[i*4] = r
-		rgba.Pix[i*4+1] = g
-		rgba.Pix[i*4+2] = b
-		rgba.Pix[i*4+3] = 255
-	}
-
+// DrawTagsOn draws each tag's outline and a one-character label onto dst.
+func (d *AprilTagDetector) DrawTagsOn(dst *image.RGBA, tags []AprilTag) {
 	borderColor := color.RGBA{0, 255, 0, 255}
 	labelColor := color.RGBA{0, 0, 0, 255}
 	bgColor := color.RGBA{0, 255, 0, 200}
@@ -184,7 +168,7 @@ func (d *AprilTagDetector) DrawTags(imgData []byte, width, height int, tags []Ap
 		for j := 0; j < 4; j++ {
 			p1 := points[j]
 			p2 := points[(j+1)%4]
-			drawLine(rgba, p1, p2, borderColor, lineWidth)
+			drawLine(dst, p1, p2, borderColor, lineWidth)
 		}
 
 		cx := int(tag.CenterX)
@@ -195,15 +179,8 @@ func (d *AprilTagDetector) DrawTags(imgData []byte, width, height int, tags []Ap
 			label = "T"
 		}
 
-		drawLabel(rgba, cx, cy-25, label, labelColor, bgColor)
+		drawLabel(dst, cx, cy-25, label, labelColor, bgColor)
 	}
-
-	buf := new(bytes.Buffer)
-	if err := jpeg.Encode(buf, rgba, &jpeg.Options{Quality: 85}); err != nil {
-		return imgData
-	}
-
-	return buf.Bytes()
 }
 
 func drawLine(img *image.RGBA, p1, p2 image.Point, c color.RGBA, width int) {

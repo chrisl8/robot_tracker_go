@@ -73,7 +73,8 @@ func (s *WebServer) BroadcastPaths() {
 		utils.Debugf("BroadcastPaths: OnPathsChanged is nil, skipping")
 		return
 	}
-	if s.calibration.positionEstimator == nil {
+	estimator := s.estimator()
+	if estimator == nil {
 		utils.Debugf("BroadcastPaths: positionEstimator is nil, skipping")
 		return
 	}
@@ -96,7 +97,7 @@ func (s *WebServer) BroadcastPaths() {
 
 		pixels := make([][2]int, len(path))
 		for i, wp := range path {
-			px, py := s.calibration.positionEstimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
+			px, py := estimator.WorldToPixel(position.Point2D{X: wp[0], Y: wp[1]})
 			pixels[i] = [2]int{px, py}
 		}
 

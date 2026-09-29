@@ -188,7 +188,7 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		if img != nil {
 			rs.web.webServer.PushFrame(img)
 		}
-	} else if overlay := rs.detection.detectionPipe.DrawResults(frameData, width, height, detectionResult); len(overlay) > 0 && len(overlay) < width*height*3 {
+	} else if overlay, drawn := rs.detection.detectionPipe.DrawResults(frameData, width, height, detectionResult); drawn {
 		rs.web.webServer.PushRawJPEG(overlay)
 	} else if img != nil {
 		rs.web.webServer.PushFrame(img)
@@ -218,27 +218,6 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 				detectTime.Milliseconds(), trackPlanTime.Milliseconds(), totalTime.Milliseconds())
 		}
 	}
-}
-
-func decodeToImage(data []byte, width, height int) image.Image {
-	if len(data) == 0 {
-		return nil
-	}
-	expectedLen := width * height * 3
-	if len(data) != expectedLen {
-		return nil
-	}
-	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
-	for i := 0; i < width*height; i++ {
-		b := data[i*3]
-		g := data[i*3+1]
-		r := data[i*3+2]
-		rgba.Pix[i*4] = r
-		rgba.Pix[i*4+1] = g
-		rgba.Pix[i*4+2] = b
-		rgba.Pix[i*4+3] = 255
-	}
-	return rgba
 }
 
 func cameraFrameToImage(frame *camera.Frame) image.Image {

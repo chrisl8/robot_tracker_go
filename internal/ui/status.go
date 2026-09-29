@@ -27,7 +27,7 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"connected":    s.router.isRunning,
+		"connected":    s.router.isRunning.Load(),
 		"fps":          fps,
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
@@ -83,7 +83,7 @@ func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec 
 	s.BroadcastOverlay(OverlayMessage{
 		Type: "status",
 		Status: &StatusMessage{
-			Connected:    s.router.isRunning,
+			Connected:    s.router.isRunning.Load(),
 			FPS:          fps,
 			RobotCount:   trackCount,
 			ArduinoState: state,

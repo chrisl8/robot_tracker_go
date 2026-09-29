@@ -287,6 +287,39 @@ func (s *WebServer) saveObstaclesToFile(path string, obstacles []planning.Obstac
 	return os.WriteFile(path, data, 0600)
 }
 
+// RecomputeObstacleWorld re-derives every obstacle's floor coordinates from its
+// pixel box using the current calibration. Obstacles are drawn in pixels, but
+// the planner steers by the world coordinates, which are only correct for the
+// calibration they were computed under; after a recalibration (or loading a
+// file saved under an older one) they must be redone or the planner avoids a
+// different patch of floor than the UI shows. Does nothing until the camera is
+// calibrated.
+func (s *WebServer) RecomputeObstacleWorld() {
+	if pe := s.estimator(); pe == nil || !pe.IsCalibrated() {
+		return
+	}
+
+	s.obstacles.mutex.Lock()
+	if len(s.obstacles.list) == 0 {
+		s.obstacles.mutex.Unlock()
+		return
+	}
+	// Copy-on-write: the previous list was handed to the planner callback and
+	// the file saver.
+	updated := make([]planning.Obstacle, len(s.obstacles.list))
+	for i, obs := range s.obstacles.list {
+		worldTL, worldBR := s.pixelCornersToWorld(obs.PixelsTopLeft, obs.PixelsBottomRight)
+		rebuilt := planning.NewRectObstacle(obs.Name, worldTL, worldBR)
+		rebuilt.PixelsTopLeft = obs.PixelsTopLeft
+		rebuilt.PixelsBottomRight = obs.PixelsBottomRight
+		updated[i] = rebuilt
+	}
+	s.obstacles.list = updated
+	s.obstacles.mutex.Unlock()
+
+	s.notifyObstaclesChanged()
+}
+
 func (s *WebServer) GetObstacles() []planning.Obstacle {
 	s.obstacles.mutex.RLock()
 	defer s.obstacles.mutex.RUnlock()
@@ -304,12 +337,17 @@ func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
 }
 
 func (s *WebServer) GetObstaclesPath() string {
-	return ResolveObstaclesPath(s.obstacles.path, s.calibration.cameraName)
+	s.obstacles.mutex.RLock()
+	configured := s.obstacles.path
+	s.obstacles.mutex.RUnlock()
+	return ResolveObstaclesPath(configured, s.cameraNameValue())
 }
 
 // SetObstaclesPath sets the configured obstacles-file override (from
 // ObstaclesConfig.GetPath()) that GetObstaclesPath/ResolveObstaclesPath
 // consult before falling back to the per-camera default.
 func (s *WebServer) SetObstaclesPath(path string) {
+	s.obstacles.mutex.Lock()
 	s.obstacles.path = path
+	s.obstacles.mutex.Unlock()
 }

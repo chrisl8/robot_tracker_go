@@ -9,18 +9,18 @@ const (
 )
 
 type Track struct {
-	TrackID     int
-	Bbox        [4]int
-	Timestamp   float64
-	Confidence  float64
-	TagID       *int
-	ClassID     *int
-	Age         int
-	Hits        int
-	State       TrackState
-	History     []TrackHistoryPoint
-	WorldPos    [2]float64
-	PixelRadius float64
+	TrackID       int
+	Bbox          [4]int
+	Timestamp     float64
+	Confidence    float64
+	TagID         *int
+	ClassID       *int
+	Age           int
+	Hits          int
+	State         TrackState
+	History       []TrackHistoryPoint
+	WorldPos      [2]float64
+	PixelRadius   float64
 	Heading       float64
 	HeadingOffset float64
 	Corners       [4][2]float64

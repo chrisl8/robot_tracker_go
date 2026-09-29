@@ -15,7 +15,21 @@ import (
 )
 
 func (s *WebServer) SetCameraName(name string) {
+	s.calibration.mutex.Lock()
 	s.calibration.cameraName = name
+	s.calibration.mutex.Unlock()
+}
+
+func (s *WebServer) cameraNameValue() string {
+	s.calibration.mutex.RLock()
+	defer s.calibration.mutex.RUnlock()
+	return s.calibration.cameraName
+}
+
+func (s *WebServer) estimator() *position.PositionEstimator {
+	s.calibration.mutex.RLock()
+	defer s.calibration.mutex.RUnlock()
+	return s.calibration.positionEstimator
 }
 
 func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize float64) {
@@ -27,7 +41,7 @@ func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize
 	s.calibration.mutex.Unlock()
 
 	mismatch := false
-	if pe := s.calibration.positionEstimator; pe != nil {
+	if pe := s.estimator(); pe != nil {
 		mismatch = pe.ResolutionMismatch()
 	}
 	s.BroadcastOverlay(OverlayMessage{
@@ -43,13 +57,15 @@ func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize
 }
 
 func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
+	s.calibration.mutex.Lock()
 	s.calibration.positionEstimator = pe
+	s.calibration.mutex.Unlock()
 }
 
 func (s *WebServer) pixelCornersToWorld(pixelTL, pixelBR [2]int) ([2]float64, [2]float64) {
-	if s.calibration.positionEstimator != nil && s.calibration.positionEstimator.IsCalibrated() {
-		wTL := s.calibration.positionEstimator.PixelToWorld(pixelTL[0], pixelTL[1])
-		wBR := s.calibration.positionEstimator.PixelToWorld(pixelBR[0], pixelBR[1])
+	if pe := s.estimator(); pe != nil && pe.IsCalibrated() {
+		wTL := pe.PixelToWorld(pixelTL[0], pixelTL[1])
+		wBR := pe.PixelToWorld(pixelBR[0], pixelBR[1])
 		worldTL := [2]float64{wTL.X, wTL.Y}
 		worldBR := [2]float64{wBR.X, wBR.Y}
 		// Normalize so TopLeft has min coords and BottomRight has max coords
@@ -89,7 +105,7 @@ func (s *WebServer) handleCalibrationStatus(c *gin.Context) {
 		"tagSize":            tagSize,
 		"resolutionMismatch": false,
 	}
-	if pe := s.calibration.positionEstimator; pe != nil {
+	if pe := s.estimator(); pe != nil {
 		resp["resolutionMismatch"] = pe.ResolutionMismatch()
 		if w, h, ok := pe.CalibratedResolution(); ok {
 			resp["calibratedResolution"] = [2]int{w, h}
@@ -261,8 +277,9 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 	utils.Logf("Homography fit: rms=%.2fcm max=%.2fcm quality=%.2fcm rating=%s H=%v",
 		fit.RMSCm, fit.MaxCm, fit.QualityCm, fit.Rating, fit.Homography.H)
 
-	cameraFile := GetCalibrationFilename(s.calibration.cameraName)
-	cfg := position.NewCalibrationConfig(s.calibration.cameraName, frameW, frameH, fit, time.Now())
+	cameraName := s.cameraNameValue()
+	cameraFile := GetCalibrationFilename(cameraName)
+	cfg := position.NewCalibrationConfig(cameraName, frameW, frameH, fit, time.Now())
 	if err := position.SaveCalibration(cameraFile, cfg); err != nil {
 		utils.Logf("Failed to save calibration: %v", err)
 		c.JSON(http.StatusInternalServerError, CalibrationComputeResponse{State: "error", Error: err.Error()})
@@ -294,9 +311,9 @@ func (s *WebServer) handleCalibrationCompute(c *gin.Context) {
 }
 
 func (s *WebServer) handleCalibrationCancel(c *gin.Context) {
-	pe := s.calibration.positionEstimator
+	pe := s.estimator()
 	calibrated := pe != nil && pe.IsCalibrated()
-	state, message, filename, tagSize := calibrationStateAfterCancel(calibrated, GetCalibrationFilename(s.calibration.cameraName))
+	state, message, filename, tagSize := calibrationStateAfterCancel(calibrated, GetCalibrationFilename(s.cameraNameValue()))
 	s.SetCalibrationState(state, message, filename, tagSize)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "cancelled"})
 }

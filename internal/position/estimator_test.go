@@ -1,6 +1,9 @@
 package position
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -161,5 +164,85 @@ func TestCalibrationData_Struct(t *testing.T) {
 	}
 	if cal.WorldScale != 100.0 {
 		t.Errorf("WorldScale = %f, want 100.0", cal.WorldScale)
+	}
+}
+
+func writeCalibrationFile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "calibration.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const goodCalibration = `version: 2
+camera: {name: test, resolution: [640, 480]}
+homography:
+  - [0.01, 0, 0]
+  - [0, 0.01, 0]
+  - [0, 0, 1]
+world_scale: 100
+`
+
+// A calibration file with no usable homography used to be replaced with an
+// identity transform, so the system reported "calibrated" and treated pixels
+// as 1/100 m. It must stay uncalibrated instead.
+func TestLoadCalibration_RejectsUnusableHomography(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"homography missing", "version: 2\nworld_scale: 100\n"},
+		{"homography incomplete", "homography:\n  - [1, 0, 0]\n  - [0, 1]\n  - [0, 0, 1]\n"},
+		{"all zeros", "homography:\n  - [0, 0, 0]\n  - [0, 0, 0]\n  - [0, 0, 0]\n"},
+		{"singular", "homography:\n  - [1, 2, 3]\n  - [2, 4, 6]\n  - [0, 0, 1]\n"},
+		{"not a number", "homography:\n  - [.nan, 0, 0]\n  - [0, 1, 0]\n  - [0, 0, 1]\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			est, _ := NewPositionEstimator("")
+			err := est.LoadCalibration(writeCalibrationFile(t, tt.body))
+			if !errors.Is(err, ErrInvalidCalibration) {
+				t.Fatalf("LoadCalibration = %v, want ErrInvalidCalibration", err)
+			}
+			if est.IsCalibrated() {
+				t.Error("estimator reports calibrated after loading an unusable file")
+			}
+		})
+	}
+}
+
+// A bad file must not disturb a calibration that is already working.
+func TestLoadCalibration_BadFileKeepsPreviousCalibration(t *testing.T) {
+	est, _ := NewPositionEstimator("")
+	if err := est.LoadCalibration(writeCalibrationFile(t, goodCalibration)); err != nil {
+		t.Fatal(err)
+	}
+	before := est.PixelToWorld(200, 100)
+
+	if err := est.LoadCalibration(writeCalibrationFile(t, "version: 2\ncamera: {resolution: [1, 1]}\n")); err == nil {
+		t.Fatal("expected an error for a file with no homography")
+	}
+
+	if !est.IsCalibrated() {
+		t.Error("previous calibration was lost")
+	}
+	if after := est.PixelToWorld(200, 100); *after != *before {
+		t.Errorf("mapping changed from %v to %v", *before, *after)
+	}
+	if w, h, ok := est.CalibratedResolution(); !ok || w != 640 || h != 480 {
+		t.Errorf("calibrated resolution changed to %dx%d (ok=%v)", w, h, ok)
+	}
+}
+
+func TestLoadCalibration_AcceptsIntegerWorldScale(t *testing.T) {
+	est, _ := NewPositionEstimator("")
+	body := "homography:\n  - [1, 0, 0]\n  - [0, 1, 0]\n  - [0, 0, 1]\nworld_scale: 250\n"
+	if err := est.LoadCalibration(writeCalibrationFile(t, body)); err != nil {
+		t.Fatal(err)
+	}
+	if got := est.GetHomography().PixelsPerMeter; got != 250 {
+		t.Errorf("PixelsPerMeter = %v, want 250 (an integer world_scale was ignored)", got)
 	}
 }

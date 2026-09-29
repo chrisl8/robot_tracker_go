@@ -1,6 +1,10 @@
 package detection
 
-import "log"
+import (
+	"bytes"
+	"image"
+	"image/jpeg"
+)
 
 // NewDetectionPipeline builds a pipeline around an AprilTag detector.
 // NewAprilTagDetector never actually returns an error today, but Detect and
@@ -79,22 +83,48 @@ func (p *DetectionPipeline) tagToBbox(tag AprilTag) *BoundingBox {
 	return &BoundingBox{X1: minX, Y1: minY, X2: maxX, Y2: maxY}
 }
 
-func (p *DetectionPipeline) DrawResults(image []byte, width, height int, result *DetectionResult) []byte {
-	output := image
-
-	if len(result.Tags) > 0 && p.tagDetector != nil {
-		output = p.tagDetector.DrawTags(output, width, height, result.Tags)
-	}
+// DrawResults renders the detection overlay (tag outlines, the user's
+// obstacle boxes) onto a copy of frame, a packed width*height BGR image, and
+// returns it as a JPEG. drawn is false when there is nothing to draw, or frame
+// is not a BGR image of that size; the caller then shows the plain frame.
+func (p *DetectionPipeline) DrawResults(frame []byte, width, height int, result *DetectionResult) (jpegData []byte, drawn bool) {
+	drawTags := len(result.Tags) > 0 && p.tagDetector != nil
 
 	p.obstaclesMu.RLock()
 	obstacles := p.obstacles
 	p.obstaclesMu.RUnlock()
+	drawObstacles := len(obstacles) > 0 && p.obstacleDrawer != nil
 
-	if len(obstacles) > 0 && p.obstacleDrawer != nil {
-		output = p.obstacleDrawer.DrawObstacles(output, width, height, obstacles)
-	} else if len(obstacles) > 0 {
-		log.Printf("DRAW_RESULTS: obstacleDrawer is nil, skipping obstacles!")
+	if !drawTags && !drawObstacles {
+		return nil, false
+	}
+	if width <= 0 || height <= 0 || len(frame) != width*height*3 {
+		return nil, false
 	}
 
-	return output
+	canvas := bgrToRGBA(frame, width, height)
+	if drawTags {
+		p.tagDetector.DrawTagsOn(canvas, result.Tags)
+	}
+	if drawObstacles {
+		p.obstacleDrawer.DrawObstaclesOn(canvas, obstacles)
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, canvas, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, false
+	}
+	return buf.Bytes(), true
+}
+
+// bgrToRGBA converts a packed BGR frame (OpenCV's layout) to an RGBA image.
+func bgrToRGBA(frame []byte, width, height int) *image.RGBA {
+	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
+	for i := 0; i < width*height; i++ {
+		rgba.Pix[i*4] = frame[i*3+2]
+		rgba.Pix[i*4+1] = frame[i*3+1]
+		rgba.Pix[i*4+2] = frame[i*3]
+		rgba.Pix[i*4+3] = 255
+	}
+	return rgba
 }

@@ -9,10 +9,15 @@ import (
 )
 
 type CommandQueue struct {
-	controller       *ArduinoController
-	commandCh        chan Command
-	stopCh           chan struct{}
-	running          bool
+	controller *ArduinoController
+	commandCh  chan Command
+	stopCh     chan struct{}
+	running    bool
+	// halted is set by halt() and cleared by Start(). While set, Enqueue drops
+	// movement commands: a late caller (a frame or HTTP handler that checked
+	// the e-stop just before it landed) must not leave a stale active command
+	// that the heartbeat would re-send the moment control is restored.
+	halted           bool
 	interval         time.Duration // min spacing between writes of an unchanged command; see Enqueue
 	heartbeatTimeout time.Duration
 	lastCommand      Command
@@ -31,6 +36,7 @@ type CommandQueue struct {
 	sendMu sync.Mutex
 
 	reconnectInterval    time.Duration
+	autoReconnect        bool      // guarded by mu; see SetAutoReconnect
 	lastReconnectAttempt time.Time // run-loop goroutine only
 	reconnectFailures    int       // run-loop goroutine only
 }
@@ -58,7 +64,18 @@ func NewCommandQueue(controller *ArduinoController, intervalMs int, heartbeatTim
 		commandTTL:       DefaultCommandTTL,
 
 		reconnectInterval: DefaultReconnectInterval,
+		autoReconnect:     true,
 	}
+}
+
+// SetAutoReconnect controls whether the run loop reopens the serial port while
+// the controller is disconnected. It is on by default; the app turns it off
+// when the controller is disabled in config, so a disabled controller is never
+// connected behind the operator's back.
+func (q *CommandQueue) SetAutoReconnect(on bool) {
+	q.mu.Lock()
+	q.autoReconnect = on
+	q.mu.Unlock()
 }
 
 // DefaultReconnectInterval is how often the run loop retries opening the
@@ -93,6 +110,10 @@ func (q *CommandQueue) Start() {
 	q.commandCh = commandCh
 	q.stopCh = stopCh
 	q.running = true
+	q.halted = false
+	// Anything still marked active was left by a caller that raced the halt;
+	// the robot's state is unknown, so callers must re-issue movement.
+	q.hasActiveCommand = false
 	q.mu.Unlock()
 
 	go q.runLoop(commandCh, stopCh)
@@ -112,6 +133,7 @@ func (q *CommandQueue) halt() bool {
 	q.mu.Lock()
 	wasRunning := q.running
 	q.running = false
+	q.halted = true
 	q.hasActiveCommand = false
 	stopCh := q.stopCh
 	q.mu.Unlock()
@@ -151,6 +173,10 @@ func (q *CommandQueue) Stop() {
 // only redundant repeats of an unchanged command are throttled.
 func (q *CommandQueue) Enqueue(cmd Command) {
 	q.mu.Lock()
+	if q.halted && cmd != CommandStop {
+		q.mu.Unlock()
+		return
+	}
 	if cmd == CommandStop {
 		q.hasActiveCommand = false
 	} else {
@@ -209,7 +235,9 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 				continue
 			}
 			if !q.controller.IsConnected() {
-				q.tryReconnect()
+				if q.reconnectEnabled() {
+					q.tryReconnect()
+				}
 				continue
 			}
 			if time.Since(q.lastSentTime) > q.heartbeatTimeout {
@@ -228,6 +256,12 @@ func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 			return
 		}
 	}
+}
+
+func (q *CommandQueue) reconnectEnabled() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.autoReconnect
 }
 
 // expireStaleCommand drops the active command if nobody has refreshed it

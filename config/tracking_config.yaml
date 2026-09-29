@@ -92,8 +92,6 @@ tracking:
   track_thresh: 0.5
   track_buffer: 30
   match_thresh: 0.3
-  frame_rate: 30
-  mot20: False
   min_box_area: 100
 
 # Position Estimation Settings
@@ -154,9 +152,6 @@ obstacles:
 # navigation significantly slower (48s vs 25s for ~1m paths).
 path_execution:
   waypoint_threshold: 0.1  # meters - distance to waypoint before advancing
-  max_speed: 0.15          # forward/backward speed (m/s)
-  turn_speed: 0.5          # rotation speed (rad/s)
-  command_interval_ms: 100 # milliseconds between commands
   spin_threshold_deg: 20.0 # heading delta (°/frame) above which robot brakes.
                            # 10° triggered false positives from normal detection noise.
                            # 20° catches genuine uncontrolled spinning without false triggers.

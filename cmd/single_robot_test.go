@@ -5,9 +5,11 @@ package main
 import (
 	"image"
 	"image/color"
+	"math"
 	"strings"
 	"testing"
 
+	"github.com/chrisl8/robot_tracker_go/internal/camera"
 	"github.com/chrisl8/robot_tracker_go/internal/config"
 	"github.com/chrisl8/robot_tracker_go/internal/controller"
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
@@ -218,4 +220,76 @@ func TestRegisterDemoRobots(t *testing.T) {
 
 func TestRegisterDemoRobots_NilConfigIsSafe(t *testing.T) {
 	NewRobotSystem(nil).registerDemoRobots() // must not panic
+}
+
+// A robot with a goal whose track is no longer confirmed (tag lost or
+// occluded) must be told to stop straight away, not left on its last command
+// until the deadman expires.
+func TestExecuteAutonomousControl_StopsRobotWhoseTrackIsLost(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	startRigQueue(t, rs)
+	rs.planning.planner.AddRobot(demoAutonomyTagID, [2]float64{3.2, 2.4}, 0.3)
+	rs.planning.planner.SetGoal(demoAutonomyTagID, [2]float64{5.2, 5.4})
+	rs.io.robotCommands[demoAutonomyTagID] = "forward"
+
+	lost := confirmedTrack(1, demoAutonomyTagID)
+	lost.State = tracking.TrackStateLost
+	rs.executeAutonomousControl([]tracking.Track{lost})
+
+	if got := rs.io.robotCommands[demoAutonomyTagID]; got != "stopped" {
+		t.Errorf("motion state = %q, want stopped for a robot that is not in view", got)
+	}
+}
+
+// Same when the tracker has dropped the track altogether.
+func TestExecuteAutonomousControl_StopsRobotWithGoalAndNoTrack(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	startRigQueue(t, rs)
+	rs.planning.planner.AddRobot(demoAutonomyTagID, [2]float64{3.2, 2.4}, 0.3)
+	rs.planning.planner.SetGoal(demoAutonomyTagID, [2]float64{5.2, 5.4})
+	rs.io.robotCommands[demoAutonomyTagID] = "forward"
+
+	rs.executeAutonomousControl(nil)
+
+	if got := rs.io.robotCommands[demoAutonomyTagID]; got != "stopped" {
+		t.Errorf("motion state = %q, want stopped", got)
+	}
+}
+
+// A frame with no steering ends the run: a turn burst left over from before
+// must not be finished (or a drive-while-waiting continued) in the next run.
+func TestExecuteAutonomousControl_ResetsSteeringWhenNotSteering(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	startRigQueue(t, rs)
+	rs.io.pathExecutor.BurstFrames = 3
+	rs.io.pathExecutor.BearingToCommand(0, 60*math.Pi/180, 0) // starts a turn burst
+
+	rs.executeAutonomousControl(nil) // nothing to steer this frame
+
+	if got := rs.io.pathExecutor.BearingToCommand(0, 0, 0); got != controller.CommandForward {
+		t.Errorf("first command of the next run = %q, want forward, not the stale burst", got)
+	}
+}
+
+func TestIsRepeatFrame(t *testing.T) {
+	tests := []struct {
+		name    string
+		lastSeq uint64
+		frame   *camera.Frame
+		want    bool
+	}{
+		{"same numbered frame again", 7, &camera.Frame{Seq: 7}, true},
+		{"newer frame", 7, &camera.Frame{Seq: 8}, false},
+		{"first frame", 0, &camera.Frame{Seq: 1}, false},
+		{"unnumbered source is never a repeat", 0, &camera.Frame{Seq: 0}, false},
+		{"unnumbered after numbered", 5, &camera.Frame{Seq: 0}, false},
+		{"nil frame", 3, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRepeatFrame(tt.lastSeq, tt.frame); got != tt.want {
+				t.Errorf("isRepeatFrame(%d, %+v) = %v, want %v", tt.lastSeq, tt.frame, got, tt.want)
+			}
+		})
+	}
 }

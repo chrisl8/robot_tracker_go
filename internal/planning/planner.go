@@ -337,11 +337,17 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 	utils.Debugf("GetPathsWithGoals: %d goals, %d existing paths", len(p.coordinator.goals), len(p.paths))
 	for robotID, goal := range p.coordinator.goals {
 		if _, hasPath := p.paths[robotID]; !hasPath {
+			// Plan only from a position the robot has actually been seen at.
+			// For a robot not yet tracked there is no start: planning from the
+			// world origin stored a path that AddRobot then kept (it only
+			// plans when there is no path), so the robot would later be sent
+			// along a route that began somewhere it never was. AddRobot plans
+			// the goal as soon as the robot first appears.
 			robot, exists := p.coordinator.GetRobotState(robotID)
-			startPos := [2]float64{0, 0}
-			if exists {
-				startPos = robot.Position
+			if !exists {
+				continue
 			}
+			startPos := robot.Position
 			utils.Debugf("GetPathsWithGoals: planning for robot %d, start=(%.2f,%.2f) goal=(%.2f,%.2f)", robotID, startPos[0], startPos[1], goal[0], goal[1])
 			path, success := p.planPathLocked(robotID, startPos, goal)
 			utils.Debugf("GetPathsWithGoals: PlanPath success=%v pathLen=%d", success, len(path))

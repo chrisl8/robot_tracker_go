@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/chrisl8/robot_tracker_go/internal/camera"
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
 	"github.com/chrisl8/robot_tracker_go/internal/position"
 )
@@ -203,15 +204,9 @@ type SerialConfig struct {
 	BaudRate int    `yaml:"baudrate"`
 }
 
-type CameraConfig struct {
-	Type     string `yaml:"type"`
-	Name     string `yaml:"name"`
-	CameraID int    `yaml:"camera_id"`
-	URL      string `yaml:"url"`
-	Width    int    `yaml:"width"`
-	Height   int    `yaml:"height"`
-	FPS      int    `yaml:"fps"`
-}
+// CameraConfig is the camera package's own configuration type, so the YAML
+// schema and what the camera package consumes cannot drift apart.
+type CameraConfig = camera.CameraConfig
 
 type RobotConfig struct {
 	TagID                int     `yaml:"tag_id"`
@@ -224,9 +219,6 @@ type RobotConfig struct {
 
 type PathExecutionConfig struct {
 	WaypointThreshold    float64 `yaml:"waypoint_threshold"`
-	MaxSpeed             float64 `yaml:"max_speed"`
-	TurnSpeed            float64 `yaml:"turn_speed"`
-	CommandIntervalMs    int     `yaml:"command_interval_ms"`
 	SpinThresholdDeg     float64 `yaml:"spin_threshold_deg"`
 	BurstFrames          int     `yaml:"burst_frames"`
 	MaxWaitFrames        int     `yaml:"max_wait_frames"`
@@ -264,8 +256,6 @@ type TrackingConfig struct {
 	TrackThresh float64 `yaml:"track_thresh"`
 	TrackBuffer int     `yaml:"track_buffer"`
 	MatchThresh float64 `yaml:"match_thresh"`
-	FrameRate   int     `yaml:"frame_rate"`
-	MOT20       bool    `yaml:"mot20"`
 	MinBoxArea  int     `yaml:"min_box_area"`
 }
 

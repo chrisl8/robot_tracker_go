@@ -216,3 +216,49 @@ func TestStop_WaitsForInFlightReadBeforeClosingDevice(t *testing.T) {
 		t.Error("device was never closed")
 	}
 }
+
+// hangSource delivers frames until hung, then blocks inside Read like a wedged
+// USB camera: no failed read, no new frame, no error.
+type hangSource struct {
+	fakeSource
+	hang    atomic.Bool
+	release chan struct{}
+}
+
+func (h *hangSource) Read(m *gocv.Mat) bool {
+	if h.hang.Load() {
+		<-h.release
+		return false
+	}
+	return h.fakeSource.Read(m)
+}
+
+// GetFrame keeps returning the last frame while the camera is hung, so the
+// frame number is the only way a consumer can tell that nothing new arrived.
+func TestGetFrame_SeqAdvancesOnlyWithNewFrames(t *testing.T) {
+	src := &hangSource{release: make(chan struct{})}
+	cam := newTestCamera(src, 1000, nil)
+	defer func() { close(src.release); cam.Stop() }()
+
+	waitFor(t, "first frame", func() bool { return gotFrame(cam) })
+	first, _ := cam.GetFrame()
+	if first.Seq == 0 {
+		t.Fatal("frames must be numbered from 1")
+	}
+	waitFor(t, "a later frame", func() bool {
+		f, err := cam.GetFrame()
+		return err == nil && f.Seq > first.Seq
+	})
+
+	src.hang.Store(true)
+	time.Sleep(50 * time.Millisecond) // let the loop enter the blocked read
+	stuck, _ := cam.GetFrame()
+	time.Sleep(100 * time.Millisecond)
+	later, err := cam.GetFrame()
+	if err != nil {
+		t.Fatalf("a hung read reports no error (that is the hazard): %v", err)
+	}
+	if later.Seq != stuck.Seq {
+		t.Errorf("Seq moved from %d to %d while the camera was hung", stuck.Seq, later.Seq)
+	}
+}

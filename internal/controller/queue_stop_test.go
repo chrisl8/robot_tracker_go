@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -225,5 +226,118 @@ func TestNewCommandQueue_DeadmanOnByDefault(t *testing.T) {
 	q := NewCommandQueue(nil, 0, 0)
 	if q.commandTTL != DefaultCommandTTL || DefaultCommandTTL != 2*time.Second {
 		t.Errorf("commandTTL = %v, want the 2s default", q.commandTTL)
+	}
+}
+
+// A command that races an e-stop (a frame or handler that checked the e-stop
+// just before it landed) must not be resumed by the heartbeat when control is
+// restored.
+func TestCommandQueue_LateEnqueueAfterEStop_NotResumedOnRestart(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.Start()
+	q.EmergencyStop()
+	q.Enqueue(CommandForward) // late arrival on the halted queue
+
+	q.Start() // ClearEmergencyStop restarts the queue
+	defer q.Stop()
+	time.Sleep(700 * time.Millisecond) // longer than the heartbeat
+
+	for _, c := range port.commands() {
+		if c == CommandForward {
+			t.Fatalf("Forward reached the robot after the e-stop was cleared: %q", port.commands())
+		}
+	}
+}
+
+func TestCommandQueue_AutoReconnectOff_NeverOpensThePort(t *testing.T) {
+	origOpen := openSerial
+	opened := make(chan struct{}, 8)
+	openSerial = func(string, *serial.Mode) (serial.Port, error) {
+		opened <- struct{}{}
+		return &recordingPort{}, nil
+	}
+	t.Cleanup(func() { openSerial = origOpen })
+
+	ctrl := NewArduinoController("test", 0) // never connected
+	q := NewCommandQueue(ctrl, 10, 0)
+	q.reconnectInterval = 10 * time.Millisecond
+	q.SetAutoReconnect(false)
+	q.Start()
+	defer q.Stop()
+	time.Sleep(200 * time.Millisecond)
+
+	select {
+	case <-opened:
+		t.Fatal("queue opened the serial port although auto-reconnect is off")
+	default:
+	}
+}
+
+func TestFilterArduinoPorts_NoFallbackToUnrelatedPorts(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"bluetooth and debug console only", []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.debug-console", "/dev/tty"}, nil},
+		{"usb serial", []string{"/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-BG01OQ2N"}, []string{"/dev/cu.usbserial-BG01OQ2N"}},
+		{"linux acm", []string{"/dev/ttyS0", "/dev/ttyACM0"}, []string{"/dev/ttyACM0"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterArduinoPorts(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("got %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// Writes while the board is still resetting after the port opens are lost, so
+// the controller must not report connected until the startup delay has passed.
+func TestArduinoController_NotConnectedDuringStartupDelay(t *testing.T) {
+	origOpen, origDelay := openSerial, arduinoStartupDelay
+	openSerial = func(string, *serial.Mode) (serial.Port, error) { return &recordingPort{}, nil }
+	arduinoStartupDelay = 150 * time.Millisecond
+	t.Cleanup(func() { openSerial, arduinoStartupDelay = origOpen, origDelay })
+
+	ctrl := NewArduinoController("test", 0)
+	done := make(chan error, 1)
+	go func() { done <- ctrl.Connect() }()
+
+	time.Sleep(50 * time.Millisecond)
+	if ctrl.IsConnected() {
+		t.Error("reported connected before the board finished resetting")
+	}
+	if err := ctrl.SendCommand(CommandStop); !errors.Is(err, ErrNotConnected) {
+		t.Errorf("SendCommand during reset = %v, want ErrNotConnected", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !ctrl.IsConnected() {
+		t.Error("not connected after Connect returned")
+	}
+}
+
+func TestPathExecutor_Reset_ForgetsStaleBurst(t *testing.T) {
+	e := NewPathExecutor()
+	e.BurstFrames, e.MaxWaitFrames = 3, 3
+	// 60° off: start a turn burst.
+	e.BearingToCommand(0, 60*math.Pi/180, 0)
+	if e.phase != phaseBursting {
+		t.Fatalf("setup: phase = %v, want bursting", e.phase)
+	}
+	e.Reset()
+
+	// Facing the target and stable: a fresh run drives forward at once instead
+	// of finishing the old turn burst.
+	if got := e.BearingToCommand(0, 0, 0); got != CommandForward {
+		t.Errorf("first command after Reset = %q, want forward", got)
 	}
 }

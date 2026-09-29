@@ -2,6 +2,8 @@
 
 package detection
 
+import "image"
+
 type Obstacle struct {
 	ID               string
 	PixelTopLeft     [2]int
@@ -17,6 +19,4 @@ func NewObstacleDrawer() *ObstacleDrawer {
 	return &ObstacleDrawer{}
 }
 
-func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstacles []Obstacle) []byte {
-	return imgData
-}
+func (d *ObstacleDrawer) DrawObstaclesOn(dst *image.RGBA, obstacles []Obstacle) {}

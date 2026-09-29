@@ -1,7 +1,9 @@
 package position
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -185,6 +187,14 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		return fmt.Errorf("failed to parse calibration file: %w", err)
 	}
 
+	// Parse and check the homography before touching any state, so a bad file
+	// leaves the estimator exactly as it was (uncalibrated, or still on the
+	// previous calibration) instead of half-loaded.
+	newHomography, err := parseCalibrationHomography(calibration)
+	if err != nil {
+		return fmt.Errorf("calibration file %s: %w", path, err)
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -218,35 +228,11 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 		}
 	}
 
-	// Build the new homography on a fresh instance rather than mutating
-	// e.homography in place, so a concurrent reader always sees either the
-	// fully-old or fully-new homography, never a partially-updated one.
-	newHomography := NewHomography()
-
-	if homographyData, ok := calibration["homography"].([]interface{}); ok && len(homographyData) >= 3 {
-		row0, _ := homographyData[0].([]interface{})
-		row1, _ := homographyData[1].([]interface{})
-		row2, _ := homographyData[2].([]interface{})
-		if len(row0) >= 3 && len(row1) >= 3 && len(row2) >= 3 {
-			newHomography.SetFromValues(
-				utils.ToFloat64(row0[0]), utils.ToFloat64(row0[1]), utils.ToFloat64(row0[2]),
-				utils.ToFloat64(row1[0]), utils.ToFloat64(row1[1]), utils.ToFloat64(row1[2]),
-				utils.ToFloat64(row2[0]), utils.ToFloat64(row2[1]), utils.ToFloat64(row2[2]),
-			)
-		}
-	}
-
-	if !newHomography.IsValid() || !newHomography.HasTransformation() {
-		utils.Logf("WARNING: Invalid or identity homography in calibration file")
-		utils.Logf("Using fallback: identity transformation (pixel=world for testing)")
-		newHomography.SetIdentity()
-	}
-
-	if scale, ok := calibration["world_scale"].(float64); ok {
-		newHomography.SetPixelsPerMeter(scale)
+	if scale, ok := calibration["world_scale"]; ok && utils.ToFloat64(scale) > 0 {
+		newHomography.SetPixelsPerMeter(utils.ToFloat64(scale))
 	} else {
-		// No world_scale in the file (e.g. an older calibration): fall back
-		// to the documented default rather than leaving PixelsPerMeter at 0.
+		// No usable world_scale in the file (e.g. an older calibration): fall
+		// back to the documented default rather than leaving PixelsPerMeter at 0.
 		newHomography.EstimateScale()
 	}
 
@@ -254,6 +240,41 @@ func (e *PositionEstimator) LoadCalibration(path string) error {
 
 	utils.Logf("Loaded calibration from %s", path)
 	return nil
+}
+
+// ErrInvalidCalibration means a calibration file has no usable homography.
+var ErrInvalidCalibration = errors.New("no usable homography")
+
+// parseCalibrationHomography builds the homography stored in a parsed
+// calibration file. A missing, non-finite or singular matrix is an error: the
+// old behavior of substituting an identity transform made a corrupt file look
+// calibrated, with pixels silently treated as 1/100 m.
+func parseCalibrationHomography(calibration map[string]interface{}) (*Homography, error) {
+	rows, _ := calibration["homography"].([]interface{})
+	if len(rows) < 3 {
+		return nil, fmt.Errorf("%w: homography is missing", ErrInvalidCalibration)
+	}
+	var v [9]float64
+	for i := 0; i < 3; i++ {
+		row, _ := rows[i].([]interface{})
+		if len(row) < 3 {
+			return nil, fmt.Errorf("%w: homography row %d is incomplete", ErrInvalidCalibration, i)
+		}
+		for j := 0; j < 3; j++ {
+			f := utils.ToFloat64(row[j])
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				return nil, fmt.Errorf("%w: homography contains a non-finite value", ErrInvalidCalibration)
+			}
+			v[i*3+j] = f
+		}
+	}
+
+	h := NewHomography()
+	h.SetFromValues(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8])
+	if h.determinant() == 0 { // includes an all-zero matrix
+		return nil, fmt.Errorf("%w: homography is singular", ErrInvalidCalibration)
+	}
+	return h, nil
 }
 
 // SetFrameSize records the live camera frame size so a calibration made at a

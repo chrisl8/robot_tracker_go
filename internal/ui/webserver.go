@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,13 +38,9 @@ import (
 //   - Callbacks: every app-supplied hook (see WebServerCallbacks) — the
 //     seam between this package's HTTP layer and cmd's application logic.
 //
-// Two fields cross these boundaries and are read without the "owning"
-// cluster's lock, exactly as before this split (not introduced by it):
-// calibration.cameraName is also read by the obstacle store's
-// GetObstaclesPath, and calibration.positionEstimator is also read by the
-// hub's BroadcastPaths. Fixing that pre-existing lack of synchronization is
-// a correctness change, out of scope here — see
-// docs/archived/code-review-2026-09-27.md.
+// calibration.cameraName and calibration.positionEstimator are also used by
+// the obstacle store and the hub (GetObstaclesPath, BroadcastPaths); they are
+// guarded by calibration.mutex and read through cameraNameValue/estimator.
 type WebServer struct {
 	router      webRouter
 	hub         broadcastHub
@@ -60,7 +57,7 @@ type webRouter struct {
 	addr         string
 	engine       *gin.Engine
 	stream       *mjpegStream
-	isRunning    bool
+	isRunning    atomic.Bool
 	httpServer   *http.Server
 	httpServerMu sync.Mutex
 	wsPongWait   time.Duration
@@ -71,7 +68,7 @@ type webRouter struct {
 // broadcastHub is the registry of connected WebSocket clients that
 // BroadcastOverlay fans messages out to.
 type broadcastHub struct {
-	clients     map[*websocket.Conn]*sync.Mutex
+	clients     map[*websocket.Conn]*wsClient
 	clientMutex sync.RWMutex
 }
 
@@ -152,8 +149,6 @@ type WebServerCallbacks struct {
 	OnPathsChanged func() map[int][][2]float64
 }
 
-// the only thing a client sends is a small {"command": "..."} JSON object
-
 func NewWebServer(addr string) *WebServer {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -165,13 +160,12 @@ func NewWebServer(addr string) *WebServer {
 			addr:         addr,
 			engine:       engine,
 			stream:       newMJPEGStream(),
-			isRunning:    false,
 			wsPongWait:   defaultWSPongWait,
 			wsPingPeriod: defaultWSPingPeriod,
 			wsWriteWait:  defaultWSWriteWait,
 		},
 		hub: broadcastHub{
-			clients: make(map[*websocket.Conn]*sync.Mutex),
+			clients: make(map[*websocket.Conn]*wsClient),
 		},
 	}
 
@@ -218,7 +212,7 @@ func (s *WebServer) setupRoutes() {
 }
 
 func (s *WebServer) Start() {
-	s.router.isRunning = true
+	s.router.isRunning.Store(true)
 	srv := &http.Server{
 		Addr:              s.router.addr,
 		Handler:           s.router.engine,
@@ -242,7 +236,7 @@ func (s *WebServer) Start() {
 // waiting up to 5s for in-flight requests (including open WebSocket/MJPEG
 // streams) to finish before forcing the listener closed.
 func (s *WebServer) Stop() {
-	s.router.isRunning = false
+	s.router.isRunning.Store(false)
 	s.router.httpServerMu.Lock()
 	srv := s.router.httpServer
 	s.router.httpServerMu.Unlock()

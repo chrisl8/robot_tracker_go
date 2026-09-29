@@ -1,6 +1,9 @@
 package detection
 
-import "sync"
+import (
+	"image"
+	"sync"
+)
 
 type DetectionType int
 
@@ -70,6 +73,7 @@ func (p *DetectionPipeline) SetObstacles(obstacles []Obstacle) {
 
 type TagDetector interface {
 	Detect(image []byte, width, height int) []AprilTag
-	DrawTags(image []byte, width, height int, tags []AprilTag) []byte
+	// DrawTagsOn draws the tags' outlines and labels onto dst.
+	DrawTagsOn(dst *image.RGBA, tags []AprilTag)
 	Close() error
 }

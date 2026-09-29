@@ -34,7 +34,34 @@ function heldCommand(): RobotCommand | null {
 
 let holdTimer: ReturnType<typeof setInterval> | undefined
 
+// A held D-pad button is released by mouseup/touchend, which are never
+// delivered if the window loses focus, the tab is hidden, or the buttons
+// disappear (leaving Pilot mode). The refresh timer would then keep the
+// command alive forever, so release it on those events too.
+function releaseHeld(): void {
+    if (pressed.value === null) return
+    pressed.value = null
+    pressedCommand.value = null
+    sendCommand('S')
+}
+
+function handleVisibilityChange(): void {
+    if (document.hidden) releaseHeld()
+}
+
+// Leaving manual mode or an e-stop already stops the robot on the server; just
+// forget the held button so it can't resume when Pilot mode is entered again.
+watch(
+    () => [robotStore.controlMode, robotStore.emergencyStopped],
+    () => {
+        pressed.value = null
+        pressedCommand.value = null
+    }
+)
+
 onMounted(() => {
+    window.addEventListener('blur', releaseHeld)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     robotStore.fetchControlState()
     holdTimer = setInterval(() => {
         if (robotStore.controlMode !== 'manual' || robotStore.emergencyStopped) return
@@ -45,6 +72,8 @@ onMounted(() => {
 
 onUnmounted(() => {
     clearInterval(holdTimer)
+    window.removeEventListener('blur', releaseHeld)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 async function sendCommand(command: RobotCommand): Promise<void> {
@@ -76,10 +105,7 @@ function handleMouseDown(key: string, command: RobotCommand): void {
 function handleMouseUp(): void {
     // mouseleave also routes here; don't stop the robot (e.g. being driven by
     // keyboard) just because the pointer crossed an unpressed button.
-    if (pressed.value === null) return
-    pressed.value = null
-    pressedCommand.value = null
-    sendCommand('S') // Stop on release
+    releaseHeld() // Stop on release
 }
 
 // Watch keyboard state
@@ -95,10 +121,8 @@ watch(
             sendCommand('L')
         } else if (keys.d) {
             sendCommand('R')
-        } else if (keys.x) {
-            sendCommand('S')
         } else {
-            sendCommand('S')
+            sendCommand('S') // nothing held (or X)
         }
     },
     { deep: true }
@@ -176,8 +200,11 @@ watch(
                     <button
                         class="dpad-btn forward"
                         @mousedown="handleMouseDown('w', 'F')"
+                        @touchstart.prevent="handleMouseDown('w', 'F')"
                         @mouseup="handleMouseUp"
                         @mouseleave="handleMouseUp"
+                        @touchend.prevent="handleMouseUp"
+                        @touchcancel="handleMouseUp"
                         :class="{ pressed: pressed === 'w' }"
                         :disabled="robotStore.emergencyStopped"
                     >
@@ -188,8 +215,11 @@ watch(
                     <button
                         class="dpad-btn"
                         @mousedown="handleMouseDown('a', 'L')"
+                        @touchstart.prevent="handleMouseDown('a', 'L')"
                         @mouseup="handleMouseUp"
                         @mouseleave="handleMouseUp"
+                        @touchend.prevent="handleMouseUp"
+                        @touchcancel="handleMouseUp"
                         :class="{ pressed: pressed === 'a' }"
                         :disabled="robotStore.emergencyStopped"
                     >
@@ -198,8 +228,11 @@ watch(
                     <button
                         class="dpad-btn stop-btn"
                         @mousedown="handleMouseDown('x', 'S')"
+                        @touchstart.prevent="handleMouseDown('x', 'S')"
                         @mouseup="handleMouseUp"
                         @mouseleave="handleMouseUp"
+                        @touchend.prevent="handleMouseUp"
+                        @touchcancel="handleMouseUp"
                         :disabled="robotStore.emergencyStopped"
                     >
                         STOP
@@ -207,8 +240,11 @@ watch(
                     <button
                         class="dpad-btn"
                         @mousedown="handleMouseDown('d', 'R')"
+                        @touchstart.prevent="handleMouseDown('d', 'R')"
                         @mouseup="handleMouseUp"
                         @mouseleave="handleMouseUp"
+                        @touchend.prevent="handleMouseUp"
+                        @touchcancel="handleMouseUp"
                         :class="{ pressed: pressed === 'd' }"
                         :disabled="robotStore.emergencyStopped"
                     >
@@ -219,8 +255,11 @@ watch(
                     <button
                         class="dpad-btn backward"
                         @mousedown="handleMouseDown('s', 'B')"
+                        @touchstart.prevent="handleMouseDown('s', 'B')"
                         @mouseup="handleMouseUp"
                         @mouseleave="handleMouseUp"
+                        @touchend.prevent="handleMouseUp"
+                        @touchcancel="handleMouseUp"
                         :class="{ pressed: pressed === 's' }"
                         :disabled="robotStore.emergencyStopped"
                     >

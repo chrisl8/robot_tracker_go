@@ -2,13 +2,19 @@ package tracking
 
 import "sort"
 
+// LostAfterMissedFrames is how many consecutive frames a track may go without
+// a matching detection and still be reported as confirmed. Beyond that it is
+// reported as TrackStateLost (until it is matched again), even though the
+// tracker keeps it for TrackBuffer frames so it can be re-acquired. Consumers
+// that act on a track's position (autonomous driving) must not treat a robot
+// as located just because the tracker is still holding its slot.
+const LostAfterMissedFrames = 3
+
 type ByteTrackConfig struct {
 	TrackThresh float64
 	TrackBuffer int
 	MatchThresh float64
-	FrameRate   int
 	MinBoxArea  int
-	MOT20       bool
 }
 
 type ByteTrack struct {
@@ -37,9 +43,7 @@ func NewByteTrack(config *ByteTrackConfig) *ByteTrack {
 			TrackThresh: 0.5,
 			TrackBuffer: 30,
 			MatchThresh: 0.3,
-			FrameRate:   30,
 			MinBoxArea:  100,
-			MOT20:       false,
 		}
 	}
 
@@ -325,7 +329,11 @@ func (t *ByteTrack) removeLostTracks() {
 func (t *ByteTrack) buildTrackingResult(timestamp float64, frameIdx int, numDetections int) *TrackingResult {
 	tracks := make([]Track, 0, len(t.tracks))
 	for _, tt := range t.tracks {
-		tracks = append(tracks, *tt.track)
+		snapshot := *tt.track
+		if snapshot.State == TrackStateConfirmed && tt.timeSinceUpdate > LostAfterMissedFrames {
+			snapshot.State = TrackStateLost // the tracker's own copy stays confirmed for re-acquisition
+		}
+		tracks = append(tracks, snapshot)
 	}
 	sort.Slice(tracks, func(i, j int) bool { return tracks[i].TrackID < tracks[j].TrackID })
 

@@ -23,7 +23,10 @@ type ArduinoController struct {
 	timeout   time.Duration
 	serial    serial.Port
 	connected bool
-	mu        sync.Mutex // guards serial and connected
+	// connecting is set while Connect opens the port and waits out the
+	// board's reset, so a second Connect can't open the port twice.
+	connecting bool
+	mu         sync.Mutex // guards serial, connected and connecting
 }
 
 func NewArduinoController(port string, baudrate int) *ArduinoController {
@@ -37,13 +40,23 @@ func NewArduinoController(port string, baudrate int) *ArduinoController {
 	}
 }
 
+// Connect opens the serial port. The controller only reports connected once
+// the board has had ArduinoStartupDelay to finish the reset that opening the
+// port triggers: marking it connected earlier let writes (including an
+// emergency Stop) land while the board was still resetting and be lost.
 func (c *ArduinoController) Connect() error {
 	c.mu.Lock()
-	if c.connected {
+	if c.connected || c.connecting {
 		c.mu.Unlock()
 		return nil
 	}
+	c.connecting = true
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.connecting = false
+		c.mu.Unlock()
+	}()
 
 	port := c.port
 	if port == "auto" {
@@ -64,13 +77,13 @@ func (c *ArduinoController) Connect() error {
 	}
 	_ = sp.SetReadTimeout(c.timeout)
 
+	time.Sleep(arduinoStartupDelay)
+
 	c.mu.Lock()
 	c.serial = sp
 	c.port = port
 	c.connected = true
 	c.mu.Unlock()
-
-	time.Sleep(arduinoStartupDelay)
 
 	return nil
 }
@@ -137,43 +150,46 @@ func (c *ArduinoController) GetPort() string {
 }
 
 func (c *ArduinoController) autoDetectPort() (string, error) {
-	ports, err := c.detectPorts()
-	if err != nil {
-		return "", err
-	}
+	ports := filterArduinoPorts(globSerialPorts())
 	if len(ports) == 0 {
 		return "", fmt.Errorf("no Arduino ports found")
 	}
 	return ports[0], nil
 }
 
-func (c *ArduinoController) detectPorts() ([]string, error) {
-	patterns := []string{"/dev/cu.*", "/dev/tty*"}
-	var allMatches []string
-	for _, pattern := range patterns {
+// globSerialPorts lists every serial device node the OS exposes.
+func globSerialPorts() []string {
+	var all []string
+	for _, pattern := range []string{"/dev/cu.*", "/dev/tty*"} {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			continue
 		}
-		allMatches = append(allMatches, matches...)
+		all = append(all, matches...)
 	}
-
-	var arduinoPorts []string
-	for _, port := range allMatches {
-		lower := strings.ToLower(port)
-		if strings.Contains(lower, "usb") || strings.Contains(lower, "acm") || strings.Contains(lower, "ama") || strings.Contains(lower, "modem") {
-			arduinoPorts = append(arduinoPorts, port)
-		}
-	}
-	if len(arduinoPorts) == 0 {
-		arduinoPorts = allMatches
-	}
-	return arduinoPorts, nil
+	return all
 }
 
+// filterArduinoPorts keeps the ports that look like a USB serial adapter or
+// board. There is deliberately no fallback to "every port that exists": with no
+// board attached that would pick something like /dev/cu.Bluetooth-Incoming-Port,
+// report the Arduino as connected, and write drive commands into it. An adapter
+// with an unusual name can be selected with controller.serial.port.
+func filterArduinoPorts(all []string) []string {
+	var out []string
+	for _, port := range all {
+		lower := strings.ToLower(port)
+		if strings.Contains(lower, "usb") || strings.Contains(lower, "acm") || strings.Contains(lower, "ama") || strings.Contains(lower, "modem") {
+			out = append(out, port)
+		}
+	}
+	return out
+}
+
+// ListPorts returns every serial device, for --list-ports; auto-detection only
+// considers the ones that look like an Arduino (see filterArduinoPorts).
 func (c *ArduinoController) ListPorts() []string {
-	ports, _ := c.detectPorts()
-	return ports
+	return globSerialPorts()
 }
 
 const ArduinoStartupDelay = 2 * time.Second

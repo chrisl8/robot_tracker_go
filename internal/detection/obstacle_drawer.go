@@ -3,11 +3,8 @@
 package detection
 
 import (
-	"bytes"
 	"image"
 	"image/color"
-	"image/draw"
-	"image/jpeg"
 )
 
 type Obstacle struct {
@@ -25,32 +22,12 @@ func NewObstacleDrawer() *ObstacleDrawer {
 	return &ObstacleDrawer{}
 }
 
-func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstacles []Obstacle) []byte {
-	if len(imgData) == 0 || len(obstacles) == 0 {
-		// TODO: Show this log message in verbose mode.
-		// log.Printf("OBSTACLE_DRAWER: Early exit - empty data or obstacles")
-		return imgData
-	}
-
-	reader := bytes.NewReader(imgData)
-	img, _, err := image.Decode(reader)
-	if err != nil {
-		// TODO: Show this log message in verbose mode.
-		// log.Printf("OBSTACLE_DRAWER: Failed to decode image: %v", err)
-		return imgData
-	}
-
-	rgba, ok := img.(*image.RGBA)
-	if !ok {
-		b := img.Bounds()
-		newImg := image.NewRGBA(b)
-		draw.Draw(newImg, b, img, b.Min, draw.Src)
-		rgba = newImg
-	}
-
+// DrawObstaclesOn outlines each obstacle's pixel box onto dst, clipped to the
+// image. Boxes wholly outside the image are skipped.
+func (d *ObstacleDrawer) DrawObstaclesOn(dst *image.RGBA, obstacles []Obstacle) {
+	width, height := dst.Rect.Dx(), dst.Rect.Dy()
 	borderColor := color.RGBA{255, 107, 107, 255}
 
-	drawnCount := 0
 	for _, obs := range obstacles {
 		x1 := obs.PixelTopLeft[0]
 		y1 := obs.PixelTopLeft[1]
@@ -58,8 +35,6 @@ func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstac
 		y2 := obs.PixelBottomRight[1]
 
 		if x1 >= width || y1 >= height || x2 <= 0 || y2 <= 0 {
-			// TODO: Show this log message in verbose mode.
-			// log.Printf("OBSTACLE_DRAWER: Skipping '%s' - out of bounds", obs.ID)
 			continue
 		}
 
@@ -69,20 +44,9 @@ func (d *ObstacleDrawer) DrawObstacles(imgData []byte, width, height int, obstac
 		clipY2 := max(0, min(y2, height))
 
 		lineWidth := 2
-		drawLine(rgba, image.Point{X: clipX1, Y: clipY1}, image.Point{X: clipX2, Y: clipY1}, borderColor, lineWidth)
-		drawLine(rgba, image.Point{X: clipX2, Y: clipY1}, image.Point{X: clipX2, Y: clipY2}, borderColor, lineWidth)
-		drawLine(rgba, image.Point{X: clipX2, Y: clipY2}, image.Point{X: clipX1, Y: clipY2}, borderColor, lineWidth)
-		drawLine(rgba, image.Point{X: clipX1, Y: clipY2}, image.Point{X: clipX1, Y: clipY1}, borderColor, lineWidth)
-
-		drawnCount++
+		drawLine(dst, image.Point{X: clipX1, Y: clipY1}, image.Point{X: clipX2, Y: clipY1}, borderColor, lineWidth)
+		drawLine(dst, image.Point{X: clipX2, Y: clipY1}, image.Point{X: clipX2, Y: clipY2}, borderColor, lineWidth)
+		drawLine(dst, image.Point{X: clipX2, Y: clipY2}, image.Point{X: clipX1, Y: clipY2}, borderColor, lineWidth)
+		drawLine(dst, image.Point{X: clipX1, Y: clipY2}, image.Point{X: clipX1, Y: clipY1}, borderColor, lineWidth)
 	}
-
-	buf := new(bytes.Buffer)
-	if err := jpeg.Encode(buf, rgba, &jpeg.Options{Quality: 85}); err != nil {
-		// TODO: Show this log message in verbose mode.
-		// log.Printf("OBSTACLE_DRAWER: Failed to encode output: %v", err)
-		return imgData
-	}
-
-	return buf.Bytes()
 }

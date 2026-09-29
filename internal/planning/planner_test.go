@@ -1,6 +1,7 @@
 package planning
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -457,5 +458,28 @@ func TestPlanner_RobotsWithGoals(t *testing.T) {
 	got = planner.RobotsWithGoals()
 	if len(got) != 1 || got[0] != 3 {
 		t.Errorf("after CompletePath(1), RobotsWithGoals = %v, want [3]", got)
+	}
+}
+
+// A goal set for a robot that has not been tracked yet must be planned from
+// where the robot turns out to be, not from the world origin. BroadcastPaths
+// calls GetPathsWithGoals every few frames, so it used to plan (and store) a
+// path from (0,0) in the gap before the robot appeared; AddRobot then kept it.
+func TestPlanner_GoalBeforeRobotSeen_PlansFromActualPosition(t *testing.T) {
+	p := NewPlanner(nil)
+	p.SetGoal(1, [2]float64{2, 2}) // robot 1 is not tracked yet
+
+	if paths := p.GetPathsWithGoals(); len(paths) != 0 {
+		t.Fatalf("path planned for a robot with no known position: %v", paths)
+	}
+
+	p.AddRobot(1, [2]float64{1.5, 1.5}, 0.3) // the robot appears
+
+	wp, ok := p.GetNextWaypoint(1)
+	if !ok {
+		t.Fatal("no path after the robot appeared with a goal already set")
+	}
+	if math.Hypot(wp[0]-1.5, wp[1]-1.5) > 1.0 {
+		t.Errorf("first waypoint %v is far from the robot at (1.5, 1.5): planned from the wrong start", wp)
 	}
 }

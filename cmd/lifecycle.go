@@ -79,9 +79,7 @@ func (rs *RobotSystem) initTracker() {
 		TrackThresh: rs.cfg.Tracking.TrackThresh,
 		TrackBuffer: rs.cfg.Tracking.TrackBuffer,
 		MatchThresh: rs.cfg.Tracking.MatchThresh,
-		FrameRate:   rs.cfg.Tracking.FrameRate,
 		MinBoxArea:  rs.cfg.Tracking.MinBoxArea,
-		MOT20:       rs.cfg.Tracking.MOT20,
 	}
 	rs.tracking.tracker = tracking.NewByteTrack(trackConfig)
 	utils.Logf("ByteTrack initialized")
@@ -101,15 +99,7 @@ func (rs *RobotSystem) initPlanner() {
 // or retries later via tryOpenCamera/StartCamera.
 func (rs *RobotSystem) initCamera() {
 	if primaryCam := rs.cfg.GetPrimaryCamera(); primaryCam != nil {
-		camConfig := camera.CameraConfig{
-			Type:     primaryCam.Type,
-			Name:     primaryCam.Name,
-			CameraID: primaryCam.CameraID,
-			URL:      primaryCam.URL,
-			Width:    primaryCam.Width,
-			Height:   primaryCam.Height,
-			FPS:      primaryCam.FPS,
-		}
+		camConfig := *primaryCam
 		rs.capture.cameraConfig = &camConfig
 		cam, err := camera.NewCamera(camConfig)
 		if err != nil {
@@ -170,6 +160,9 @@ func (rs *RobotSystem) initArduinoAndQueue() {
 	}
 
 	rs.io.commandQueue = controller.NewCommandQueue(rs.io.arduino, commandIntervalMs, heartbeatTimeoutMs)
+	// A controller disabled in config must stay disconnected: without this the
+	// queue's reconnect loop would open a serial port anyway.
+	rs.io.commandQueue.SetAutoReconnect(controllerEnabled)
 	rs.io.commandQueue.Start()
 	if rs.io.arduino.IsConnected() {
 		utils.Logf("Command queue started (Arduino connected)")
@@ -178,35 +171,35 @@ func (rs *RobotSystem) initArduinoAndQueue() {
 	}
 }
 
-// initPathExecutor sets up waypoint-following parameters from config,
-// falling back to hardcoded defaults if PathExecution isn't configured.
+// initPathExecutor sets up waypoint-following parameters from config. Every
+// setting is optional and falls back to the executor's own default when unset.
 func (rs *RobotSystem) initPathExecutor() {
-	if rs.cfg != nil && rs.cfg.PathExecution.MaxSpeed > 0 {
-		rs.io.pathExecutor = controller.NewPathExecutor(rs.cfg.PathExecution.MaxSpeed, rs.cfg.PathExecution.TurnSpeed)
-		rs.io.waypointThreshold = rs.cfg.PathExecution.WaypointThreshold
-		if rs.cfg.PathExecution.SpinThresholdDeg > 0 {
-			rs.io.pathExecutor.SpinThresholdDeg = rs.cfg.PathExecution.SpinThresholdDeg
-		}
-		if rs.cfg.PathExecution.BurstFrames > 0 {
-			rs.io.pathExecutor.BurstFrames = rs.cfg.PathExecution.BurstFrames
-		}
-		if rs.cfg.PathExecution.MaxWaitFrames > 0 {
-			rs.io.pathExecutor.MaxWaitFrames = rs.cfg.PathExecution.MaxWaitFrames
-		}
-		if rs.cfg.PathExecution.ForwardThresholdDeg > 0 {
-			rs.io.pathExecutor.ForwardThresholdDeg = rs.cfg.PathExecution.ForwardThresholdDeg
-		}
-	} else {
-		rs.io.pathExecutor = controller.NewPathExecutor(0.15, 0.5)
-		rs.io.waypointThreshold = 0.1
-	}
+	rs.io.pathExecutor = controller.NewPathExecutor()
+	rs.io.waypointThreshold = 0.1
 	rs.io.trackingLostTimeout = 3 * time.Second
-	if rs.cfg != nil && rs.cfg.PathExecution.TrackingLostTimeoutS > 0 {
-		rs.io.trackingLostTimeout = time.Duration(rs.cfg.PathExecution.TrackingLostTimeoutS * float64(time.Second))
+	if rs.cfg != nil {
+		pe := rs.cfg.PathExecution
+		if pe.WaypointThreshold > 0 {
+			rs.io.waypointThreshold = pe.WaypointThreshold
+		}
+		if pe.SpinThresholdDeg > 0 {
+			rs.io.pathExecutor.SpinThresholdDeg = pe.SpinThresholdDeg
+		}
+		if pe.BurstFrames > 0 {
+			rs.io.pathExecutor.BurstFrames = pe.BurstFrames
+		}
+		if pe.MaxWaitFrames > 0 {
+			rs.io.pathExecutor.MaxWaitFrames = pe.MaxWaitFrames
+		}
+		if pe.ForwardThresholdDeg > 0 {
+			rs.io.pathExecutor.ForwardThresholdDeg = pe.ForwardThresholdDeg
+		}
+		if pe.TrackingLostTimeoutS > 0 {
+			rs.io.trackingLostTimeout = time.Duration(pe.TrackingLostTimeoutS * float64(time.Second))
+		}
 	}
-	utils.Logf("Path executor: speed=%.3f turn=%.3f waypoint=%.3f tracking_timeout=%.1fs",
-		rs.io.pathExecutor.MaxSpeed(), rs.io.pathExecutor.TurnSpeed(), rs.io.waypointThreshold,
-		rs.io.trackingLostTimeout.Seconds())
+	utils.Logf("Path executor: waypoint=%.3f tracking_timeout=%.1fs",
+		rs.io.waypointThreshold, rs.io.trackingLostTimeout.Seconds())
 	utils.Logf("Path executor: spin=%.1f° burst=%d wait=%d forward=%.1f°",
 		rs.io.pathExecutor.SpinThresholdDeg, rs.io.pathExecutor.BurstFrames, rs.io.pathExecutor.MaxWaitFrames,
 		rs.io.pathExecutor.ForwardThresholdDeg)
@@ -276,6 +269,14 @@ func (rs *RobotSystem) StartCamera() error {
 func (rs *RobotSystem) Stop() {
 	rs.stats.stopOnce.Do(func() {
 		utils.Logf("Stopping system...")
+		// Stop the robot before anything slow: the frame wait, the final
+		// background save and the camera stop below can take seconds, and
+		// autonomy must not keep the robot on its last command meanwhile. The
+		// queue refuses movement once stopped, so a frame still in flight
+		// can't drive it again.
+		if rs.io.commandQueue != nil {
+			rs.io.commandQueue.Stop()
+		}
 		rs.stats.watchdogStopOnce.Do(func() {
 			if rs.stats.watchdogStop != nil {
 				close(rs.stats.watchdogStop)
@@ -299,9 +300,6 @@ func (rs *RobotSystem) Stop() {
 			// Release the detector's OpenCV resources. The frame loop can no
 			// longer be inside the detector (see frameMu above).
 			rs.detection.fg.det.Close()
-		}
-		if rs.io.commandQueue != nil {
-			rs.io.commandQueue.Stop()
 		}
 		if rs.io.arduino != nil {
 			_ = rs.io.arduino.Disconnect()

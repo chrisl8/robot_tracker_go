@@ -33,7 +33,35 @@ const (
 	// defaultWSWriteWait bounds how long a single write (ping or broadcast
 	// message) may block on a client that has stopped reading.
 	defaultWSWriteWait = 10 * time.Second
+	// wsSendBuffer is how many broadcast messages may queue for one client. A
+	// client that falls this far behind (a dead phone whose TCP connection is
+	// still open) is dropped instead of being waited for: broadcasts come from
+	// the frame loop, which must never block on a slow browser.
+	wsSendBuffer = 128
 )
+
+// wsClient is one connected browser. Every write to its connection goes
+// through writePump, so writes are never interleaved and BroadcastOverlay never
+// blocks on the network.
+type wsClient struct {
+	conn      *websocket.Conn
+	send      chan []byte // marshaled JSON messages
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func newWSClient(conn *websocket.Conn) *wsClient {
+	return &wsClient{conn: conn, send: make(chan []byte, wsSendBuffer), done: make(chan struct{})}
+}
+
+// close shuts the connection down (unblocking the reader) and stops the
+// writer. Safe to call from any goroutine, any number of times.
+func (c *wsClient) close() {
+	c.closeOnce.Do(func() {
+		close(c.done)
+		_ = c.conn.Close()
+	})
+}
 
 func (s *WebServer) handleWebSocket(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -44,108 +72,92 @@ func (s *WebServer) handleWebSocket(c *gin.Context) {
 	// A client that vanishes without a clean TCP close (sleep, NAT timeout,
 	// pulled network cable) never makes ReadMessage return an error on its
 	// own — without a deadline it just blocks forever, leaking this
-	// connection's goroutine and its s.hub.clients entry, while BroadcastOverlay
-	// keeps trying to write to it every frame. SetReadDeadline plus a pong
-	// handler that renews it turns silence into a timeout error, and
-	// wsPinger below is what solicits those pongs.
+	// connection's goroutines and its s.hub.clients entry. SetReadDeadline plus
+	// a pong handler that renews it turns silence into a timeout error, and
+	// writePump's pings are what solicit those pongs.
 	conn.SetReadLimit(wsMaxMessageSize)
 	_ = conn.SetReadDeadline(time.Now().Add(s.router.wsPongWait))
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(s.router.wsPongWait))
 	})
 
-	mu := &sync.Mutex{}
+	client := newWSClient(conn)
 	s.hub.clientMutex.Lock()
-	s.hub.clients[conn] = mu
+	s.hub.clients[conn] = client
 	s.hub.clientMutex.Unlock()
 
-	go s.wsReader(conn)
-	go s.wsPinger(conn, mu)
+	go s.wsReader(client)
+	go s.writePump(client)
 }
 
-func (s *WebServer) wsReader(conn *websocket.Conn) {
+// wsReader drains the connection so pongs and close frames are processed (the
+// server takes no commands over the socket; drive commands are POSTed and
+// validated), and unregisters the client when the connection ends.
+func (s *WebServer) wsReader(client *wsClient) {
 	defer func() {
-		_ = conn.Close()
+		client.close()
 		s.hub.clientMutex.Lock()
-		delete(s.hub.clients, conn)
+		delete(s.hub.clients, client.conn)
 		s.hub.clientMutex.Unlock()
 	}()
 
 	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-		var cmd CommandRequest
-		if err := json.Unmarshal(message, &cmd); err == nil && cmd.Command != "" {
-			s.broadcastCommand(cmd.Command)
+		if _, _, err := client.conn.ReadMessage(); err != nil {
+			return
 		}
 	}
 }
 
-// wsPinger periodically pings conn to detect a silently-dead connection (see
-// the comment in handleWebSocket) and to keep the read deadline from
-// expiring on an otherwise-idle-but-alive client. It shares mu with
-// BroadcastOverlay so writes to this connection are never interleaved
-// (gorilla/websocket panics if two goroutines write to the same connection
-// concurrently), and it exits once wsReader has removed conn from s.hub.clients.
-func (s *WebServer) wsPinger(conn *websocket.Conn, mu *sync.Mutex) {
+// writePump is the only writer for a client: it sends queued broadcasts and
+// periodic pings (which detect a silently-dead connection, see
+// handleWebSocket), each bounded by wsWriteWait. On any failure it closes the
+// client, which unblocks wsReader so the registry entry is cleaned up.
+func (s *WebServer) writePump(client *wsClient) {
 	ticker := time.NewTicker(s.router.wsPingPeriod)
 	defer ticker.Stop()
+	defer client.close()
 
-	for range ticker.C {
-		s.hub.clientMutex.RLock()
-		_, stillConnected := s.hub.clients[conn]
-		s.hub.clientMutex.RUnlock()
-		if !stillConnected {
+	for {
+		var err error
+		select {
+		case <-client.done:
 			return
+		case msg := <-client.send:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(s.router.wsWriteWait))
+			err = client.conn.WriteMessage(websocket.TextMessage, msg)
+		case <-ticker.C:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(s.router.wsWriteWait))
+			err = client.conn.WriteMessage(websocket.PingMessage, nil)
 		}
-
-		mu.Lock()
-		_ = conn.SetWriteDeadline(time.Now().Add(s.router.wsWriteWait))
-		err := conn.WriteMessage(websocket.PingMessage, nil)
-		mu.Unlock()
 		if err != nil {
-			// The write failed (or blocked past its deadline); close so
-			// wsReader's blocked ReadMessage unblocks with an error and
-			// cleans up s.hub.clients.
-			_ = conn.Close()
 			return
 		}
 	}
 }
 
-func (s *WebServer) broadcastCommand(cmd string) {
-	msg := OverlayMessage{
-		Type:    "command",
-		Command: &CommandMessage{Action: cmd},
-	}
-	s.BroadcastOverlay(msg)
-}
-
-// BroadcastOverlay sends msg to every connected client. gorilla/websocket
-// panics if two goroutines write to the same connection at once (this project
-// broadcasts from the frame loop, HTTP handlers, and a watchdog timer, all
-// concurrently), so each connection's writes are serialized with its own
-// mutex while the client list itself is only read-locked.
+// BroadcastOverlay queues msg for every connected client and returns without
+// waiting for the network: it is called from the frame loop, the HTTP
+// handlers and the watchdog, and a stalled browser must not stall any of them.
+// A client whose queue is full is dropped; the UI reconnects and re-reads
+// state.
 func (s *WebServer) BroadcastOverlay(msg OverlayMessage) {
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+
 	s.hub.clientMutex.RLock()
-	clients := make(map[*websocket.Conn]*sync.Mutex, len(s.hub.clients))
-	for conn, mu := range s.hub.clients {
-		clients[conn] = mu
+	clients := make([]*wsClient, 0, len(s.hub.clients))
+	for _, client := range s.hub.clients {
+		clients = append(clients, client)
 	}
 	s.hub.clientMutex.RUnlock()
 
-	for conn, mu := range clients {
-		mu.Lock()
-		_ = conn.SetWriteDeadline(time.Now().Add(s.router.wsWriteWait))
-		err := conn.WriteJSON(msg)
-		mu.Unlock()
-		if err != nil {
-			// Don't leave a connection that just failed to write sitting
-			// around until the next ping cycle notices it's dead — close it
-			// now so wsReader unblocks and cleans up s.hub.clients.
-			_ = conn.Close()
+	for _, client := range clients {
+		select {
+		case client.send <- payload:
+		default:
+			client.close()
 		}
 	}
 }

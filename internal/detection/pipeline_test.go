@@ -57,21 +57,6 @@ func TestDetectionPipeline_Detect_NilTagDetectorDoesNotPanic(t *testing.T) {
 	}
 }
 
-func TestDetectionPipeline_DrawResults_NilTagDetectorDoesNotPanic(t *testing.T) {
-	pipeline := &DetectionPipeline{obstacleDrawer: NewObstacleDrawer()}
-
-	result := &DetectionResult{
-		Tags: []AprilTag{{TagID: 1}},
-	}
-	image := []byte{1, 2, 3}
-
-	output := pipeline.DrawResults(image, 640, 480, result)
-
-	if len(output) != len(image) {
-		t.Errorf("Expected DrawResults to return input image unchanged with nil tagDetector, got len %d", len(output))
-	}
-}
-
 func TestDetectionPipeline_fuseDetections(t *testing.T) {
 	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
 
@@ -171,23 +156,6 @@ func TestDetectionPipeline_tagToBbox(t *testing.T) {
 	}
 }
 
-func TestDetectionPipeline_DrawResults(t *testing.T) {
-	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
-
-	image := []byte{1, 2, 3, 4, 5}
-	result := &DetectionResult{
-		Tags:            []AprilTag{},
-		FusedDetections: []FusedDetection{},
-		Timestamp:       0,
-		FrameIdx:        0,
-	}
-
-	output := pipeline.DrawResults(image, 640, 480, result)
-	if len(output) != len(image) {
-		t.Errorf("DrawResults changed image length from %d to %d", len(image), len(output))
-	}
-}
-
 func TestDetectionResult_Empty(t *testing.T) {
 	result := &DetectionResult{
 		Tags:            []AprilTag{},
@@ -208,104 +176,4 @@ func TestDetectionResult_Empty(t *testing.T) {
 	if result.FrameIdx != 10 {
 		t.Errorf("FrameIdx = %d, want 10", result.FrameIdx)
 	}
-}
-
-func TestDetectionPipeline_DrawResults_Obstacles_Integration(t *testing.T) {
-	pipeline := NewDetectionPipeline(AprilTagConfig{Family: "tag36h11", QuadDecimate: 2.0})
-
-	t.Run("DrawResults should not draw obstacles when none are set", func(t *testing.T) {
-		imgData := make([]byte, 640*480*3)
-
-		result := &DetectionResult{
-			Tags:            []AprilTag{},
-			FusedDetections: []FusedDetection{},
-		}
-
-		output := pipeline.DrawResults(imgData, 640, 480, result)
-
-		if output == nil {
-			t.Error("expected output to not be nil")
-		}
-	})
-
-	t.Run("DrawResults should draw obstacles when set", func(t *testing.T) {
-		imgData := make([]byte, 640*480*3)
-
-		pipeline.SetObstacles([]Obstacle{
-			{
-				ID:               "visible-obs",
-				PixelTopLeft:     [2]int{100, 100},
-				PixelBottomRight: [2]int{200, 200},
-			},
-		})
-
-		result := &DetectionResult{
-			Tags:            []AprilTag{},
-			FusedDetections: []FusedDetection{},
-		}
-
-		output := pipeline.DrawResults(imgData, 640, 480, result)
-
-		if output == nil {
-			t.Error("expected output to not be nil when obstacles are set")
-		}
-	})
-
-	t.Run("DrawResults should draw multiple obstacles", func(t *testing.T) {
-		imgData := make([]byte, 640*480*3)
-
-		pipeline.SetObstacles([]Obstacle{
-			{
-				ID:               "obs-1",
-				PixelTopLeft:     [2]int{50, 50},
-				PixelBottomRight: [2]int{100, 100},
-			},
-			{
-				ID:               "obs-2",
-				PixelTopLeft:     [2]int{200, 200},
-				PixelBottomRight: [2]int{300, 300},
-			},
-			{
-				ID:               "obs-3",
-				PixelTopLeft:     [2]int{400, 400},
-				PixelBottomRight: [2]int{500, 500},
-			},
-		})
-
-		result := &DetectionResult{
-			Tags:            []AprilTag{},
-			FusedDetections: []FusedDetection{},
-		}
-
-		output := pipeline.DrawResults(imgData, 640, 480, result)
-
-		if output == nil {
-			t.Error("expected output to not be nil when multiple obstacles are set")
-		}
-	})
-
-	t.Run("DrawResults with cleared obstacles should not draw", func(t *testing.T) {
-		imgData := make([]byte, 640*480*3)
-
-		pipeline.SetObstacles([]Obstacle{
-			{
-				ID:               "was-visible",
-				PixelTopLeft:     [2]int{100, 100},
-				PixelBottomRight: [2]int{200, 200},
-			},
-		})
-
-		pipeline.SetObstacles([]Obstacle{})
-
-		result := &DetectionResult{
-			Tags:            []AprilTag{},
-			FusedDetections: []FusedDetection{},
-		}
-
-		output := pipeline.DrawResults(imgData, 640, 480, result)
-
-		if output == nil {
-			t.Error("expected output to not be nil even when obstacles are cleared")
-		}
-	})
 }

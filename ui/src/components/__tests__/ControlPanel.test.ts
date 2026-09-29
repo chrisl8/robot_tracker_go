@@ -133,4 +133,82 @@ describe('ControlPanel keyboard safety', () => {
             expect(sentCommands(fetchMock).length).toBe(before)
         })
     })
+
+    describe('a held D-pad button whose release event never arrives', () => {
+        async function holdForward(): Promise<void> {
+            root.querySelector('.dpad-btn.forward')!.dispatchEvent(new MouseEvent('mousedown'))
+            await nextTick()
+        }
+
+        // Once released, no command may be re-sent: the refresh timer would
+        // otherwise keep the robot driving past the server's 2 s deadman.
+        async function expectReleased(): Promise<void> {
+            expect(sentCommands(fetchMock).at(-1)).toBe('S')
+            const before = sentCommands(fetchMock).length
+            await vi.advanceTimersByTimeAsync(2000)
+            expect(sentCommands(fetchMock).length).toBe(before)
+        }
+
+        it('is released, with a Stop, when the window loses focus', async () => {
+            await holdForward()
+
+            window.dispatchEvent(new Event('blur'))
+            await nextTick()
+
+            await expectReleased()
+        })
+
+        it('is released, with a Stop, when the tab is hidden', async () => {
+            await holdForward()
+
+            Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+            try {
+                document.dispatchEvent(new Event('visibilitychange'))
+                await nextTick()
+                await expectReleased()
+            } finally {
+                Reflect.deleteProperty(document, 'hidden')
+            }
+        })
+
+        it('is not resumed by re-entering Pilot mode', async () => {
+            await holdForward()
+            useRobotStore().controlMode = 'hold' // D-pad is removed; mouseup can never arrive
+            await nextTick()
+            useRobotStore().controlMode = 'manual'
+            await nextTick()
+            const before = sentCommands(fetchMock).length
+
+            await vi.advanceTimersByTimeAsync(2000)
+
+            expect(sentCommands(fetchMock).length).toBe(before)
+        })
+    })
+
+    describe('touch screens', () => {
+        it('drive while touched and stop on release', async () => {
+            const btn = root.querySelector('.dpad-btn.forward')!
+
+            btn.dispatchEvent(new Event('touchstart', { cancelable: true }))
+            await nextTick()
+            await vi.advanceTimersByTimeAsync(600)
+            btn.dispatchEvent(new Event('touchend', { cancelable: true }))
+            await nextTick()
+
+            const cmds = sentCommands(fetchMock)
+            expect(cmds.filter(c => c === 'F').length).toBeGreaterThanOrEqual(3)
+            expect(cmds.at(-1)).toBe('S')
+        })
+
+        it('stop when the touch is cancelled', async () => {
+            const btn = root.querySelector('.dpad-btn.forward')!
+
+            btn.dispatchEvent(new Event('touchstart', { cancelable: true }))
+            await nextTick()
+            btn.dispatchEvent(new Event('touchcancel'))
+            await nextTick()
+
+            expect(sentCommands(fetchMock).at(-1)).toBe('S')
+        })
+    })
 })

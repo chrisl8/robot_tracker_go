@@ -211,13 +211,17 @@ func mul3(a, b [3][3]float64) [3][3]float64 {
 	return out
 }
 
-func (h *Homography) ComputeInverse() {
-	det := h.H[0][0]*h.H[1][1]*h.H[2][2] +
+func (h *Homography) determinant() float64 {
+	return h.H[0][0]*h.H[1][1]*h.H[2][2] +
 		h.H[0][1]*h.H[1][2]*h.H[2][0] +
 		h.H[0][2]*h.H[1][0]*h.H[2][1] -
 		h.H[0][2]*h.H[1][1]*h.H[2][0] -
 		h.H[0][1]*h.H[1][0]*h.H[2][2] -
 		h.H[0][0]*h.H[1][2]*h.H[2][1]
+}
+
+func (h *Homography) ComputeInverse() {
+	det := h.determinant()
 
 	if det == 0 {
 		return
@@ -307,30 +311,6 @@ func (h *Homography) SetFromValues(h0, h1, h2, h3, h4, h5, h6, h7, h8 float64) {
 
 func (h *Homography) IsValid() bool {
 	return h.Valid
-}
-
-func (h *Homography) HasTransformation() bool {
-	if !h.Valid {
-		return false
-	}
-	h0n0 := h.H[0][0]*h.H[0][0] + h.H[0][1]*h.H[0][1] + h.H[0][2]*h.H[0][2]
-	h1n0 := h.H[1][0]*h.H[1][0] + h.H[1][1]*h.H[1][1] + h.H[1][2]*h.H[1][2]
-	return h0n0 > 0.001 || h1n0 > 0.001
-}
-
-func (h *Homography) SetIdentity() {
-	h.H[0][0] = 1.0
-	h.H[0][1] = 0.0
-	h.H[0][2] = 0.0
-	h.H[1][0] = 0.0
-	h.H[1][1] = 1.0
-	h.H[1][2] = 0.0
-	h.H[2][0] = 0.0
-	h.H[2][1] = 0.0
-	h.H[2][2] = 1.0
-	h.Valid = true
-	h.ComputeInverse()
-	h.PixelsPerMeter = 100.0
 }
 
 func (h *Homography) SetPixelsPerMeter(ppm float64) {

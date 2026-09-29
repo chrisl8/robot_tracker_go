@@ -7,8 +7,23 @@ import (
 	"image/draw"
 	"time"
 
+	"github.com/chrisl8/robot_tracker_go/internal/camera"
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
+
+// idleFramePoll is how long the camera loop waits before asking again when the
+// camera has not produced a new frame yet.
+const idleFramePoll = 5 * time.Millisecond
+
+// isRepeatFrame reports whether f is the frame the loop already processed.
+// GetFrame hands back the latest frame without waiting, so it can return the
+// same one again. Processing it again would advance the tracker and the
+// steering logic on an unchanged picture, and, worse, would make a camera that
+// has hung look alive to the stall watchdog (a hung read produces no error).
+// Frames without a sequence number (Seq 0) are never treated as repeats.
+func isRepeatFrame(lastSeq uint64, f *camera.Frame) bool {
+	return f != nil && f.Seq != 0 && f.Seq == lastSeq
+}
 
 // resolveDemoMode decides whether to run demo mode: it is used when requested,
 // or as the fallback when no camera can be opened. If the camera is not
@@ -40,8 +55,8 @@ func (rs *RobotSystem) runCameraLoop() bool {
 		return false
 	}
 
-	utils.Logf("Starting real camera capture...")
 	frameFailures := 0
+	var lastSeq uint64
 	minFrameInterval := time.Second / time.Duration(rs.cfg.EffectiveMaxFPS())
 	utils.Logf("Processing capped at %d fps", rs.cfg.EffectiveMaxFPS())
 	for rs.capture.cameraRunning.Load() {
@@ -65,6 +80,11 @@ func (rs *RobotSystem) runCameraLoop() bool {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
+		if isRepeatFrame(lastSeq, frame) {
+			time.Sleep(idleFramePoll)
+			continue
+		}
+		lastSeq = frame.Seq
 		img := cameraFrameToImage(frame)
 		if img == nil {
 			utils.Logf("Failed to convert frame to image")
