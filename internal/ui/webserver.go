@@ -1536,12 +1536,6 @@ func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
 	}
 }
 
-func (s *WebServer) GetAllObstacles() []planning.Obstacle {
-	s.obstacles.mutex.RLock()
-	defer s.obstacles.mutex.RUnlock()
-	return s.obstacles.list
-}
-
 type ModeRequest struct {
 	Mode string `json:"mode"`
 }

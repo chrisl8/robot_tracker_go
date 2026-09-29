@@ -1,6 +1,6 @@
 package detection
 
-import "github.com/chrisl8/robot_tracker_go/internal/utils"
+import "sync"
 
 type DetectionType int
 
@@ -11,46 +11,6 @@ const (
 
 type BoundingBox struct {
 	X1, Y1, X2, Y2 int
-}
-
-func (b *BoundingBox) Center() (int, int) {
-	return (b.X1 + b.X2) / 2, (b.Y1 + b.Y2) / 2
-}
-
-func (b *BoundingBox) Width() int {
-	return b.X2 - b.X1
-}
-
-func (b *BoundingBox) Height() int {
-	return b.Y2 - b.Y1
-}
-
-func (b *BoundingBox) Area() int {
-	return b.Width() * b.Height()
-}
-
-func (b *BoundingBox) Contains(x, y int) bool {
-	return x >= b.X1 && x <= b.X2 && y >= b.Y1 && y <= b.Y2
-}
-
-func (b *BoundingBox) IoU(other *BoundingBox) float64 {
-	x1 := utils.Max(b.X1, other.X1)
-	y1 := utils.Max(b.Y1, other.Y1)
-	x2 := utils.Min(b.X2, other.X2)
-	y2 := utils.Min(b.Y2, other.Y2)
-
-	if x2 <= x1 || y2 <= y1 {
-		return 0
-	}
-
-	intersection := (x2 - x1) * (y2 - y1)
-	union := b.Area() + other.Area() - intersection
-
-	if union == 0 {
-		return 0
-	}
-
-	return float64(intersection) / float64(union)
 }
 
 type AprilTag struct {
@@ -95,15 +55,17 @@ type AprilTagConfig struct {
 type DetectionPipeline struct {
 	tagDetector    TagDetector
 	obstacleDrawer *ObstacleDrawer
-	obstacles      []Obstacle
+
+	// obstaclesMu guards obstacles: SetObstacles is called from HTTP handler
+	// goroutines while DrawResults runs on the frame loop.
+	obstaclesMu sync.RWMutex
+	obstacles   []Obstacle
 }
 
 func (p *DetectionPipeline) SetObstacles(obstacles []Obstacle) {
+	p.obstaclesMu.Lock()
 	p.obstacles = obstacles
-}
-
-func (p *DetectionPipeline) GetObstacles() []Obstacle {
-	return p.obstacles
+	p.obstaclesMu.Unlock()
 }
 
 type TagDetector interface {

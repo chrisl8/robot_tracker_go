@@ -59,16 +59,16 @@ func TestPlanner_GetNextWaypoint_NoPath(t *testing.T) {
 	}
 }
 
-func TestPlanner_GetPaths(t *testing.T) {
+func TestPlanner_GetPathsWithGoals(t *testing.T) {
 	planner := NewPlanner(nil)
 
 	planner.AddRobot(1, [2]float64{1, 1}, 0.18)
 	planner.SetGoal(1, [2]float64{2, 2})
 
-	paths := planner.GetPaths()
+	paths := planner.GetPathsWithGoals()
 
 	if paths == nil {
-		t.Error("GetPaths should not return nil")
+		t.Error("GetPathsWithGoals should not return nil")
 	}
 
 	if len(paths) != 1 {

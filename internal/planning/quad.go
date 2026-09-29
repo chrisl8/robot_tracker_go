@@ -20,28 +20,6 @@ func RectQuad(topLeft, bottomRight [2]float64) Quad {
 	}
 }
 
-// signedArea2 returns twice the signed area of the quad (positive for
-// clockwise winding in a Y-down coordinate system, matching RectQuad).
-func (q Quad) signedArea2() float64 {
-	sum := 0.0
-	for i := 0; i < 4; i++ {
-		a, b := q[i], q[(i+1)%4]
-		sum += a[0]*b[1] - b[0]*a[1]
-	}
-	return sum
-}
-
-// Normalized returns q with a consistent winding: reversed if projecting its
-// source pixels through a reflective transform flipped it. Callers should
-// apply this once, right after building a quad from projected points, so every
-// later consumer can assume one winding order.
-func (q Quad) Normalized() Quad {
-	if q.signedArea2() < 0 {
-		return Quad{q[0], q[3], q[2], q[1]}
-	}
-	return q
-}
-
 // Bounds returns the quad's axis-aligned bounding box as (topLeft, bottomRight).
 func (q Quad) Bounds() (topLeft, bottomRight [2]float64) {
 	minX, minY := q[0][0], q[0][1]

@@ -24,7 +24,7 @@ const demoAutonomyTagID = 7
 // directly and observe planner/heading/command-queue side effects.
 func newDemoAutonomyRig(t *testing.T) *RobotSystem {
 	t.Helper()
-	est, err := position.NewPositionEstimator("", "", false, 0)
+	est, err := position.NewPositionEstimator("")
 	if err != nil {
 		t.Fatalf("NewPositionEstimator: %v", err)
 	}

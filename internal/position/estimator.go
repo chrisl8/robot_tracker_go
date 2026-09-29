@@ -151,42 +151,22 @@ type PositionEstimator struct {
 	// goroutine when an operator recalibrates live) while PixelToWorld/
 	// WorldToPixel/IsCalibrated read them every frame from the
 	// frame-processing goroutine.
-	mu             sync.Mutex
-	homography     *Homography
-	calibratedRes  [2]int
-	frameRes       [2]int
-	intrinsics     *CameraIntrinsics
-	obstacles      []Obstacle
-	smoothing      bool
-	smoothingAlpha float64
-	positions      map[int]*SmoothedPosition
+	mu            sync.Mutex
+	homography    *Homography
+	calibratedRes [2]int
+	frameRes      [2]int
+	intrinsics    *CameraIntrinsics
 }
 
-type SmoothedPosition struct {
-	X       float64
-	Y       float64
-	Updated bool
-}
-
-func NewPositionEstimator(calibrationPath, obstaclesPath string, smoothing bool, smoothingAlpha float64) (*PositionEstimator, error) {
+func NewPositionEstimator(calibrationPath string) (*PositionEstimator, error) {
 	est := &PositionEstimator{
-		homography:     NewHomography(),
-		intrinsics:     nil,
-		obstacles:      make([]Obstacle, 0),
-		smoothing:      smoothing,
-		smoothingAlpha: smoothingAlpha,
-		positions:      make(map[int]*SmoothedPosition),
+		homography: NewHomography(),
+		intrinsics: nil,
 	}
 
 	if calibrationPath != "" && utils.FileExists(calibrationPath) {
 		if err := est.LoadCalibration(calibrationPath); err != nil {
 			fmt.Printf("Warning: failed to load calibration: %v\n", err)
-		}
-	}
-
-	if obstaclesPath != "" && utils.FileExists(obstaclesPath) {
-		if err := est.LoadObstacles(obstaclesPath); err != nil {
-			fmt.Printf("Warning: failed to load obstacles: %v\n", err)
 		}
 	}
 
@@ -304,77 +284,6 @@ func (e *PositionEstimator) ResolutionMismatch() bool {
 	return e.calibratedRes != e.frameRes
 }
 
-func (e *PositionEstimator) LoadObstacles(path string) error {
-	// #nosec G304
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("failed to read obstacles file: %w", err)
-	}
-
-	var config map[string]interface{}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse obstacles file: %w", err)
-	}
-
-	obstaclesData, ok := config["obstacles"]
-	if !ok {
-		return nil
-	}
-
-	obstaclesList, ok := obstaclesData.([]interface{})
-	if !ok {
-		return nil
-	}
-
-	for _, obsData := range obstaclesList {
-		obs, ok := obsData.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		obstacle := Obstacle{}
-
-		if name, ok := obs["name"].(string); ok {
-			obstacle.Name = name
-		}
-
-		if world, ok := obs["world"].(map[string]interface{}); ok {
-			if tl, ok := world["top_left"].([]interface{}); ok && len(tl) >= 2 {
-				obstacle.WorldTopLeft = Point2D{
-					X: utils.ToFloat64(tl[0]),
-					Y: utils.ToFloat64(tl[1]),
-				}
-			}
-			if br, ok := world["bottom_right"].([]interface{}); ok && len(br) >= 2 {
-				obstacle.WorldBottomRight = Point2D{
-					X: utils.ToFloat64(br[0]),
-					Y: utils.ToFloat64(br[1]),
-				}
-			}
-		}
-
-		if pixels, ok := obs["pixels"].(map[string]interface{}); ok {
-			if tl, ok := pixels["top_left"].([]interface{}); ok && len(tl) >= 2 {
-				obstacle.PixelsTopLeft = [2]int{
-					int(utils.ToFloat64(tl[0])),
-					int(utils.ToFloat64(tl[1])),
-				}
-			}
-			if br, ok := pixels["bottom_right"].([]interface{}); ok && len(br) >= 2 {
-				obstacle.PixelsBottomRight = [2]int{
-					int(utils.ToFloat64(br[0])),
-					int(utils.ToFloat64(br[1])),
-				}
-			}
-		}
-
-		e.obstacles = append(e.obstacles, obstacle)
-	}
-
-	fmt.Printf("Loaded %d obstacles from %s\n", len(e.obstacles), path)
-	return nil
-}
-
 func (e *PositionEstimator) PixelToWorld(pixelX, pixelY int) *Point2D {
 	h := e.currentHomography()
 	if !h.IsValid() {
@@ -408,89 +317,6 @@ func (e *PositionEstimator) currentHomography() *Homography {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.homography
-}
-
-func (e *PositionEstimator) UpdatePosition(trackID int, x, y float64) {
-	if !e.smoothing {
-		if e.positions[trackID] == nil {
-			e.positions[trackID] = &SmoothedPosition{}
-		}
-		e.positions[trackID].X = x
-		e.positions[trackID].Y = y
-		e.positions[trackID].Updated = true
-		return
-	}
-
-	if e.positions[trackID] == nil {
-		e.positions[trackID] = &SmoothedPosition{X: x, Y: y, Updated: true}
-	} else {
-		sp := e.positions[trackID]
-		sp.X = e.smoothingAlpha*x + (1-e.smoothingAlpha)*sp.X
-		sp.Y = e.smoothingAlpha*y + (1-e.smoothingAlpha)*sp.Y
-		sp.Updated = true
-	}
-}
-
-func (e *PositionEstimator) GetPosition(trackID int) *Point2D {
-	if sp, ok := e.positions[trackID]; ok && sp.Updated {
-		return &Point2D{X: sp.X, Y: sp.Y}
-	}
-	return nil
-}
-
-func (e *PositionEstimator) GetObstacles() []Obstacle {
-	return e.obstacles
-}
-
-func (e *PositionEstimator) AddObstacle(obstacle Obstacle) {
-	e.obstacles = append(e.obstacles, obstacle)
-}
-
-func (e *PositionEstimator) ClearObstacles() {
-	e.obstacles = make([]Obstacle, 0)
-}
-
-// obstacleFileEntry and obstacleFile mirror the on-disk obstacle YAML shape
-// that LoadObstacles parses generically (keys "version", "obstacles[].name",
-// ".pixels.top_left"/".bottom_right", ".world.top_left"/".bottom_right").
-// Marshaling through these tagged structs, rather than building the YAML
-// text by hand, keeps escaping and nesting correct by construction.
-type obstacleFileEntry struct {
-	Name   string `yaml:"name"`
-	Pixels struct {
-		TopLeft     [2]int `yaml:"top_left"`
-		BottomRight [2]int `yaml:"bottom_right"`
-	} `yaml:"pixels"`
-	World struct {
-		TopLeft     [2]float64 `yaml:"top_left"`
-		BottomRight [2]float64 `yaml:"bottom_right"`
-	} `yaml:"world"`
-}
-
-type obstacleFile struct {
-	Version   int                 `yaml:"version"`
-	Obstacles []obstacleFileEntry `yaml:"obstacles"`
-}
-
-func (e *PositionEstimator) SaveObstacles(path string, obstacles []Obstacle) error {
-	file := obstacleFile{Version: 1, Obstacles: make([]obstacleFileEntry, len(obstacles))}
-	for i, obs := range obstacles {
-		entry := obstacleFileEntry{Name: obs.Name}
-		entry.Pixels.TopLeft = obs.PixelsTopLeft
-		entry.Pixels.BottomRight = obs.PixelsBottomRight
-		entry.World.TopLeft = [2]float64{obs.WorldTopLeft.X, obs.WorldTopLeft.Y}
-		entry.World.BottomRight = [2]float64{obs.WorldBottomRight.X, obs.WorldBottomRight.Y}
-		file.Obstacles[i] = entry
-	}
-
-	data, err := yaml.Marshal(file)
-	if err != nil {
-		return fmt.Errorf("failed to marshal obstacles: %w", err)
-	}
-
-	// #nosec G304
-	// #nosec G306
-	return os.WriteFile(path, data, 0600)
 }
 
 func (e *PositionEstimator) GetHomography() *Homography {

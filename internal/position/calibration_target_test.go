@@ -310,7 +310,7 @@ func TestCalibrationFile_RoundTripAndResolutionMismatch(t *testing.T) {
 		t.Fatalf("SaveCalibration failed: %v", err)
 	}
 
-	est, err := NewPositionEstimator("", "", false, 0)
+	est, err := NewPositionEstimator("")
 	if err != nil {
 		t.Fatalf("NewPositionEstimator failed: %v", err)
 	}

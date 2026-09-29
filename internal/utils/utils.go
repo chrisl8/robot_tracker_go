@@ -9,13 +9,6 @@ func Abs(x int) int {
 	return x
 }
 
-func AbsFloat64(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 func Max(a, b int) int {
 	if a > b {
 		return a
@@ -24,20 +17,6 @@ func Max(a, b int) int {
 }
 
 func Min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func MaxFloat64(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func MinFloat64(a, b float64) float64 {
 	if a < b {
 		return a
 	}
@@ -62,16 +41,4 @@ func ToFloat64(v interface{}) float64 {
 	default:
 		return 0
 	}
-}
-
-func ContainsPath(path, target string) bool {
-	if len(path) < len(target) {
-		return false
-	}
-	for i := 0; i <= len(path)-len(target); i++ {
-		if path[i:i+len(target)] == target {
-			return true
-		}
-	}
-	return false
 }

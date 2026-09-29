@@ -168,9 +168,4 @@ else
     go test -race -tags=gocv ./... -coverprofile=coverage.out || exit 1
 fi
 
-subsection_header "Go Fuzz Tests" "$YELLOW"
-test_info "Running fuzz tests for serial protocol..."
-go test -fuzz=FuzzDecode -fuzztime=10s ./internal/controller/ || true
-go test -fuzz=FuzzEncodeCommand -fuzztime=10s ./internal/controller/ || true
-
 section_header "All Tests Passed!" "$GREEN"

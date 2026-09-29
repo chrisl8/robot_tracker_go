@@ -135,66 +135,6 @@ func TestRobotDisc(t *testing.T) {
 	}
 }
 
-func TestFilterMaskedBlobs(t *testing.T) {
-	blob := image.Rect(0, 0, 12, 12) // sample cell centres at 0.5, 1.5, ... 11.5
-	tests := []struct {
-		name  string
-		blobs []image.Rectangle
-		discs []Disc
-		rects []image.Rectangle
-		frac  float64
-		want  int
-	}{
-		{"no masks keeps blob", []image.Rectangle{blob}, nil, nil, 0.6, 1},
-		{"no blobs", nil, []Disc{{6, 6, 100}}, nil, 0.6, 0},
-		{"fully inside disc dropped", []image.Rectangle{image.Rect(10, 10, 20, 20)}, []Disc{{15, 15, 20}}, nil, 0.6, 0},
-		{"far from disc kept", []image.Rectangle{image.Rect(100, 100, 110, 110)}, []Disc{{15, 15, 20}}, nil, 0.6, 1},
-		{"rect covering half, frac 0.6 keeps", []image.Rectangle{blob}, nil, []image.Rectangle{image.Rect(0, 0, 6, 12)}, 0.6, 1},
-		{"rect covering half, frac 0.5 drops", []image.Rectangle{blob}, nil, []image.Rectangle{image.Rect(0, 0, 6, 12)}, 0.5, 0},
-		{"disc and rect union", []image.Rectangle{blob}, []Disc{{0, 6, 6.5}}, []image.Rectangle{image.Rect(6, 0, 12, 12)}, 0.9, 0},
-		{"empty blob dropped even without masks", []image.Rectangle{image.Rect(5, 5, 5, 9)}, nil, nil, 0.6, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := FilterMaskedBlobs(tt.blobs, tt.discs, tt.rects, tt.frac); len(got) != tt.want {
-				t.Errorf("kept %d blobs (%v), want %d", len(got), got, tt.want)
-			}
-		})
-	}
-
-	t.Run("order is preserved", func(t *testing.T) {
-		a, b, c := image.Rect(0, 0, 10, 10), image.Rect(200, 0, 210, 10), image.Rect(400, 0, 410, 10)
-		got := FilterMaskedBlobs([]image.Rectangle{a, b, c}, []Disc{{205, 5, 30}}, nil, 0.6)
-		if want := []image.Rectangle{a, c}; !reflect.DeepEqual(got, want) {
-			t.Errorf("got %v, want %v", got, want)
-		}
-	})
-}
-
-func TestBlobTouchesDisc(t *testing.T) {
-	d := Disc{X: 0, Y: 0, R: 10}
-	tests := []struct {
-		name string
-		r    image.Rectangle
-		pad  float64
-		want bool
-	}{
-		{"inside", image.Rect(-2, -2, 2, 2), 0, true},
-		{"just within padded radius", image.Rect(11, 0, 20, 5), 2, true},
-		{"just outside padded radius", image.Rect(13, 0, 20, 5), 2, false},
-		{"corner distance counts", image.Rect(8, 8, 20, 20), 0, false},
-		{"corner within reach", image.Rect(7, 7, 20, 20), 0, true},
-		{"empty rectangle", image.Rect(0, 0, 0, 0), 5, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := BlobTouchesDisc(tt.r, d, tt.pad); got != tt.want {
-				t.Errorf("BlobTouchesDisc = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMergeWorldBoxes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -213,7 +153,7 @@ func TestMergeWorldBoxes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := append([]WorldBox(nil), tt.in...)
-			got := MergeWorldBoxes(in, tt.gap)
+			got, _ := MergeWorldBoxesWithGroups(in, tt.gap)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}

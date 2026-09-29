@@ -1,12 +1,11 @@
 package position
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func TestNewPositionEstimator(t *testing.T) {
-	est, err := NewPositionEstimator("", "", false, 0.0)
+	est, err := NewPositionEstimator("")
 	if err != nil {
 		t.Fatalf("NewPositionEstimator failed: %v", err)
 	}
@@ -19,16 +18,10 @@ func TestNewPositionEstimator(t *testing.T) {
 	if est.intrinsics != nil {
 		t.Error("intrinsics should be nil without calibration file")
 	}
-	if len(est.obstacles) != 0 {
-		t.Error("obstacles should be empty")
-	}
-	if est.smoothing {
-		t.Error("smoothing should be false")
-	}
 }
 
 func TestPositionEstimator_PixelToWorld_Invalid(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 	result := est.PixelToWorld(100, 200)
 
 	if result.X != 100 || result.Y != 200 {
@@ -37,7 +30,7 @@ func TestPositionEstimator_PixelToWorld_Invalid(t *testing.T) {
 }
 
 func TestPositionEstimator_PixelToWorld_Valid(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 	est.homography.SetFromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
 
 	result := est.PixelToWorld(100, 200)
@@ -48,7 +41,7 @@ func TestPositionEstimator_PixelToWorld_Valid(t *testing.T) {
 }
 
 func TestPositionEstimator_WorldToPixel_Invalid(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 	x, y := est.WorldToPixel(Point2D{X: 1.5, Y: 2.5})
 
 	if x != 1 || y != 2 {
@@ -57,7 +50,7 @@ func TestPositionEstimator_WorldToPixel_Invalid(t *testing.T) {
 }
 
 func TestPositionEstimator_WorldToPixel_Valid(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 	est.homography.SetFromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
 
 	x, y := est.WorldToPixel(Point2D{X: 100.7, Y: 200.9})
@@ -67,162 +60,8 @@ func TestPositionEstimator_WorldToPixel_Valid(t *testing.T) {
 	}
 }
 
-func TestPositionEstimator_UpdatePosition_NoSmoothing(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
-
-	est.UpdatePosition(1, 100, 200)
-	pos := est.GetPosition(1)
-
-	if pos == nil {
-		t.Fatal("GetPosition returned nil")
-	}
-	if pos.X != 100 || pos.Y != 200 {
-		t.Errorf("Position = (%f, %f), want (100, 200)", pos.X, pos.Y)
-	}
-}
-
-func TestPositionEstimator_UpdatePosition_WithSmoothing(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", true, 0.5)
-
-	est.UpdatePosition(1, 100, 200)
-	pos1 := est.GetPosition(1)
-
-	est.UpdatePosition(1, 100, 200)
-	pos2 := est.GetPosition(1)
-
-	if pos1 == nil || pos2 == nil {
-		t.Fatal("GetPosition returned nil")
-	}
-	if pos1.X != 100 || pos1.Y != 200 {
-		t.Errorf("First position = (%f, %f), want (100, 200)", pos1.X, pos1.Y)
-	}
-	if pos2.X != 100 || pos2.Y != 200 {
-		t.Errorf("Second position = (%f, %f), want (100, 200)", pos2.X, pos2.Y)
-	}
-}
-
-func TestPositionEstimator_UpdatePosition_SmoothingEffect(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", true, 0.5)
-
-	est.UpdatePosition(1, 0, 0)
-	pos := est.GetPosition(1)
-	if pos == nil {
-		t.Fatal("GetPosition returned nil")
-	}
-	if pos.X != 0 || pos.Y != 0 {
-		t.Errorf("Initial position = (%f, %f), want (0, 0)", pos.X, pos.Y)
-	}
-
-	est.UpdatePosition(1, 100, 100)
-	pos = est.GetPosition(1)
-	if pos == nil {
-		t.Fatal("GetPosition returned nil")
-	}
-	if pos.X != 50 || pos.Y != 50 {
-		t.Errorf("After smoothing position = (%f, %f), want (50, 50)", pos.X, pos.Y)
-	}
-}
-
-func TestPositionEstimator_GetPosition_UnknownTrackID(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
-
-	pos := est.GetPosition(999)
-	if pos != nil {
-		t.Errorf("GetPosition for unknown track should return nil, got (%f, %f)", pos.X, pos.Y)
-	}
-}
-
-func TestPositionEstimator_GetObstacles_Empty(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
-
-	obstacles := est.GetObstacles()
-	if len(obstacles) != 0 {
-		t.Errorf("GetObstacles on empty estimator = %d, want 0", len(obstacles))
-	}
-}
-
-func TestPositionEstimator_AddObstacle(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
-
-	obstacle := Obstacle{
-		Name:             "test_obstacle",
-		WorldTopLeft:     Point2D{X: 0, Y: 0},
-		WorldBottomRight: Point2D{X: 1, Y: 1},
-	}
-
-	est.AddObstacle(obstacle)
-	obstacles := est.GetObstacles()
-
-	if len(obstacles) != 1 {
-		t.Errorf("After AddObstacle, GetObstacles = %d, want 1", len(obstacles))
-	}
-	if obstacles[0].Name != "test_obstacle" {
-		t.Errorf("Obstacle name = %s, want test_obstacle", obstacles[0].Name)
-	}
-}
-
-func TestPositionEstimator_ClearObstacles(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
-
-	est.AddObstacle(Obstacle{Name: "obs1"})
-	est.AddObstacle(Obstacle{Name: "obs2"})
-	if len(est.GetObstacles()) != 2 {
-		t.Error("Expected 2 obstacles after adding")
-	}
-
-	est.ClearObstacles()
-	if len(est.GetObstacles()) != 0 {
-		t.Errorf("After ClearObstacles, GetObstacles = %d, want 0", len(est.GetObstacles()))
-	}
-}
-
-// TestSaveObstacles_RoundTripsThroughLoadObstacles guards the on-disk file
-// shape written by SaveObstacles (via yaml.Marshal) against LoadObstacles's
-// generic map-based parsing, which expects specific keys and nesting rather
-// than relying on the same struct on both ends.
-func TestSaveObstacles_RoundTripsThroughLoadObstacles(t *testing.T) {
-	saver, _ := NewPositionEstimator("", "", false, 0.0)
-	obstacles := []Obstacle{
-		{
-			Name:              `weird "name" with quotes`,
-			WorldTopLeft:      Point2D{X: 1.25, Y: -2.5},
-			WorldBottomRight:  Point2D{X: 3.75, Y: 4.125},
-			PixelsTopLeft:     [2]int{10, 20},
-			PixelsBottomRight: [2]int{300, 400},
-		},
-		{
-			Name:              "second",
-			WorldTopLeft:      Point2D{X: -1, Y: -1},
-			WorldBottomRight:  Point2D{X: 0, Y: 0},
-			PixelsTopLeft:     [2]int{0, 0},
-			PixelsBottomRight: [2]int{5, 5},
-		},
-	}
-
-	path := filepath.Join(t.TempDir(), "obstacles.yaml")
-	if err := saver.SaveObstacles(path, obstacles); err != nil {
-		t.Fatalf("SaveObstacles failed: %v", err)
-	}
-
-	loader, _ := NewPositionEstimator("", "", false, 0.0)
-	if err := loader.LoadObstacles(path); err != nil {
-		t.Fatalf("LoadObstacles failed: %v", err)
-	}
-
-	loaded := loader.GetObstacles()
-	if len(loaded) != len(obstacles) {
-		t.Fatalf("LoadObstacles got %d obstacles, want %d", len(loaded), len(obstacles))
-	}
-	for i, want := range obstacles {
-		got := loaded[i]
-		if got != want {
-			t.Errorf("obstacle %d = %+v, want %+v", i, got, want)
-		}
-	}
-}
-
 func TestPositionEstimator_GetHomography(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 	h := est.GetHomography()
 
 	if h == nil {
@@ -231,7 +70,7 @@ func TestPositionEstimator_GetHomography(t *testing.T) {
 }
 
 func TestPositionEstimator_IsCalibrated_NotCalibrated(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 
 	if est.IsCalibrated() {
 		t.Error("Estimator without valid homography should not be calibrated")
@@ -239,39 +78,11 @@ func TestPositionEstimator_IsCalibrated_NotCalibrated(t *testing.T) {
 }
 
 func TestPositionEstimator_IsCalibrated_Calibrated(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
+	est, _ := NewPositionEstimator("")
 	est.homography.SetFromValues(1, 0, 0, 0, 1, 0, 0, 0, 1)
 
 	if !est.IsCalibrated() {
 		t.Error("Estimator with valid homography should be calibrated")
-	}
-}
-
-func TestPositionEstimator_MultipleTrackIDs(t *testing.T) {
-	est, _ := NewPositionEstimator("", "", false, 0.0)
-
-	est.UpdatePosition(1, 100, 200)
-	est.UpdatePosition(2, 300, 400)
-	est.UpdatePosition(3, 500, 600)
-
-	pos1 := est.GetPosition(1)
-	pos2 := est.GetPosition(2)
-	pos3 := est.GetPosition(3)
-
-	if pos1 == nil {
-		t.Errorf("Track 1 position is nil")
-	} else if pos1.X != 100 || pos1.Y != 200 {
-		t.Errorf("Track 1 position = (%f, %f), want (100, 200)", pos1.X, pos1.Y)
-	}
-	if pos2 == nil {
-		t.Errorf("Track 2 position is nil")
-	} else if pos2.X != 300 || pos2.Y != 400 {
-		t.Errorf("Track 2 position = (%f, %f), want (300, 400)", pos2.X, pos2.Y)
-	}
-	if pos3 == nil {
-		t.Errorf("Track 3 position is nil")
-	} else if pos3.X != 500 || pos3.Y != 600 {
-		t.Errorf("Track 3 position = (%f, %f), want (500, 600)", pos3.X, pos3.Y)
 	}
 }
 
@@ -350,20 +161,5 @@ func TestCalibrationData_Struct(t *testing.T) {
 	}
 	if cal.WorldScale != 100.0 {
 		t.Errorf("WorldScale = %f, want 100.0", cal.WorldScale)
-	}
-}
-
-func TestSmoothedPosition_Struct(t *testing.T) {
-	sp := SmoothedPosition{
-		X:       100.5,
-		Y:       200.7,
-		Updated: true,
-	}
-
-	if sp.X != 100.5 || sp.Y != 200.7 {
-		t.Errorf("SmoothedPosition = (%f, %f), want (100.5, 200.7)", sp.X, sp.Y)
-	}
-	if !sp.Updated {
-		t.Error("Updated should be true")
 	}
 }

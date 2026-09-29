@@ -9,8 +9,6 @@ type ForegroundDetector struct{}
 
 func NewForegroundDetector(ForegroundParams) *ForegroundDetector { return &ForegroundDetector{} }
 
-func (d *ForegroundDetector) IsAvailable() bool { return false }
-
 // EnablePersistence is a no-op: there is no background to persist without
 // OpenCV.
 func (d *ForegroundDetector) EnablePersistence(string, time.Duration) {}

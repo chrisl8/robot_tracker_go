@@ -15,23 +15,6 @@ func TestRectQuad_MatchesBounds(t *testing.T) {
 	}
 }
 
-func TestQuad_Normalized_FixesReversedWinding(t *testing.T) {
-	rect := RectQuad([2]float64{0, 0}, [2]float64{2, 1})
-	reversed := Quad{rect[0], rect[3], rect[2], rect[1]}
-
-	if reversed.signedArea2() >= 0 {
-		t.Fatal("test setup: reversed quad should have negative signed area")
-	}
-	got := reversed.Normalized()
-	if got.signedArea2() < 0 {
-		t.Error("Normalized() should flip a reversed quad to positive winding")
-	}
-	// Normalizing an already-correct quad is a no-op.
-	if again := rect.Normalized(); again != rect {
-		t.Errorf("Normalized() changed an already-correct quad: %v -> %v", rect, again)
-	}
-}
-
 func TestQuadContains(t *testing.T) {
 	square := RectQuad([2]float64{0, 0}, [2]float64{10, 10})
 	// A diamond (45-degree rotated square) centred at (5,5), "radius" 5.

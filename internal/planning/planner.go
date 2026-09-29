@@ -331,16 +331,6 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 	return true
 }
 
-func (p *Planner) GetPaths() map[int][][2]float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	paths := make(map[int][][2]float64, len(p.paths))
-	for id, path := range p.paths {
-		paths[id] = path
-	}
-	return paths
-}
-
 func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()

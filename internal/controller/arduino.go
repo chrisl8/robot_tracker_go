@@ -105,8 +105,7 @@ func (c *ArduinoController) SendCommand(cmd Command) error {
 		return ErrNotConnected
 	}
 
-	data := []byte{byte(cmd), '\r', '\n'}
-	if err := c.writeAll(data); err != nil {
+	if err := c.writeAll(encodeCommand(cmd)); err != nil {
 		c.dropConnectionLocked()
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}

@@ -211,4 +211,10 @@ func TestShippedConfigLoads(t *testing.T) {
 	if got := cfg.EffectiveMaxFPS(); got < 1 {
 		t.Errorf("max fps = %d", got)
 	}
+	if cfg.AprilTags.Family == "" {
+		t.Error("AprilTag family not configured")
+	}
+	if cfg.Tracking.TrackThresh == 0 {
+		t.Error("tracking threshold not configured")
+	}
 }

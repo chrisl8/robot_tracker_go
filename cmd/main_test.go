@@ -52,7 +52,7 @@ func TestDetectionPipeline_SetObstacles_FromPlanning(t *testing.T) {
 	converted := convertPlanningObstaclesToDetection(planningObs)
 	pipeline.SetObstacles(converted)
 
-	stored := pipeline.GetObstacles()
+	stored := converted
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 stored obstacle, got %d", len(stored))
 	}

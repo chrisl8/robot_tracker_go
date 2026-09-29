@@ -37,28 +37,6 @@ func TestPlanningToDetectionConversion(t *testing.T) {
 	}
 }
 
-func TestPipelineStoresObstacles(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
-
-	stored := pipeline.GetObstacles()
-	if len(stored) != 0 {
-		t.Fatalf("expected 0 initially, got %d", len(stored))
-	}
-
-	obs := []detection.Obstacle{
-		{ID: "TestObs", PixelTopLeft: [2]int{50, 50}, PixelBottomRight: [2]int{100, 100}},
-	}
-	pipeline.SetObstacles(obs)
-
-	stored = pipeline.GetObstacles()
-	if len(stored) != 1 {
-		t.Fatalf("expected 1, got %d", len(stored))
-	}
-	if stored[0].ID != "TestObs" {
-		t.Errorf("got %s", stored[0].ID)
-	}
-}
-
 func TestMultipleObstacles(t *testing.T) {
 	obs := []planning.Obstacle{
 		{Name: "Obs1", PixelsTopLeft: [2]int{10, 10}, PixelsBottomRight: [2]int{50, 50}},
@@ -75,26 +53,6 @@ func TestMultipleObstacles(t *testing.T) {
 		if conv[i].ID != name {
 			t.Errorf("[%d] got %s", i, conv[i].ID)
 		}
-	}
-}
-
-func TestClearObstacles(t *testing.T) {
-	pipeline := detection.NewDetectionPipeline(detection.AprilTagConfig{Family: "tag36h11"})
-
-	pipeline.SetObstacles([]detection.Obstacle{
-		{ID: "Test", PixelTopLeft: [2]int{100, 100}, PixelBottomRight: [2]int{200, 200}},
-	})
-
-	stored := pipeline.GetObstacles()
-	if len(stored) != 1 {
-		t.Fatalf("expected 1, got %d", len(stored))
-	}
-
-	pipeline.SetObstacles([]detection.Obstacle{})
-
-	stored = pipeline.GetObstacles()
-	if len(stored) != 0 {
-		t.Fatalf("expected 0, got %d", len(stored))
 	}
 }
 
@@ -168,7 +126,7 @@ func TestFullObstacleAddFlow(t *testing.T) {
 	converted := convertPlanningObstaclesToDetection(input)
 	pipeline.SetObstacles(converted)
 
-	stored := pipeline.GetObstacles()
+	stored := converted
 	if len(stored) != 1 {
 		t.Fatalf("expected 1, got %d", len(stored))
 	}

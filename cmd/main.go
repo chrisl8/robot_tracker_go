@@ -438,8 +438,7 @@ func (rs *RobotSystem) initCamera() {
 
 // initPositionEstimator sets up pixel<->world calibration from calibrationPath.
 func (rs *RobotSystem) initPositionEstimator(calibrationPath string) {
-	obstaclesPath := ui.ResolveObstaclesPath(rs.cfg.Obstacles.GetPath(), rs.cameraDisplayName())
-	posEst, err := position.NewPositionEstimator(calibrationPath, obstaclesPath, rs.cfg.Position.Smoothing, rs.cfg.Position.SmoothingAlpha)
+	posEst, err := position.NewPositionEstimator(calibrationPath)
 	if err != nil {
 		utils.Logf("Warning: Position estimator initialization failed: %v", err)
 		rs.position.positionEst = nil
@@ -1025,7 +1024,6 @@ func (rs *RobotSystem) updateTrackWorldPosition(track *tracking.Track, applyCent
 	robotDiameter = 0.30 // fallback
 	px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 	worldPos = rs.position.positionEst.PixelToWorld(px, py)
-	rs.position.positionEst.UpdatePosition(track.TrackID, worldPos.X, worldPos.Y)
 	if robotConfig := rs.cfg.GetRobotByTagID(*track.TagID); robotConfig != nil {
 		// Compute pixel radius by projecting world-space footprint through homography
 		worldRadius := robotConfig.Diameter / 2

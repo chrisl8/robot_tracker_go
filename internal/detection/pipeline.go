@@ -86,9 +86,13 @@ func (p *DetectionPipeline) DrawResults(image []byte, width, height int, result 
 		output = p.tagDetector.DrawTags(output, width, height, result.Tags)
 	}
 
-	if len(p.obstacles) > 0 && p.obstacleDrawer != nil {
-		output = p.obstacleDrawer.DrawObstacles(output, width, height, p.obstacles)
-	} else if len(p.obstacles) > 0 {
+	p.obstaclesMu.RLock()
+	obstacles := p.obstacles
+	p.obstaclesMu.RUnlock()
+
+	if len(obstacles) > 0 && p.obstacleDrawer != nil {
+		output = p.obstacleDrawer.DrawObstacles(output, width, height, obstacles)
+	} else if len(obstacles) > 0 {
 		log.Printf("DRAW_RESULTS: obstacleDrawer is nil, skipping obstacles!")
 	}
 

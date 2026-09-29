@@ -3,7 +3,6 @@ package position
 import (
 	"fmt"
 	"math"
-	"os"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -306,59 +305,6 @@ func (h *Homography) SetFromValues(h0, h1, h2, h3, h4, h5, h6, h7, h8 float64) {
 	h.Valid = true
 }
 
-func (h *Homography) Save(filename string) error {
-	if !h.Valid {
-		return fmt.Errorf("homography not valid")
-	}
-
-	// #nosec G304
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 3; j++ {
-			if j > 0 {
-				_, _ = fmt.Fprint(file, " ")
-			}
-			_, _ = fmt.Fprint(file, h.H[i][j])
-		}
-		_, _ = fmt.Fprintln(file)
-	}
-
-	_, _ = fmt.Fprintln(file, h.PixelsPerMeter)
-
-	return nil
-}
-
-func (h *Homography) Load(filename string) error {
-	// #nosec G304
-	file, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	var values [9]float64
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 3; j++ {
-			if _, err := fmt.Fscan(file, &values[i*3+j]); err != nil {
-				return err
-			}
-		}
-	}
-
-	if _, err := fmt.Fscan(file, &h.PixelsPerMeter); err != nil {
-		return err
-	}
-
-	h.SetFromValues(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8])
-
-	return nil
-}
-
 func (h *Homography) IsValid() bool {
 	return h.Valid
 }
@@ -387,70 +333,8 @@ func (h *Homography) SetIdentity() {
 	h.PixelsPerMeter = 100.0
 }
 
-func (h *Homography) GetPixelsPerMeter() float64 {
-	return h.PixelsPerMeter
-}
-
 func (h *Homography) SetPixelsPerMeter(ppm float64) {
 	h.PixelsPerMeter = ppm
-}
-
-func (h *Homography) ComputeFromAprilTag(imgCorners [][2]float64, worldCorners [][3]float64) error {
-	if len(imgCorners) < 4 || len(worldCorners) < 4 {
-		return fmt.Errorf("need at least 4 corner points")
-	}
-
-	A := make([]float64, 8*9)
-	rowIdx := 0
-
-	for i := 0; i < 4; i++ {
-		ux := imgCorners[i][0]
-		uy := imgCorners[i][1]
-		WX := worldCorners[i][0]
-		WY := worldCorners[i][1]
-		WZ := worldCorners[i][2]
-
-		A[rowIdx*9+0] = WX
-		A[rowIdx*9+1] = WY
-		A[rowIdx*9+2] = WZ
-		A[rowIdx*9+3] = 0
-		A[rowIdx*9+4] = 0
-		A[rowIdx*9+5] = 0
-		A[rowIdx*9+6] = -WX * ux
-		A[rowIdx*9+7] = -WY * ux
-		A[rowIdx*9+8] = -WZ * ux
-		rowIdx++
-
-		A[rowIdx*9+0] = 0
-		A[rowIdx*9+1] = 0
-		A[rowIdx*9+2] = 0
-		A[rowIdx*9+3] = WX
-		A[rowIdx*9+4] = WY
-		A[rowIdx*9+5] = WZ
-		A[rowIdx*9+6] = -WX * uy
-		A[rowIdx*9+7] = -WY * uy
-		A[rowIdx*9+8] = -WZ * uy
-		rowIdx++
-	}
-
-	solved, err := solveDLT(A)
-	if err != nil {
-		return fmt.Errorf("solving homography: %w", err)
-	}
-	h.H = solved
-	h.ComputeInverse()
-
-	avgDiag := (dist3D(worldCorners[0], worldCorners[2]) + dist3D(worldCorners[1], worldCorners[3])) / 2.0
-	if avgDiag > 0 {
-		expectedPixels := avgDiag * 1000
-		scale := h.EstimateScaleFromCorners(imgCorners, expectedPixels)
-		h.PixelsPerMeter = scale
-	} else {
-		h.EstimateScale()
-	}
-
-	h.Valid = true
-	return nil
 }
 
 // solveDLT returns the null-space solution of the (rows x 9) DLT matrix a,
@@ -504,32 +388,4 @@ func solveDLT(a []float64) ([3][3]float64, error) {
 	}
 
 	return H, nil
-}
-
-func dist3D(p1, p2 [3]float64) float64 {
-	dx := p2[0] - p1[0]
-	dy := p2[1] - p1[1]
-	dz := p2[2] - p1[2]
-	return sqrt(dx*dx + dy*dy + dz*dz)
-}
-
-func (h *Homography) EstimateScaleFromCorners(corners [][2]float64, expectedPixels float64) float64 {
-	diag1 := sqrt(pow(corners[0][0]-corners[2][0], 2) + pow(corners[0][1]-corners[2][1], 2))
-	diag2 := sqrt(pow(corners[1][0]-corners[3][0], 2) + pow(corners[1][1]-corners[3][1], 2))
-	avgDiag := (diag1 + diag2) / 2.0
-	if avgDiag > 0 {
-		return expectedPixels / avgDiag
-	}
-	return 1000.0
-}
-
-func pow(x, y float64) float64 {
-	if y == 0 {
-		return 1
-	}
-	result := 1.0
-	for i := 0; i < int(y); i++ {
-		result *= x
-	}
-	return result
 }

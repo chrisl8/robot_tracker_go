@@ -37,7 +37,7 @@ type rotRect struct {
 
 func newFGRig(t *testing.T, apply bool) *fgRig {
 	t.Helper()
-	est, err := position.NewPositionEstimator("", "", false, 0)
+	est, err := position.NewPositionEstimator("")
 	if err != nil {
 		t.Fatalf("NewPositionEstimator: %v", err)
 	}

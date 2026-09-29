@@ -181,78 +181,8 @@ func RobotDisc(fn PixelToWorldFunc, cx, cy, robotDiameterM, marginM float64) Dis
 	return Disc{X: cx, Y: cy, R: (robotDiameterM/2 + marginM) * ppm}
 }
 
-// coverageGrid is the number of sample cells per side used to estimate how
-// much of a blob a mask covers.
-const coverageGrid = 12
-
-// FilterMaskedBlobs drops blobs that the masks cover by at least frac of
-// their area, and always drops empty blobs. Coverage is estimated at the
-// centres of a fixed coverageGrid x coverageGrid grid inside each blob, so the
-// result is deterministic. Order is preserved.
-func FilterMaskedBlobs(blobs []image.Rectangle, discs []Disc, rects []image.Rectangle, frac float64) []image.Rectangle {
-	kept := make([]image.Rectangle, 0, len(blobs))
-	for _, b := range blobs {
-		if b.Empty() {
-			continue
-		}
-		if len(discs) == 0 && len(rects) == 0 {
-			kept = append(kept, b)
-			continue
-		}
-		covered := 0
-		w, h := float64(b.Dx()), float64(b.Dy())
-		for i := 0; i < coverageGrid; i++ {
-			y := float64(b.Min.Y) + (float64(i)+0.5)*h/coverageGrid
-			for j := 0; j < coverageGrid; j++ {
-				x := float64(b.Min.X) + (float64(j)+0.5)*w/coverageGrid
-				if pointMasked(x, y, discs, rects) {
-					covered++
-				}
-			}
-		}
-		if float64(covered)/(coverageGrid*coverageGrid) >= frac {
-			continue
-		}
-		kept = append(kept, b)
-	}
-	return kept
-}
-
-func pointMasked(x, y float64, discs []Disc, rects []image.Rectangle) bool {
-	for _, d := range discs {
-		if math.Hypot(x-d.X, y-d.Y) <= d.R {
-			return true
-		}
-	}
-	for _, r := range rects {
-		if x >= float64(r.Min.X) && x < float64(r.Max.X) && y >= float64(r.Min.Y) && y < float64(r.Max.Y) {
-			return true
-		}
-	}
-	return false
-}
-
-// BlobTouchesDisc reports whether the rectangle comes within d.R+pad pixels of
-// the disc centre (closest-point distance), i.e. the blob touches or overlaps
-// the disc once padded.
-func BlobTouchesDisc(r image.Rectangle, d Disc, pad float64) bool {
-	if r.Empty() {
-		return false
-	}
-	cx := math.Max(float64(r.Min.X), math.Min(d.X, float64(r.Max.X)))
-	cy := math.Max(float64(r.Min.Y), math.Min(d.Y, float64(r.Max.Y)))
-	return math.Hypot(d.X-cx, d.Y-cy) <= d.R+pad
-}
-
-// MergeWorldBoxes repeatedly merges boxes that overlap or lie within gap
-// metres of each other (along both axes) into their union, until none do. The
-// result is sorted by (MinX, MinY) so it is deterministic.
-func MergeWorldBoxes(boxes []WorldBox, gap float64) []WorldBox {
-	out, _ := MergeWorldBoxesWithGroups(boxes, gap)
-	return out
-}
-
-// MergeWorldBoxesWithGroups behaves like MergeWorldBoxes, but also returns,
+// MergeWorldBoxesWithGroups repeatedly merges boxes that overlap or lie within
+// gap metres of each other, and also returns,
 // for each returned box (same order, same index), the indices into the input
 // slice that were merged into it (a single-element slice when that box did
 // not merge with any other). A caller that has per-input data alongside each

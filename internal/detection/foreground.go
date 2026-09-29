@@ -78,9 +78,6 @@ func NewForegroundDetector(p ForegroundParams) *ForegroundDetector {
 	}
 }
 
-// IsAvailable reports whether foreground detection is compiled in.
-func (d *ForegroundDetector) IsAvailable() bool { return true }
-
 // EnablePersistence turns on saving the learned background to path every
 // interval while warm, and restoring it (when it matches the working
 // resolution) the first time a frame of that resolution is processed, so a
