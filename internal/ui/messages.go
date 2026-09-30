@@ -95,7 +95,13 @@ type StatusMessage struct {
 	ArduinoState string  `json:"arduinoState"`
 	// RobotLink is "alive", "silent" or "unknown". "silent" while ArduinoState
 	// is Connected means the gamepad is fine but the robot is off or out of range.
-	RobotLink    string  `json:"robotLink"`
+	RobotLink string `json:"robotLink"`
+	// RobotServos is "asleep" or "awake" while the robot answers, else omitted.
+	RobotServos string `json:"robotServos,omitempty"`
+	// RobotMode is the robot's own mode letter while it answers, else omitted.
+	RobotMode string `json:"robotMode,omitempty"`
+	// RobotReboots counts robot restarts (uptime going backwards) since the service started.
+	RobotReboots int     `json:"robotReboots"`
 	HostMemoryMB float64 `json:"hostMemoryMB,omitempty"`
 	UptimeSec    float64 `json:"uptimeSec,omitempty"`
 	// CameraStalled is true when no video frame has been processed for a couple

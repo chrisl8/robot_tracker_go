@@ -154,9 +154,18 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 // releaseGoalsForRecalibration drops every robot's goal and path and stops the
 // robot, because they were expressed in the previous calibration's world frame.
 func (rs *RobotSystem) releaseGoalsForRecalibration() {
+	rs.releaseAllGoals("Recalibrated")
+}
+
+// releaseAllGoals drops every robot's goal and path, clears the UI's destination
+// and sends a Stop. reason starts the log line for each released goal.
+func (rs *RobotSystem) releaseAllGoals(reason string) {
+	if rs.planning.planner == nil {
+		return
+	}
 	released := false
 	for _, robotID := range rs.planning.planner.RobotsWithGoals() {
-		utils.Logf("Recalibrated: releasing the goal of robot %d (set the destination again)", robotID)
+		utils.Logf("%s: releasing the goal of robot %d (set the destination again)", reason, robotID)
 		rs.planning.planner.CompletePath(robotID)
 		rs.web.webServer.ClearDestination(robotID)
 		released = true

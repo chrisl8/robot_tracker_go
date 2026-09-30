@@ -73,6 +73,16 @@ const robotLinkClass = computed(() => {
                     {{ robotLinkText }}
                 </span>
             </div>
+            <div v-if="robotStore.status.robotServos" class="comm-row">
+                <span class="comm-label">Servos</span>
+                <span class="comm-value">{{
+                    robotStore.status.robotServos === 'asleep' ? 'Asleep' : 'Awake'
+                }}</span>
+            </div>
+            <div v-if="robotStore.status.robotReboots" class="comm-row">
+                <span class="comm-label">Restarts</span>
+                <span class="comm-value fps-health-low">{{ robotStore.status.robotReboots }}</span>
+            </div>
             <div class="comm-row-stacked">
                 <div class="comm-row">
                     <span class="comm-label">FPS</span>

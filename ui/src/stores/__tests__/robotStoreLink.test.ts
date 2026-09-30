@@ -81,3 +81,67 @@ describe('Robot link alert', () => {
         expect(errorToasts(ui)).toBe(2)
     })
 })
+
+describe('Robot restart alert', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    const warnings = (ui: { toasts: { type: string; message: string }[] }) =>
+        ui.toasts.filter(t => t.type === 'warning')
+
+    it('does not announce restarts that happened before the page opened', async () => {
+        const { robot, ui } = await setup()
+
+        robot.setStatus(status({ robotReboots: 3 }))
+
+        expect(warnings(ui)).toHaveLength(0)
+    })
+
+    it('warns when the restart count grows, once per restart', async () => {
+        const { robot, ui } = await setup()
+
+        robot.setStatus(status({ robotReboots: 0 }))
+        robot.setStatus(status({ robotReboots: 0 }))
+        expect(warnings(ui)).toHaveLength(0)
+
+        robot.setStatus(status({ robotReboots: 1 }))
+        robot.setStatus(status({ robotReboots: 1 }))
+        expect(warnings(ui)).toHaveLength(1)
+        expect(warnings(ui)[0]?.message).toMatch(/restarted/i)
+        expect(ui.activityLog.filter(e => e.type === 'warning')).toHaveLength(1)
+
+        robot.setStatus(status({ robotReboots: 2 }))
+        expect(warnings(ui)).toHaveLength(2)
+    })
+
+    it('treats a lower count (the service restarted) as a new baseline, not a restart', async () => {
+        const { robot, ui } = await setup()
+
+        robot.setStatus(status({ robotReboots: 5 }))
+        robot.setStatus(status({ robotReboots: 0 }))
+        expect(warnings(ui)).toHaveLength(0)
+
+        robot.setStatus(status({ robotReboots: 1 }))
+        expect(warnings(ui)).toHaveLength(1)
+    })
+
+    it('ignores an older backend that does not send the count', async () => {
+        const { robot, ui } = await setup()
+
+        robot.setStatus(status({ robotReboots: undefined }))
+        robot.setStatus(status({ robotReboots: 1 }))
+
+        expect(warnings(ui)).toHaveLength(0)
+    })
+})
+
+describe('Robot silent message', () => {
+    it('tells the user the goal was released', async () => {
+        const { robot, ui } = await setup()
+
+        robot.setStatus(status({ robotLink: 'silent' }))
+
+        expect(ui.toasts.find(t => t.type === 'error')?.message).toMatch(/goal was released/i)
+    })
+})

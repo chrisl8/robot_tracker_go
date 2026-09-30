@@ -147,3 +147,129 @@ func TestReadLoop_StaleReaderDoesNotDropReplacementConnection(t *testing.T) {
 		t.Error("closing the old port must not drop the new connection")
 	}
 }
+
+func TestIsReboot(t *testing.T) {
+	tests := []struct {
+		name      string
+		prev, cur int
+		want      bool
+	}{
+		{"uptime advances", 10, 11, false},
+		{"same second twice", 10, 10, false},
+		{"uptime goes backwards", 500, 3, true},
+		{"restart right after a long run", 40000, 0, true},
+		{"16-bit counter wraps", 65535, 0, false},
+		{"wrap with a small step past zero", 65534, 4, false},
+		{"just below the wrap floor is a reboot", 64999, 3, true},
+		{"high uptime dropping to a mid value is a reboot", 65500, 2000, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isReboot(tt.prev, tt.cur); got != tt.want {
+				t.Errorf("isReboot(%d, %d) = %v, want %v", tt.prev, tt.cur, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNoteReply_HeartbeatFieldsAndReboots(t *testing.T) {
+	c := NewArduinoController("test", 0)
+	c.connectedAt = time.Now()
+
+	// First heartbeat after connecting is never a reboot, however small the uptime.
+	if c.noteReply([]int{5, 0, 'W'}) {
+		t.Fatal("first heartbeat reported a reboot")
+	}
+	if c.noteReply([]int{6, 1, 'D'}) {
+		t.Fatal("advancing uptime reported a reboot")
+	}
+	info := c.RobotInfo(time.Now())
+	if info.Link != RobotLinkAlive || info.Servos != "asleep" || info.Mode != "D" || info.Reboots != 0 {
+		t.Errorf("info = %+v, want alive/asleep/D/0 reboots", info)
+	}
+
+	if !c.noteReply([]int{1, 0, 'W'}) {
+		t.Fatal("uptime going backwards was not reported as a reboot")
+	}
+	info = c.RobotInfo(time.Now())
+	if info.Reboots != 1 || info.Servos != "awake" || info.Mode != "W" {
+		t.Errorf("after reboot info = %+v, want 1 reboot/awake/W", info)
+	}
+}
+
+// A reply that isn't a well-formed heartbeat still proves the robot answered,
+// but must not disturb the recorded state or fake a reboot.
+func TestNoteReply_MalformedHeartbeatOnlyCountsAsAlive(t *testing.T) {
+	for _, values := range [][]int{
+		{1, 2},          // wrong field count
+		{1, 2, 3, 4},    // the old sensor format
+		{-1, 0, 'W'},    // uptime out of range
+		{70000, 0, 'W'}, // uptime out of range
+		{10, 2, 'W'},    // detached flag is not 0/1
+		{10, 0, 300},    // mode is not a byte
+	} {
+		c := NewArduinoController("test", 0)
+		c.connectedAt = time.Now()
+		c.noteReply([]int{500, 0, 'W'})
+
+		if c.noteReply(values) {
+			t.Errorf("%v reported a reboot", values)
+		}
+		info := c.RobotInfo(time.Now())
+		if info.Link != RobotLinkAlive || info.Reboots != 0 || info.Servos != "awake" {
+			t.Errorf("%v disturbed the state: %+v", values, info)
+		}
+		if c.noteReply([]int{501, 0, 'W'}) {
+			t.Errorf("%v: a later valid heartbeat was taken for a reboot", values)
+		}
+	}
+}
+
+func TestRobotInfo_DetailsHiddenUnlessAlive(t *testing.T) {
+	c := NewArduinoController("test", 0)
+	c.connectedAt = time.Now()
+	c.noteReply([]int{9, 1, 'W'})
+
+	info := c.RobotInfo(time.Now().Add(RobotSilentAfter + time.Second))
+	if info.Link != RobotLinkSilent || info.Servos != "" || info.Mode != "" {
+		t.Errorf("a silent robot should report no servo/mode details, got %+v", info)
+	}
+}
+
+func TestReadLoop_HeartbeatLinesUpdateInfoAndCountReboots(t *testing.T) {
+	port := &recordingPort{}
+	stubSerialOpen(t, port)
+	ctrl := NewArduinoController("test", 0)
+	if err := ctrl.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ctrl.Disconnect() }()
+
+	port.feed("#R=100,1,87\n#R=101,1,87\n#R=2,0,87\n") // 87 is 'W'
+
+	waitFor(t, func() bool { return ctrl.RobotInfo(time.Now()).Reboots == 1 })
+	info := ctrl.RobotInfo(time.Now())
+	if info.Servos != "awake" || info.Mode != "W" {
+		t.Errorf("info = %+v, want awake/W after the last heartbeat", info)
+	}
+}
+
+func TestDisconnect_ForgetsHeartbeatButKeepsRebootCount(t *testing.T) {
+	c := NewArduinoController("test", 0)
+	c.connectedAt = time.Now()
+	c.noteReply([]int{50, 0, 'W'})
+	c.noteReply([]int{1, 0, 'W'}) // a reboot
+
+	c.mu.Lock()
+	c.noteDisconnected()
+	c.mu.Unlock()
+	c.noteConnected()
+
+	// After reconnecting, the next heartbeat is a fresh baseline, not a reboot.
+	if c.noteReply([]int{0, 0, 'W'}) { // lower than the last value seen before the disconnect
+		t.Error("the first heartbeat after reconnecting was reported as a reboot")
+	}
+	if got := c.RobotInfo(time.Now()).Reboots; got != 1 {
+		t.Errorf("reboot count = %d, want it kept at 1 across the reconnect", got)
+	}
+}

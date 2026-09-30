@@ -33,10 +33,15 @@ type ArduinoController struct {
 	// linkMu guards the robot-link bookkeeping (see RobotLink). It is separate
 	// from mu so a serial write stalled under mu can't block status reads.
 	// Lock order: mu, then linkMu.
-	linkMu      sync.Mutex
-	connectedAt time.Time // zero while disconnected
-	lastReply   time.Time // last valid "#R=" line since connectedAt
-	badReplies  int
+	linkMu       sync.Mutex
+	connectedAt  time.Time // zero while disconnected
+	lastReply    time.Time // last valid "#R=" line since connectedAt
+	badReplies   int
+	haveBeat     bool // a full heartbeat has arrived since connectedAt
+	lastUptime   int  // robot uptime in seconds from the last heartbeat
+	servosAsleep bool
+	robotMode    byte
+	reboots      int // cumulative for the process; see noteDisconnected
 }
 
 func NewArduinoController(port string, baudrate int) *ArduinoController {

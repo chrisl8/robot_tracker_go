@@ -104,20 +104,34 @@ func (rs *RobotSystem) noteFrameSize(width, height int) {
 	}
 }
 
-// updateRobotLink reads the robot's link state from the controller and logs
-// each change, so a robot that went silent shows up in the service log too.
-func (rs *RobotSystem) updateRobotLink() controller.RobotLink {
-	link := controller.RobotLinkUnknown
+// updateRobotLink reads the robot's link state and heartbeat details from the
+// controller and acts on changes (see applyRobotLink).
+func (rs *RobotSystem) updateRobotLink() controller.RobotInfo {
+	info := controller.RobotInfo{Link: controller.RobotLinkUnknown}
 	if rs.io.arduino != nil {
-		link = rs.io.arduino.RobotLink(time.Now())
+		info = rs.io.arduino.RobotInfo(time.Now())
 	}
-	if link != rs.io.lastRobotLink {
-		if rs.io.lastRobotLink != "" || link != controller.RobotLinkUnknown {
-			utils.Logf("Robot link: %q -> %q", rs.io.lastRobotLink, link)
-		}
-		rs.io.lastRobotLink = link
+	rs.applyRobotLink(info.Link)
+	return info
+}
+
+// applyRobotLink logs each change of the robot's link state, so a robot that went
+// silent shows up in the service log too, and releases any goal when it goes
+// silent. A powered-off robot is still visible to the camera, so without the
+// release autonomy would keep commanding it and it would walk off toward the old
+// goal the moment it was switched back on.
+func (rs *RobotSystem) applyRobotLink(link controller.RobotLink) {
+	prev := rs.io.lastRobotLink
+	if link == prev {
+		return
 	}
-	return link
+	if prev != "" || link != controller.RobotLinkUnknown {
+		utils.Logf("Robot link: %q -> %q", prev, link)
+	}
+	rs.io.lastRobotLink = link
+	if link == controller.RobotLinkSilent {
+		rs.releaseAllGoals("Robot stopped answering")
+	}
 }
 
 // broadcastFrameStats pushes per-frame tag/track counts and Arduino/FPS
@@ -134,7 +148,8 @@ func (rs *RobotSystem) broadcastFrameStats(tagCount, trackCount int, tags []dete
 	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 	if rs.statusBroadcastDue() {
 		rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
-		rs.web.webServer.SetRobotLink(string(rs.updateRobotLink()))
+		info := rs.updateRobotLink()
+		rs.web.webServer.SetRobotInfo(string(info.Link), info.Servos, info.Mode, info.Reboots)
 		rs.web.webServer.BroadcastStatus(trackCount, rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
 	}
 

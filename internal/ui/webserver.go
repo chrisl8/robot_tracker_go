@@ -116,7 +116,10 @@ type statsStore struct {
 	arduinoConnected bool
 	// robotLink is "alive", "silent" or "unknown": whether the robot itself is
 	// answering the gamepad's poll (see controller.RobotLink).
-	robotLink string
+	robotLink    string
+	robotServos  string // "asleep", "awake" or "" (unknown)
+	robotMode    string
+	robotReboots int
 }
 
 // destinationStore holds the single pending click-to-drive destination.

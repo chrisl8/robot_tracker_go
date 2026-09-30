@@ -162,9 +162,26 @@ export const useRobotStore = defineStore('robot', () => {
     // (and only the recovery) is announced too.
     let robotSilentAlerted = false
 
+    // The reboot count last seen; null until the first status so a page load
+    // doesn't announce restarts that happened before it was opened.
+    let lastRobotReboots: number | null = null
+
     function setStatus(newStatus: RobotStatus): void {
         status.value = newStatus
         announceRobotLink(newStatus)
+        announceRobotReboots(newStatus)
+    }
+
+    function announceRobotReboots(s: RobotStatus): void {
+        if (s.robotReboots === undefined) return
+        if (lastRobotReboots !== null && s.robotReboots > lastRobotReboots) {
+            const uiStore = useUIStore()
+            const message =
+                'Robot restarted on its own: if this keeps happening, the battery is probably low'
+            uiStore.showToast(message, 'warning', 8000)
+            uiStore.addLogEntry('warning', message)
+        }
+        lastRobotReboots = s.robotReboots
     }
 
     // Warn once when the robot stops answering while the Arduino link is still up
@@ -174,7 +191,9 @@ export const useRobotStore = defineStore('robot', () => {
         const silent = s.robotLink === 'silent' && s.arduinoState === 'Connected'
         if (silent && !robotSilentAlerted) {
             robotSilentAlerted = true
-            const message = 'Robot is not responding: check that it is powered on and in range'
+            const message =
+                'Robot is not responding: check that it is powered on and in range. ' +
+                'Any goal was released; set it again once the robot is back'
             uiStore.showToast(message, 'error', 10000)
             uiStore.addLogEntry('error', message)
         } else if (!silent && robotSilentAlerted) {

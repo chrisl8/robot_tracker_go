@@ -44,6 +44,13 @@ export interface RobotStatus {
     // Arduino Connected means the gamepad is fine but the robot is off/out of range.
     // Absent from an older backend.
     robotLink?: 'alive' | 'silent' | 'unknown'
+    // From the robot's heartbeat, present only while it answers: whether its servos
+    // are powered down (idle) and its own mode letter.
+    robotServos?: 'asleep' | 'awake'
+    robotMode?: string
+    // How often the robot restarted (its uptime went backwards) since the service
+    // started: usually a brown-out from a weak battery.
+    robotReboots?: number
     hostMemoryMB?: number
     uptimeSec?: number
     // True when no camera frame has been processed for > 2 s (fps is then 0).

@@ -19,7 +19,7 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 
 	s.stats.arduinoMutex.RLock()
 	connected := s.stats.arduinoConnected
-	robotLink := s.stats.robotLink
+	robot := s.robotSnapshotLocked()
 	s.stats.arduinoMutex.RUnlock()
 
 	state := "Disconnected"
@@ -33,7 +33,10 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
 		"arduinoState": state,
-		"robotLink":    robotLink,
+		"robotLink":    robot.link,
+		"robotServos":  robot.servos,
+		"robotMode":    robot.mode,
+		"robotReboots": robot.reboots,
 		"hostMemoryMB": hostMemMB,
 		"uptimeSec":    uptimeSec,
 	})
@@ -51,11 +54,32 @@ func (s *WebServer) SetArduinoConnected(connected bool) {
 	s.stats.arduinoMutex.Unlock()
 }
 
-// SetRobotLink records whether the robot is answering ("alive", "silent" or
-// "unknown"); it is sent with the next status broadcast.
-func (s *WebServer) SetRobotLink(link string) {
+// robotState is the robot-side half of the status: whether it answers, and what
+// its heartbeat said.
+type robotState struct {
+	link, servos, mode string
+	reboots            int
+}
+
+// robotSnapshotLocked copies the robot fields; the caller holds arduinoMutex.
+func (s *WebServer) robotSnapshotLocked() robotState {
+	return robotState{
+		link:    s.stats.robotLink,
+		servos:  s.stats.robotServos,
+		mode:    s.stats.robotMode,
+		reboots: s.stats.robotReboots,
+	}
+}
+
+// SetRobotInfo records whether the robot is answering (link: "alive", "silent"
+// or "unknown") and what its last heartbeat said; servos is "asleep", "awake"
+// or empty. It is sent with the next status broadcast.
+func (s *WebServer) SetRobotInfo(link, servos, mode string, reboots int) {
 	s.stats.arduinoMutex.Lock()
 	s.stats.robotLink = link
+	s.stats.robotServos = servos
+	s.stats.robotMode = mode
+	s.stats.robotReboots = reboots
 	s.stats.arduinoMutex.Unlock()
 }
 
@@ -73,7 +97,7 @@ func (s *WebServer) BroadcastCameraStalled(uptimeSec, frameAgeSec float64) {
 func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec float64, stalled bool) {
 	s.stats.arduinoMutex.RLock()
 	connected := s.stats.arduinoConnected
-	robotLink := s.stats.robotLink
+	robot := s.robotSnapshotLocked()
 	s.stats.arduinoMutex.RUnlock()
 
 	state := "Disconnected"
@@ -98,7 +122,10 @@ func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec 
 			FPS:          fps,
 			RobotCount:   trackCount,
 			ArduinoState: state,
-			RobotLink:    robotLink,
+			RobotLink:    robot.link,
+			RobotServos:  robot.servos,
+			RobotMode:    robot.mode,
+			RobotReboots: robot.reboots,
 			HostMemoryMB: hostMemMB,
 			UptimeSec:    uptimeSec,
 
