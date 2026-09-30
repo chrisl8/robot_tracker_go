@@ -12,6 +12,31 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// proximityClearance is the gap (metres, robot edge to obstacle) under which
+// the robot may not drive any closer to the obstacle. It may still turn in
+// place and drive away, so a robot that starts, or ends up, this close can
+// always get out.
+const proximityClearance = 0.08
+
+// proximityProbeStep is how far (metres) ahead movesTowardObstacle looks.
+const proximityProbeStep = 0.05
+
+// movesTowardObstacle reports whether cmd would take the robot closer to an
+// obstacle: a Forward or Backward move whose position one probe step along the
+// heading has less clearance than now. Turns and Stop never change the gap.
+func (rs *RobotSystem) movesTowardObstacle(robotID int, cmd controller.Command, pos position.Point2D, heading, clearance float64) bool {
+	dir := heading
+	switch cmd {
+	case controller.CommandForward:
+	case controller.CommandBackward:
+		dir += math.Pi
+	default:
+		return false
+	}
+	probe := [2]float64{pos.X + proximityProbeStep*math.Cos(dir), pos.Y + proximityProbeStep*math.Sin(dir)}
+	return rs.planning.planner.ClearanceAt(robotID, probe) < clearance
+}
+
 // executeAutonomousControl handles path-following for all tracked robots.
 func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
@@ -50,17 +75,16 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 			// a fresh uncorrected projection of the bbox.
 			worldPos := position.Point2D{X: track.WorldPos[0], Y: track.WorldPos[1]}
 
-			// Stop and replan when dangerously close to an obstacle
-			if clearance := rs.planning.planner.GetClearance(robotID); clearance < 0.08 {
-				utils.Logf("PROXIMITY WARNING: Robot %d clearance=%.3fm — stopping and replanning", robotID, clearance)
-				if rs.io.commandQueue != nil {
-					rs.io.commandQueue.Enqueue(controller.CommandStop)
-					commandIssued = true
-				}
-				rs.io.robotCommands[robotID] = "stopped"
+			// Close to an obstacle: replan from here (the planner routes out of
+			// the margin), but never park the robot. Being near an obstacle is
+			// not a reason to stop; only driving closer is (see below).
+			clearance := rs.planning.planner.GetClearance(robotID)
+			tooClose := clearance < proximityClearance
+			if tooClose {
 				// Replan at most once every 3 seconds to avoid thrashing
 				if lastReplan, ok := rs.planning.lastReplanTime[robotID]; !ok || time.Since(lastReplan) > 3*time.Second {
 					if goal, hasGoal := rs.planning.planner.GetGoal(robotID); hasGoal {
+						utils.Logf("PROXIMITY: Robot %d clearance=%.3fm — replanning away from the obstacle", robotID, clearance)
 						rs.planning.planner.ClearPathOnly(robotID)
 						pos := [2]float64{worldPos.X, worldPos.Y}
 						if newPath, ok := rs.planning.planner.PlanPath(robotID, pos, goal); ok {
@@ -72,7 +96,6 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 						rs.planning.lastReplanTime[robotID] = time.Now()
 					}
 				}
-				continue
 			}
 
 			// Check if robot is close to final destination
@@ -119,6 +142,10 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				delta := rs.heading.headingDelta[robotID]
 				steered = true
 				cmd := rs.io.pathExecutor.BearingToCommand(track.Heading, bearingToWaypoint, delta)
+				if tooClose && rs.movesTowardObstacle(robotID, cmd, worldPos, track.Heading, clearance) {
+					utils.Debugf("PROXIMITY: Robot %d clearance=%.3fm, %c would close in: stopping", robotID, clearance, byte(cmd))
+					cmd = controller.CommandStop
+				}
 				rs.io.commandQueue.Enqueue(cmd)
 				commandIssued = true
 				switch cmd {

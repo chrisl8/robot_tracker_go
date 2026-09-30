@@ -257,6 +257,20 @@ func (p *Planner) GetClearance(robotID int) float64 {
 	return clearance(robot, allObstacles)
 }
 
+// ClearanceAt is GetClearance for a robot hypothetically standing at pos: the
+// gap between its body and the nearest obstacle. It lets the caller ask whether
+// a move would take the robot closer to an obstacle.
+func (p *Planner) ClearanceAt(robotID int, pos [2]float64) float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	robot, exists := p.coordinator.GetRobotState(robotID)
+	if !exists {
+		return 1e10
+	}
+	robot.Position = pos
+	return clearance(robot, p.allObstaclesLocked())
+}
+
 func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

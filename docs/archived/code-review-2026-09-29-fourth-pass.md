@@ -3,7 +3,7 @@
 ## Context
 
 A fourth full review, expecting little after the third (`code-review-2026-09-29-third-pass.md`).
-It found three real problems, all in the same family as the earlier passes' best finds:
+It found three real problems (and one design issue, fixed after), all in the same family as the earlier passes' best finds:
 **state that outlives the thing it described** (a path for a goal that was replaced, a
 device name for a port that was unplugged, waypoints in a floor frame that was recalibrated
 away). Nothing in this pass touches the frame loop, the command queue or the steering logic;
@@ -27,14 +27,18 @@ change).
 | **An Arduino replugged into a different USB port could never be reconnected.** `Connect()` overwrote the configured `"auto"` with the first detected device (`/dev/cu.usbmodem1101`), so the queue's reconnect loop retried that dead name forever (until restart). | The configured port and the opened device are separate fields; `auto` re-detects on every `Connect`. `listSerialPorts` seam for the test. |
 | **Recalibrating with a goal set left the planner in the old floor frame** (previously listed under "left alone"). Waypoints, the goal and the planner's last robot position were in the replaced frame; `RecomputeObstacleWorld` then triggered a replan *from that stale position*. | `OnCalibrationComplete` releases every goal/path, clears the UI destination and stops the robot before anything replans; the operator sets the destination again. |
 
-## Found, not changed (needs a decision)
+## Fixed after the pass (operator decision)
 
-- **A robot that starts within 8 cm of an obstacle can never leave in Auto.** Autonomy stops
-  and `continue`s while `GetClearance < 0.08`, before it steers, so it never moves. Meanwhile
-  A\* deliberately plans *out* from inside the margin (`r + 0.12` m, with the start cells
-  cleared). It logs a PROXIMITY WARNING every frame (~15 lines/s) while stuck. Operator can
-  drive it out in Pilot mode. Options: allow steering while the clearance is not decreasing,
-  or lower the stop threshold below the planning margin only for the first seconds of a run.
+- **A robot within 8 cm of an obstacle could never leave in Auto.** Autonomy stopped and
+  skipped steering while `GetClearance < 0.08`, and logged every frame, while A\* planned out
+  from inside the margin. Being near an obstacle no longer stops the robot: it still replans
+  (every 3 s) and may turn and drive away; only a Forward/Backward move whose position 5 cm
+  ahead has *less* clearance than now (`Planner.ClearanceAt`) is refused. Test: a robot 5 cm
+  from a wall drives off when the goal is behind it (fails on the old code) and does not close
+  in when the goal is beyond it.
+
+## Found, not changed
+
 - A stalled serial write still holds the controller mutex, which `IsConnected()` (called from
   the frame loop once a second) shares (carried over from the third pass).
 - `normalizeAngle` / `BearingToCommand` normalise with a `for` loop; an infinite heading would

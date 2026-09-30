@@ -323,3 +323,44 @@ func TestOnCalibrationComplete_ReleasesGoalsFromTheOldFrame(t *testing.T) {
 		t.Errorf("robot still has a path after recalibration (next waypoint %v)", wp)
 	}
 }
+
+// Being close to an obstacle must never pin the robot in place: it may turn and
+// drive away, and only a move that closes the gap is refused. (It used to stop
+// whenever the gap was under 8 cm, before steering, so a robot that started or
+// ended up that close could never leave in Auto.)
+func TestExecuteAutonomousControl_NearObstacleCanDriveAwayButNotCloserIn(t *testing.T) {
+	const gap = 0.05 // robot edge to obstacle, under proximityClearance
+	robotPos := [2]float64{1.0 - 0.15 - gap, 0}
+	for _, tc := range []struct {
+		name        string
+		goal        [2]float64
+		heading     float64
+		wantForward bool
+	}{
+		{"goal behind, facing away: drives off", [2]float64{-1, 0}, math.Pi, true},
+		{"goal beyond, facing the obstacle: does not close in", [2]float64{3, 0}, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rs := newDemoAutonomyRig(t)
+			startRigQueue(t, rs)
+			rs.planning.planner.SetObstacles([]planning.Obstacle{
+				planning.NewRectObstacle("wall", [2]float64{1.0, -1}, [2]float64{1.5, 1}),
+			})
+			rs.planning.planner.AddRobot(demoAutonomyTagID, robotPos, 0.3)
+			rs.planning.planner.SetGoal(demoAutonomyTagID, tc.goal)
+
+			track := confirmedTrack(1, demoAutonomyTagID)
+			track.WorldPos = robotPos
+			track.Heading = tc.heading
+			rs.executeAutonomousControl([]tracking.Track{track})
+
+			got := rs.io.robotCommands[demoAutonomyTagID]
+			if tc.wantForward && got != "forward" {
+				t.Errorf("robot near an obstacle is not allowed to drive away: command = %q, want forward", got)
+			}
+			if !tc.wantForward && got == "forward" {
+				t.Errorf("robot drove toward an obstacle it is already too close to")
+			}
+		})
+	}
+}
