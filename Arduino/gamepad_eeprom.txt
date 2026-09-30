@@ -1,0 +1,11 @@
+Gamepad (Arduino Nano) EEPROM, read with avrdude on 2026-09-30 while running #GV3r1c-Chris10-0.03.
+Read-only dump of all 1024 bytes; every byte is 0xFF (erased) except:
+
+  address 0: 0x01 (1)
+
+Meaning (from Vorpal-Hexapod-Gamepad.ino):
+  address 0: written by the original upstream dpad-style code (the write is commented out in this
+             sketch); nothing here reads it.
+  address 1: HC05_pad. 0xFF means "never set", which setup() treats as 0, so packet padding is OFF.
+             Set to 1 by holding DANCE_2 while powering on, to 0 with DANCE_1.
+Everything else is unused. To restore, this matches an erased chip plus address 0 = 0x01.
