@@ -1,0 +1,9 @@
+Robot servo trims, as printed by the robot at boot ("TRIMS: ..." on its USB serial).
+Recorded 2026-09-30 from firmware #RV3r1c-Chris10-0.01, unchanged across several boots and
+across the firmware flashes made that day, so they are the values stored in the robot's EEPROM.
+
+Servo 0..11:  22 14 -11 10 4 0 -2 6 18 6 -15 18
+
+This is a written-down copy only. It is NOT an EEPROM dump: the EEPROM layout is address 0 = 'V'
+(valid marker), addresses 1..12 = the trims, stored offset by TRIM_ZERO in the robot sketch
+(the boot line prints value minus TRIM_ZERO). A real dump needs the robot's USB adapter plugged in.
