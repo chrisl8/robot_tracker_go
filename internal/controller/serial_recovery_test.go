@@ -125,3 +125,37 @@ func TestCommandQueue_BlockedWriteDoesNotFreezeCallers(t *testing.T) {
 		t.Fatal("callers blocked behind a stalled serial write")
 	}
 }
+
+// With port "auto", every reconnect must detect the device again. Remembering
+// the first detection made an Arduino replugged into another USB port (which
+// gets a new /dev/cu.usbmodem name) unreachable until the process restarted.
+func TestArduino_AutoPortIsRedetectedOnReconnect(t *testing.T) {
+	origList, origOpen, origDelay := listSerialPorts, openSerial, arduinoStartupDelay
+	t.Cleanup(func() { listSerialPorts, openSerial, arduinoStartupDelay = origList, origOpen, origDelay })
+	arduinoStartupDelay = 0
+
+	present := "/dev/cu.usbmodem1101"
+	listSerialPorts = func() []string { return []string{"/dev/cu.Bluetooth-Incoming-Port", present} }
+	var opened []string
+	openSerial = func(name string, _ *serial.Mode) (serial.Port, error) {
+		opened = append(opened, name)
+		return &recordingPort{}, nil
+	}
+
+	ctrl := NewArduinoController("auto", 0)
+	if err := ctrl.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	if got := ctrl.GetPort(); got != present {
+		t.Fatalf("GetPort() = %q, want %q", got, present)
+	}
+	_ = ctrl.Disconnect()
+
+	present = "/dev/cu.usbmodem1201" // replugged into a different USB port
+	if err := ctrl.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"/dev/cu.usbmodem1101", "/dev/cu.usbmodem1201"}; len(opened) != 2 || opened[0] != want[0] || opened[1] != want[1] {
+		t.Errorf("opened %v, want %v", opened, want)
+	}
+}

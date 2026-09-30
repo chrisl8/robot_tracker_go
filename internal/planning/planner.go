@@ -198,10 +198,23 @@ func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 		if success {
 			p.paths[robotID] = path
 			p.currentWaypoint[robotID] = 0
+		} else {
+			p.dropPathLocked(robotID)
 		}
 	} else {
 		utils.Debugf("SetGoal: robot %d NOT in planner yet, goal stored for later", robotID)
+		p.dropPathLocked(robotID)
 	}
+}
+
+// dropPathLocked forgets robotID's current path, keeping its goal so
+// GetPathsWithGoals/AddRobot retry planning. A path that no longer leads to the
+// robot's goal must not be followed: the robot would drive to the old
+// destination and then hover there, since goal-reached is judged against the
+// new goal. Callers must hold p.mu.
+func (p *Planner) dropPathLocked(robotID int) {
+	delete(p.paths, robotID)
+	delete(p.currentWaypoint, robotID)
 }
 
 // replanAllPathsLocked requires the caller to already hold p.mu.
@@ -220,6 +233,12 @@ func (p *Planner) replanAllPathsLocked() {
 		if success {
 			p.paths[robotID] = path
 			p.currentWaypoint[robotID] = 0
+		} else {
+			// The old path predates the obstacle change that made this fail
+			// (the goal may now be blocked); stop following it. The goal is
+			// kept, and GetPathsWithGoals retries planning.
+			utils.Logf("Robot %d: replan after obstacle change failed, dropping its path", robotID)
+			p.dropPathLocked(robotID)
 		}
 	}
 }

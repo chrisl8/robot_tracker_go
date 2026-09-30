@@ -6,6 +6,8 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -291,5 +293,33 @@ func TestIsRepeatFrame(t *testing.T) {
 				t.Errorf("isRepeatFrame(%d, %+v) = %v, want %v", tt.lastSeq, tt.frame, got, tt.want)
 			}
 		})
+	}
+}
+
+// A recalibration replaces the pixel->floor mapping, so a goal and path made
+// under the old one are in the wrong frame. They must be released rather than
+// followed (the planner would otherwise steer by stale waypoints until the next
+// replan, and replan from a stale robot position).
+func TestOnCalibrationComplete_ReleasesGoalsFromTheOldFrame(t *testing.T) {
+	rs := newDemoAutonomyRig(t)
+	rs.registerWebServerCallbacks()
+	rs.planning.planner.AddRobot(demoAutonomyTagID, [2]float64{1, 1}, 0.3)
+	rs.planning.planner.SetGoal(demoAutonomyTagID, [2]float64{3, 3})
+	if _, ok := rs.planning.planner.GetNextWaypoint(demoAutonomyTagID); !ok {
+		t.Fatal("setup: expected a path to the goal")
+	}
+
+	calibFile := filepath.Join(t.TempDir(), "calibration.yaml")
+	const calib = "homography:\n  - [0.02, 0, 0]\n  - [0, 0.02, 0]\n  - [0, 0, 1]\nworld_scale: 50\n"
+	if err := os.WriteFile(calibFile, []byte(calib), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rs.web.webServer.Callbacks.OnCalibrationComplete(calibFile)
+
+	if goals := rs.planning.planner.RobotsWithGoals(); len(goals) != 0 {
+		t.Errorf("goals still set after recalibration: %v", goals)
+	}
+	if wp, ok := rs.planning.planner.GetNextWaypoint(demoAutonomyTagID); ok {
+		t.Errorf("robot still has a path after recalibration (next waypoint %v)", wp)
 	}
 }

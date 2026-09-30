@@ -483,3 +483,39 @@ func TestPlanner_GoalBeforeRobotSeen_PlansFromActualPosition(t *testing.T) {
 		t.Errorf("first waypoint %v is far from the robot at (1.5, 1.5): planned from the wrong start", wp)
 	}
 }
+
+// A goal that cannot be planned must not leave the robot following the path to
+// its previous goal: goal-reached is judged against the new goal, so the robot
+// would drive to the old destination and hover there.
+func TestPlanner_UnplannableGoalDropsOldPath(t *testing.T) {
+	blocked := NewRectObstacle("box", [2]float64{-1.05, 0.95}, [2]float64{-0.95, 1.05})
+	tests := []struct {
+		name string
+		act  func(p *Planner)
+	}{
+		{"SetGoal to an unreachable goal", func(p *Planner) {
+			p.SetObstacles([]Obstacle{blocked})
+			p.SetGoal(1, [2]float64{-1, 1})
+		}},
+		{"obstacle appears over the existing goal", func(p *Planner) {
+			p.SetObstacles([]Obstacle{NewRectObstacle("box", [2]float64{1.95, -0.05}, [2]float64{2.05, 0.05})})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewPlanner(nil)
+			p.AddRobot(1, [2]float64{0, 0}, 0.3)
+			p.SetGoal(1, [2]float64{2, 0})
+			if _, ok := p.GetNextWaypoint(1); !ok {
+				t.Fatal("setup: expected a path to the first goal")
+			}
+			tt.act(p)
+			if wp, ok := p.GetNextWaypoint(1); ok {
+				t.Errorf("robot still has a path (next waypoint %v) that no longer leads to its goal", wp)
+			}
+			if _, ok := p.GetGoal(1); !ok {
+				t.Error("the goal must be kept so planning can be retried")
+			}
+		})
+	}
+}

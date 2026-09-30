@@ -14,11 +14,13 @@ import (
 // lets the Arduino finish resetting (opening the port resets most boards).
 var (
 	openSerial          = serial.Open
+	listSerialPorts     = globSerialPorts
 	arduinoStartupDelay = ArduinoStartupDelay
 )
 
 type ArduinoController struct {
-	port      string
+	port      string // as configured: a device path, or "auto" to detect on every Connect
+	openPort  string // the device actually opened by the last successful Connect
 	baudrate  int
 	timeout   time.Duration
 	serial    serial.Port
@@ -26,7 +28,7 @@ type ArduinoController struct {
 	// connecting is set while Connect opens the port and waits out the
 	// board's reset, so a second Connect can't open the port twice.
 	connecting bool
-	mu         sync.Mutex // guards serial, connected and connecting
+	mu         sync.Mutex // guards serial, openPort, connected and connecting
 }
 
 func NewArduinoController(port string, baudrate int) *ArduinoController {
@@ -81,7 +83,10 @@ func (c *ArduinoController) Connect() error {
 
 	c.mu.Lock()
 	c.serial = sp
-	c.port = port
+	// Remember the detected device separately: overwriting the configured
+	// "auto" would pin every later reconnect to this device name, so an Arduino
+	// replugged into another USB port (a new name) could never be found again.
+	c.openPort = port
 	c.connected = true
 	c.mu.Unlock()
 
@@ -143,14 +148,19 @@ func (c *ArduinoController) IsConnected() bool {
 	return c.connected
 }
 
+// GetPort returns the device in use, or the configured port if none has been
+// opened yet.
 func (c *ArduinoController) GetPort() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.openPort != "" {
+		return c.openPort
+	}
 	return c.port
 }
 
 func (c *ArduinoController) autoDetectPort() (string, error) {
-	ports := filterArduinoPorts(globSerialPorts())
+	ports := filterArduinoPorts(listSerialPorts())
 	if len(ports) == 0 {
 		return "", fmt.Errorf("no Arduino ports found")
 	}

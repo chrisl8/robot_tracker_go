@@ -73,6 +73,11 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 				return
 			}
 			rs.web.webServer.SetPositionEstimator(rs.position.positionEst)
+			// Goals, waypoints and the planner's last robot positions are in
+			// the floor frame that was just replaced. Following them would
+			// steer by stale coordinates, so release them (and stop the robot)
+			// before anything replans; the operator sets the destination again.
+			rs.releaseGoalsForRecalibration()
 			// Obstacles are stored in pixels; their floor coordinates depend on
 			// the calibration that was just replaced.
 			rs.web.webServer.RecomputeObstacleWorld()
@@ -143,6 +148,21 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 
 	rs.web.webServer.Callbacks.OnGetControlState = func() (string, bool) {
 		return rs.GetControlMode().String(), rs.IsEmergencyStopped()
+	}
+}
+
+// releaseGoalsForRecalibration drops every robot's goal and path and stops the
+// robot, because they were expressed in the previous calibration's world frame.
+func (rs *RobotSystem) releaseGoalsForRecalibration() {
+	released := false
+	for _, robotID := range rs.planning.planner.RobotsWithGoals() {
+		utils.Logf("Recalibrated: releasing the goal of robot %d (set the destination again)", robotID)
+		rs.planning.planner.CompletePath(robotID)
+		rs.web.webServer.ClearDestination(robotID)
+		released = true
+	}
+	if released && rs.io.commandQueue != nil {
+		rs.io.commandQueue.Enqueue(controller.CommandStop)
 	}
 }
 
