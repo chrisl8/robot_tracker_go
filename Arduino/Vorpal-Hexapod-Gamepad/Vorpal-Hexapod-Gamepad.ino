@@ -8,7 +8,7 @@
 // https://github.com/vorpalrobotics/VorpalHexapod
 // https://www.dropbox.com/sh/0stxwsw918kfwa3/AAD4RSyTBRpRV1i8guklWj8na?dl=0
 
-const char *Version = "#GV3r1c-Chris10-0.02"; // this has been modified for this codebase
+const char *Version = "#GV3r1c-Chris10-0.03"; // this has been modified for this codebase
 
 // This is the code that runs on the Gamepad in the Vorpal The Hexapod project.
 
@@ -618,20 +618,21 @@ void handleSerialCommand(char c)
 
 // ============ ROBOT LINK CHECK (spike) ============
 //
-// Once a second one transmit frame carries an extra 'S' command (payload length 9
-// instead of 8). The robot answers with a sensor packet:
-//   'V' '1' 8 <A3 hi,lo> <A6 hi,lo> <A7 hi,lo> <ultrasonic cm hi,lo> <checksum> [zero padding]
+// Once a second one transmit frame carries an extra 'H' (heartbeat) command (payload
+// length 9 instead of 8). This needs the robot firmware from Arduino/Vorpal-Hexapod-Robot
+// (#RV3r1c-Chris10-...): an unmodified robot treats 'H' as a bad command and beeps an error.
+// The robot answers with:
+//   'V' '1' 4 <uptime seconds hi,lo> <servos detached 0/1> <mode char> <checksum> [zero padding]
 // which is validated here and reported to the Mac as one text line:
-//   #R=<A3>,<A6>,<A7>,<ultrasonic cm>     valid reply (cm 1000 = out of range)
-//   #RBAD:<reason>                        reply that failed framing/checksum
+//   #R=<uptime s>,<servos detached>,<mode char as a number>   valid reply
+//   #RBAD:<reason>                                            reply that failed framing/checksum
 // Any other byte from the robot (its boot banner etc.) is passed through unchanged.
-// NOTE: the robot suppresses its sleep mode whenever it handles an 'S' command.
 
-#define SENSOR_POLL_MS 1000
-#define SENSOR_REPLY_LEN 8
+#define HEARTBEAT_POLL_MS 1000
+#define HEARTBEAT_REPLY_LEN 4
 #define REPLY_TIMEOUT_MS 100
 
-unsigned long nextSensorPoll = 0;
+unsigned long nextHeartbeatPoll = 0;
 
 enum ReplyState
 {
@@ -644,7 +645,7 @@ enum ReplyState
 ReplyState rxState = RX_IDLE;
 byte rxPos = 0;
 byte rxSum = 0;
-byte rxBuf[SENSOR_REPLY_LEN];
+byte rxBuf[HEARTBEAT_REPLY_LEN];
 unsigned long rxLastByte = 0;
 
 void handleRobotByte(byte c)
@@ -674,7 +675,7 @@ void handleRobotByte(byte c)
     }
     break;
   case RX_GOT_HEADER:
-    if (c == SENSOR_REPLY_LEN)
+    if (c == HEARTBEAT_REPLY_LEN)
     {
       rxPos = 0;
       rxSum = c;
@@ -690,7 +691,7 @@ void handleRobotByte(byte c)
   case RX_DATA:
     rxBuf[rxPos++] = c;
     rxSum += c;
-    if (rxPos == SENSOR_REPLY_LEN)
+    if (rxPos == HEARTBEAT_REPLY_LEN)
     {
       rxState = RX_SUM;
     }
@@ -699,11 +700,11 @@ void handleRobotByte(byte c)
     if (c == rxSum)
     {
       Serial.print("#R=");
-      for (byte i = 0; i < SENSOR_REPLY_LEN; i += 2)
-      {
-        Serial.print((unsigned int)word(rxBuf[i], rxBuf[i + 1]));
-        Serial.print(i + 2 < SENSOR_REPLY_LEN ? ',' : '\n');
-      }
+      Serial.print((unsigned int)word(rxBuf[0], rxBuf[1]));
+      Serial.print(',');
+      Serial.print(rxBuf[2]);
+      Serial.print(',');
+      Serial.println(rxBuf[3]);
     }
     else
     {
@@ -998,8 +999,8 @@ void loop()
       Serial.print(CurSubCmd);
       Serial.println(CurDpad);
     }
-    bool pollSensors = millis() >= nextSensorPoll;
-    int length = pollSensors ? 9 : 8; // 8 = mode(3) + beep(5), plus 'S' when polling
+    bool pollRobot = millis() >= nextHeartbeatPoll;
+    int length = pollRobot ? 9 : 8; // 8 = mode(3) + beep(5), plus 'H' when polling
     BlueTooth.print("V1"); // Vorpal hexapod radio protocol header version 1
     BlueTooth.write(length);
     BlueTooth.write(CurCmd);
@@ -1009,11 +1010,11 @@ void loop()
     unsigned int checksum = sendbeep(0);
 
     checksum += length + CurCmd + CurSubCmd + CurDpad;
-    if (pollSensors)
+    if (pollRobot)
     {
-      BlueTooth.write('S');
-      checksum += 'S';
-      nextSensorPoll = millis() + SENSOR_POLL_MS;
+      BlueTooth.write('H');
+      checksum += 'H';
+      nextHeartbeatPoll = millis() + HEARTBEAT_POLL_MS;
     }
     checksum = (checksum % 256);
     BlueTooth.write(checksum);

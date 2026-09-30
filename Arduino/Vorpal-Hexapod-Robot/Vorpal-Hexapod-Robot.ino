@@ -6,7 +6,7 @@
 //
 // See below all the license comments for new features in this version. (Search for NEW FEATURES)
 
-const char *Version = "#RV3r1c"; // This version supports padding out radio packets to 230 bytes to support newer HC05 firmware versions (starting with 3 and 4)
+const char *Version = "#RV3r1c-Chris10-0.01"; // This version supports padding out radio packets to 230 bytes to support newer HC05 firmware versions (starting with 3 and 4)
                                  // This version fixes a bug in Griparm mode ("A" mode on dial)
 
 //////////// FOR MORE INFORMATION ///////////////////////////////////
@@ -1561,6 +1561,9 @@ void boogie_woogie(int legs_flat, int submode, int timingfactor) {
 }
 
 SoftwareSerial BlueTooth(3,2);  // Bluetooth pins: TX=3=Yellow wire,  RX=2=Green wire
+// Chris10: the radios in this project run their UART at 9600 (upstream uses 38400); the gamepad
+// sketch was changed to match long ago. Keep this in step with BlueTooth.begin() in the gamepad.
+#define BLUETOOTH_BAUD 9600
 
 int ServosDetached = 0;
 
@@ -1640,7 +1643,7 @@ void setup() {
 
   delay(300); // give hardware a chance to come up and stabalize
 
-  BlueTooth.begin(38400);
+  BlueTooth.begin(BLUETOOTH_BAUD);
 
   BlueTooth.println("");
   delay(250);
@@ -1894,6 +1897,33 @@ void packetErrorChirp(char c) {
 byte lastCmd = 's';
 byte priorCmd = 0;
 byte mode = MODE_WALK; // default
+
+// ---- Chris10 addition: heartbeat ('H' command) ----------------------------------------------
+// Lets the host tell that the robot is powered and its radio link works. Unlike 'S' it does not
+// read the ultrasonic sensor (which blocks for up to 18 ms) and does not touch startedStanding,
+// so the servos still power down after BATTERYSAVER ms of standing even while it is polled.
+//
+// Reply packet: 'V' '1' 4 <uptime seconds hi,lo> <ServosDetached 0/1> <mode char> <checksum>
+void
+sendHeartbeat() {
+  unsigned int uptime = (unsigned int)(millis() / 1000UL); // wraps after about 18 hours
+  int length = 4;
+  unsigned int checksum = length;
+
+  BlueTooth.print("V");
+  BlueTooth.print("1");
+  BlueTooth.write(length);
+  checksum += bluewriteword(uptime);
+  int detached = ServosDetached ? 1 : 0;
+  BlueTooth.write(detached);
+  checksum += detached;
+  BlueTooth.write(mode);
+  checksum += mode;
+
+  checksum = (checksum%256);
+  BlueTooth.write(checksum);
+  padwrite(length);
+}
 byte submode = SUBMODE_1;     // standard submode.
 byte timingfactor = 1;   // default is full speed. If this is greater than 1 it multiplies the cycle time making the robot slower
 short priorDialMode = -1;
@@ -2433,6 +2463,10 @@ void processPacketData() {
           }
         }
         ////////////////////////////////////////////////////
+        break;
+      case 'H':   // heartbeat request (Chris10 addition), a single byte command
+        i++;
+        sendHeartbeat();
         break;
       default:
           Serial.print("PKERR:BadSW:"); Serial.print(packetData[i]); 
@@ -3355,7 +3389,7 @@ void loop() {
           beep(400, 40);
           delay(100);
           beep(600, 40);
-          BlueTooth.begin(38400);
+          BlueTooth.begin(BLUETOOTH_BAUD);
           LastReceiveTime = LastValidReceiveTime = millis();
           lastCmd = -1;  // for safety put it in stop mode
         }
