@@ -93,6 +93,9 @@ type StatusMessage struct {
 	FPS          float64 `json:"fps"`
 	RobotCount   int     `json:"robotCount"`
 	ArduinoState string  `json:"arduinoState"`
+	// RobotLink is "alive", "silent" or "unknown". "silent" while ArduinoState
+	// is Connected means the gamepad is fine but the robot is off or out of range.
+	RobotLink    string  `json:"robotLink"`
 	HostMemoryMB float64 `json:"hostMemoryMB,omitempty"`
 	UptimeSec    float64 `json:"uptimeSec,omitempty"`
 	// CameraStalled is true when no video frame has been processed for a couple

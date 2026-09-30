@@ -74,7 +74,7 @@ export const useRobotStore = defineStore('robot', () => {
                 break
             }
             case 'status':
-                status.value = data.status
+                setStatus(data.status)
                 break
             case 'obstacles':
                 if (data.obstacles && Array.isArray(data.obstacles.obstacles)) {
@@ -158,8 +158,33 @@ export const useRobotStore = defineStore('robot', () => {
         remapSelection()
     }
 
+    // True once the user has been told the robot went silent, so the recovery
+    // (and only the recovery) is announced too.
+    let robotSilentAlerted = false
+
     function setStatus(newStatus: RobotStatus): void {
         status.value = newStatus
+        announceRobotLink(newStatus)
+    }
+
+    // Warn once when the robot stops answering while the Arduino link is still up
+    // (otherwise the panel just shows a green "Connected" for a robot that's off).
+    function announceRobotLink(s: RobotStatus): void {
+        const uiStore = useUIStore()
+        const silent = s.robotLink === 'silent' && s.arduinoState === 'Connected'
+        if (silent && !robotSilentAlerted) {
+            robotSilentAlerted = true
+            const message = 'Robot is not responding: check that it is powered on and in range'
+            uiStore.showToast(message, 'error', 10000)
+            uiStore.addLogEntry('error', message)
+        } else if (!silent && robotSilentAlerted) {
+            // Only a real recovery is announced; losing the Arduino link resets quietly.
+            if (s.robotLink === 'alive') {
+                uiStore.showToast('Robot is responding again', 'success')
+                uiStore.addLogEntry('success', 'Robot is responding again')
+            }
+            robotSilentAlerted = false
+        }
     }
 
     function clearTracks(): void {

@@ -20,6 +20,32 @@ const fpsBarColor = computed(() => {
     if (fps > 10) return 'var(--warning-amber)'
     return 'var(--alert-red)'
 })
+
+// The robot answers the gamepad's poll; only meaningful while the Arduino is up.
+const robotLinkText = computed(() => {
+    if (robotStore.status.arduinoState !== 'Connected') return 'No controller'
+    switch (robotStore.status.robotLink) {
+        case 'alive':
+            return 'Responding'
+        case 'silent':
+            return 'NOT RESPONDING'
+        default:
+            return 'Checking...'
+    }
+})
+
+// Unknown (still checking) gets neither colour, so it doesn't flash red on connect.
+const robotLinkClass = computed(() => {
+    if (robotStore.status.arduinoState !== 'Connected') return 'disconnected'
+    switch (robotStore.status.robotLink) {
+        case 'alive':
+            return 'connected'
+        case 'silent':
+            return 'disconnected'
+        default:
+            return ''
+    }
+})
 </script>
 
 <template>
@@ -38,6 +64,13 @@ const fpsBarColor = computed(() => {
                 >
                     <span class="comm-dot"></span>
                     {{ robotStore.status.arduinoState }}
+                </span>
+            </div>
+            <div class="comm-row">
+                <span class="comm-label">Robot</span>
+                <span class="comm-status" :class="robotLinkClass">
+                    <span class="comm-dot"></span>
+                    {{ robotLinkText }}
                 </span>
             </div>
             <div class="comm-row-stacked">

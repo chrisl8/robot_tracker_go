@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chrisl8/robot_tracker_go/internal/camera"
+	"github.com/chrisl8/robot_tracker_go/internal/controller"
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
 	"github.com/chrisl8/robot_tracker_go/internal/position"
 	"github.com/chrisl8/robot_tracker_go/internal/tracking"
@@ -103,6 +104,22 @@ func (rs *RobotSystem) noteFrameSize(width, height int) {
 	}
 }
 
+// updateRobotLink reads the robot's link state from the controller and logs
+// each change, so a robot that went silent shows up in the service log too.
+func (rs *RobotSystem) updateRobotLink() controller.RobotLink {
+	link := controller.RobotLinkUnknown
+	if rs.io.arduino != nil {
+		link = rs.io.arduino.RobotLink(time.Now())
+	}
+	if link != rs.io.lastRobotLink {
+		if rs.io.lastRobotLink != "" || link != controller.RobotLinkUnknown {
+			utils.Logf("Robot link: %q -> %q", rs.io.lastRobotLink, link)
+		}
+		rs.io.lastRobotLink = link
+	}
+	return link
+}
+
 // broadcastFrameStats pushes per-frame tag/track counts and Arduino/FPS
 // status to the web server, throttling the status/tag broadcast to roughly
 // once a second via statusBroadcastDue(). Shared by ProcessFrame and
@@ -117,6 +134,7 @@ func (rs *RobotSystem) broadcastFrameStats(tagCount, trackCount int, tags []dete
 	// Broadcast Arduino status via WebSocket every ~1 second (30 frames)
 	if rs.statusBroadcastDue() {
 		rs.web.webServer.SetArduinoConnected(rs.io.arduino != nil && rs.io.arduino.IsConnected())
+		rs.web.webServer.SetRobotLink(string(rs.updateRobotLink()))
 		rs.web.webServer.BroadcastStatus(trackCount, rs.stats.smoothedFPS, time.Since(rs.stats.startTime).Seconds())
 	}
 

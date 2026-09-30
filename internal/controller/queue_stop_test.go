@@ -18,6 +18,8 @@ type recordingPort struct {
 	mu  sync.Mutex
 	buf []byte
 
+	incoming   []byte        // bytes the next Read hands out (what the gamepad "sent"); guarded by mu
+	failReads  atomic.Bool   // every Read returns an error while set
 	failWrites atomic.Bool   // every Write returns an error while set
 	block      chan struct{} // if non-nil, Write blocks until it is closed
 	closed     atomic.Bool
@@ -36,6 +38,29 @@ func (p *recordingPort) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// Read hands out queued incoming bytes, or after a short pause reports a read
+// timeout (0, nil) like a real port; it fails once closed or failReads is set.
+func (p *recordingPort) Read(b []byte) (int, error) {
+	if p.closed.Load() || p.failReads.Load() {
+		return 0, errors.New("simulated read failure")
+	}
+	p.mu.Lock()
+	n := copy(b, p.incoming)
+	p.incoming = p.incoming[n:]
+	p.mu.Unlock()
+	if n == 0 {
+		time.Sleep(2 * time.Millisecond)
+	}
+	return n, nil
+}
+
+// feed queues bytes for the reader, as if the gamepad had printed them.
+func (p *recordingPort) feed(s string) {
+	p.mu.Lock()
+	p.incoming = append(p.incoming, s...)
+	p.mu.Unlock()
+}
+
 func (p *recordingPort) Close() error {
 	p.closed.Store(true)
 	return nil
@@ -47,7 +72,7 @@ func (p *recordingPort) SetReadTimeout(time.Duration) error { return nil }
 func (p *recordingPort) commands() []Command {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var out []Command
+	out := make([]Command, 0, len(p.buf)/3)
 	for i := 0; i < len(p.buf); i += 3 {
 		out = append(out, Command(p.buf[i]))
 	}

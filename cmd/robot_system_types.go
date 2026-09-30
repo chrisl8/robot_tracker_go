@@ -82,7 +82,8 @@ type controlIOSubsystem struct {
 	waypointThreshold   float64
 	trackingLostTimeout time.Duration
 	lastCommandTime     time.Time
-	robotCommands       map[int]string // tag_id -> current motion state
+	robotCommands       map[int]string       // tag_id -> current motion state
+	lastRobotLink       controller.RobotLink // last state reported, to log transitions; frame loop only
 }
 
 // webSubsystem owns the HTTP/WebSocket/MJPEG server.

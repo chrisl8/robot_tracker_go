@@ -19,6 +19,7 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 
 	s.stats.arduinoMutex.RLock()
 	connected := s.stats.arduinoConnected
+	robotLink := s.stats.robotLink
 	s.stats.arduinoMutex.RUnlock()
 
 	state := "Disconnected"
@@ -32,6 +33,7 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 		"robotCount":   tagCount,
 		"tagCount":     tagCount,
 		"arduinoState": state,
+		"robotLink":    robotLink,
 		"hostMemoryMB": hostMemMB,
 		"uptimeSec":    uptimeSec,
 	})
@@ -49,6 +51,14 @@ func (s *WebServer) SetArduinoConnected(connected bool) {
 	s.stats.arduinoMutex.Unlock()
 }
 
+// SetRobotLink records whether the robot is answering ("alive", "silent" or
+// "unknown"); it is sent with the next status broadcast.
+func (s *WebServer) SetRobotLink(link string) {
+	s.stats.arduinoMutex.Lock()
+	s.stats.robotLink = link
+	s.stats.arduinoMutex.Unlock()
+}
+
 func (s *WebServer) BroadcastStatus(trackCount int, fps float64, uptimeSec float64) {
 	s.broadcastStatus(trackCount, fps, uptimeSec, 0, false)
 }
@@ -63,6 +73,7 @@ func (s *WebServer) BroadcastCameraStalled(uptimeSec, frameAgeSec float64) {
 func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec float64, stalled bool) {
 	s.stats.arduinoMutex.RLock()
 	connected := s.stats.arduinoConnected
+	robotLink := s.stats.robotLink
 	s.stats.arduinoMutex.RUnlock()
 
 	state := "Disconnected"
@@ -87,6 +98,7 @@ func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec 
 			FPS:          fps,
 			RobotCount:   trackCount,
 			ArduinoState: state,
+			RobotLink:    robotLink,
 			HostMemoryMB: hostMemMB,
 			UptimeSec:    uptimeSec,
 

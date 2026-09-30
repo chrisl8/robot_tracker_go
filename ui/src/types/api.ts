@@ -40,6 +40,10 @@ export interface RobotStatus {
     fps: number
     robotCount: number
     arduinoState: 'Connected' | 'Disconnected' | 'Searching' | 'Error'
+    // Whether the robot itself answers the gamepad's poll. 'silent' with the
+    // Arduino Connected means the gamepad is fine but the robot is off/out of range.
+    // Absent from an older backend.
+    robotLink?: 'alive' | 'silent' | 'unknown'
     hostMemoryMB?: number
     uptimeSec?: number
     // True when no camera frame has been processed for > 2 s (fps is then 0).

@@ -29,6 +29,14 @@ type ArduinoController struct {
 	// board's reset, so a second Connect can't open the port twice.
 	connecting bool
 	mu         sync.Mutex // guards serial, openPort, connected and connecting
+
+	// linkMu guards the robot-link bookkeeping (see RobotLink). It is separate
+	// from mu so a serial write stalled under mu can't block status reads.
+	// Lock order: mu, then linkMu.
+	linkMu      sync.Mutex
+	connectedAt time.Time // zero while disconnected
+	lastReply   time.Time // last valid "#R=" line since connectedAt
+	badReplies  int
 }
 
 func NewArduinoController(port string, baudrate int) *ArduinoController {
@@ -88,7 +96,10 @@ func (c *ArduinoController) Connect() error {
 	// replugged into another USB port (a new name) could never be found again.
 	c.openPort = port
 	c.connected = true
+	c.noteConnected()
 	c.mu.Unlock()
+
+	go c.readLoop(sp)
 
 	return nil
 }
@@ -100,6 +111,7 @@ func (c *ArduinoController) Disconnect() error {
 		_ = c.serial.Close()
 		c.serial = nil
 		c.connected = false
+		c.noteDisconnected()
 	}
 	return nil
 }
@@ -140,6 +152,7 @@ func (c *ArduinoController) dropConnectionLocked() {
 		c.serial = nil
 	}
 	c.connected = false
+	c.noteDisconnected()
 }
 
 func (c *ArduinoController) IsConnected() bool {
