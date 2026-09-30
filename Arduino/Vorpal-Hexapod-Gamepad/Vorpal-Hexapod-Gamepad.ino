@@ -8,7 +8,7 @@
 // https://github.com/vorpalrobotics/VorpalHexapod
 // https://www.dropbox.com/sh/0stxwsw918kfwa3/AAD4RSyTBRpRV1i8guklWj8na?dl=0
 
-const char *Version = "#GV3r1c-Chris10-0.01"; // this has been modified for this codebase
+const char *Version = "#GV3r1c-Chris10-0.02"; // this has been modified for this codebase
 
 // This is the code that runs on the Gamepad in the Vorpal The Hexapod project.
 
@@ -616,6 +616,119 @@ void handleSerialCommand(char c)
   }
 }
 
+// ============ ROBOT LINK CHECK (spike) ============
+//
+// Once a second one transmit frame carries an extra 'S' command (payload length 9
+// instead of 8). The robot answers with a sensor packet:
+//   'V' '1' 8 <A3 hi,lo> <A6 hi,lo> <A7 hi,lo> <ultrasonic cm hi,lo> <checksum> [zero padding]
+// which is validated here and reported to the Mac as one text line:
+//   #R=<A3>,<A6>,<A7>,<ultrasonic cm>     valid reply (cm 1000 = out of range)
+//   #RBAD:<reason>                        reply that failed framing/checksum
+// Any other byte from the robot (its boot banner etc.) is passed through unchanged.
+// NOTE: the robot suppresses its sleep mode whenever it handles an 'S' command.
+
+#define SENSOR_POLL_MS 1000
+#define SENSOR_REPLY_LEN 8
+#define REPLY_TIMEOUT_MS 100
+
+unsigned long nextSensorPoll = 0;
+
+enum ReplyState
+{
+  RX_IDLE,
+  RX_GOT_V,
+  RX_GOT_HEADER,
+  RX_DATA,
+  RX_SUM
+};
+ReplyState rxState = RX_IDLE;
+byte rxPos = 0;
+byte rxSum = 0;
+byte rxBuf[SENSOR_REPLY_LEN];
+unsigned long rxLastByte = 0;
+
+void handleRobotByte(byte c)
+{
+  switch (rxState)
+  {
+  case RX_IDLE:
+    if (c == 'V')
+    {
+      rxState = RX_GOT_V;
+    }
+    else if (c != 0) // zero bytes are HC05 padding between frames
+    {
+      Serial.write(c);
+    }
+    break;
+  case RX_GOT_V:
+    if (c == '1')
+    {
+      rxState = RX_GOT_HEADER;
+    }
+    else
+    {
+      Serial.write('V'); // not a frame after all, hand the byte we held back over
+      rxState = RX_IDLE;
+      handleRobotByte(c);
+    }
+    break;
+  case RX_GOT_HEADER:
+    if (c == SENSOR_REPLY_LEN)
+    {
+      rxPos = 0;
+      rxSum = c;
+      rxState = RX_DATA;
+    }
+    else
+    {
+      Serial.print("#RBAD:len=");
+      Serial.println(c);
+      rxState = RX_IDLE;
+    }
+    break;
+  case RX_DATA:
+    rxBuf[rxPos++] = c;
+    rxSum += c;
+    if (rxPos == SENSOR_REPLY_LEN)
+    {
+      rxState = RX_SUM;
+    }
+    break;
+  case RX_SUM:
+    if (c == rxSum)
+    {
+      Serial.print("#R=");
+      for (byte i = 0; i < SENSOR_REPLY_LEN; i += 2)
+      {
+        Serial.print((unsigned int)word(rxBuf[i], rxBuf[i + 1]));
+        Serial.print(i + 2 < SENSOR_REPLY_LEN ? ',' : '\n');
+      }
+    }
+    else
+    {
+      Serial.println("#RBAD:sum");
+    }
+    rxState = RX_IDLE;
+    break;
+  }
+}
+
+// Drain the robot's radio. Called every loop, whether or not the Mac is driving.
+void pumpRobotReplies()
+{
+  while (BlueTooth.available())
+  {
+    rxLastByte = millis();
+    handleRobotByte(BlueTooth.read());
+  }
+  if (rxState != RX_IDLE && millis() - rxLastByte > REPLY_TIMEOUT_MS)
+  {
+    Serial.println("#RBAD:timeout");
+    rxState = RX_IDLE;
+  }
+}
+
 void handleSerialInput()
 {
   while (Serial.available() > 0)
@@ -761,6 +874,7 @@ void send_trim(int matrix, int dpad)
 void loop()
 {
   // ============ ADD SERIAL COMMAND HANDLING ============
+  pumpRobotReplies();
   handleSerialInput();
   if (!serialControlling)
   {
@@ -815,13 +929,7 @@ void loop()
       priorLongClick = longClick; // keep track of whether we are already long clicking
     }
 
-    // if the robot sends something back to us, print it to the serial port
-    // this is likely to be sensor data for scratch or debugging info
-
-    while (BlueTooth.available())
-    {
-      Serial.write(BlueTooth.read());
-    }
+    // Robot replies are handled by pumpRobotReplies() at the top of loop().
 
     // if we get here we can finally handle the incoming button presses
 
@@ -890,19 +998,26 @@ void loop()
       Serial.print(CurSubCmd);
       Serial.println(CurDpad);
     }
+    bool pollSensors = millis() >= nextSensorPoll;
+    int length = pollSensors ? 9 : 8; // 8 = mode(3) + beep(5), plus 'S' when polling
     BlueTooth.print("V1"); // Vorpal hexapod radio protocol header version 1
-    int eight = 8;
-    BlueTooth.write(eight);
+    BlueTooth.write(length);
     BlueTooth.write(CurCmd);
     BlueTooth.write(CurSubCmd);
     BlueTooth.write(CurDpad);
 
     unsigned int checksum = sendbeep(0);
 
-    checksum += eight + CurCmd + CurSubCmd + CurDpad;
+    checksum += length + CurCmd + CurSubCmd + CurDpad;
+    if (pollSensors)
+    {
+      BlueTooth.write('S');
+      checksum += 'S';
+      nextSensorPoll = millis() + SENSOR_POLL_MS;
+    }
     checksum = (checksum % 256);
     BlueTooth.write(checksum);
-    padwrite(eight);
+    padwrite(length);
 
     setBeep(0, 0); // clear the current beep because it's been sent now
 
