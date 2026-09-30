@@ -71,11 +71,10 @@ func (rs *RobotSystem) IsEmergencyStopped() bool {
 }
 
 func (rs *RobotSystem) EmergencyStop() {
-	rs.control.controlMu.Lock()
-	rs.control.emergencyStopped = true
-	rs.control.controlMode = ControlModeIdle
-	rs.control.controlMu.Unlock()
-
+	// Stop the robot before touching controlMu: an autonomy frame holds its
+	// read lock while it runs (see executeAutonomousControl), and an e-stop must
+	// not wait for one. Halting the queue first is what makes that safe: a frame
+	// still in flight can only enqueue a movement command the queue drops.
 	// Send stop directly to Arduino, bypassing queue for reliability
 	if rs.io.arduino != nil {
 		_ = rs.io.arduino.SendCommand(controller.CommandStop)
@@ -83,6 +82,11 @@ func (rs *RobotSystem) EmergencyStop() {
 	if rs.io.commandQueue != nil {
 		rs.io.commandQueue.EmergencyStop()
 	}
+
+	rs.control.controlMu.Lock()
+	rs.control.emergencyStopped = true
+	rs.control.controlMode = ControlModeIdle
+	rs.control.controlMu.Unlock()
 	utils.Logf("EMERGENCY STOP activated")
 }
 

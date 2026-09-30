@@ -179,9 +179,10 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 		}
 	}
 
-	rs.web.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots, rs.io.robotCommands)
-
 	rs.executeAutonomousControl(trackingResult.Tracks)
+
+	// After autonomy, so the motion state sent is this frame's, not last frame's.
+	rs.web.webServer.BroadcastTracks(trackingResult.Tracks, rs.cfg.Robots, rs.io.robotCommands)
 
 	if rs.web.webServer.CalibrationViewActive() {
 		// Calibration wizard open: send the clean camera view, no detection overlay.

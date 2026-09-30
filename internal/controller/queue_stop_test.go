@@ -341,3 +341,59 @@ func TestPathExecutor_Reset_ForgetsStaleBurst(t *testing.T) {
 		t.Errorf("first command after Reset = %q, want forward", got)
 	}
 }
+
+// Autonomy drops a robot's path when an obstacle blocks the goal or a replan
+// fails. ClearActiveCommand only stops the heartbeat re-sending the drive
+// command: the robot keeps running on it until the next heartbeat writes Stop
+// (measured ~380 ms), so the caller needs a stop that goes out at once.
+func TestCommandQueue_StopIfActive_StopsRobotWithoutWaitingForHeartbeat(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.Start()
+	defer q.Stop()
+
+	q.Enqueue(CommandForward)
+	waitFor(t, func() bool { return len(port.commands()) >= 1 })
+	time.Sleep(120 * time.Millisecond) // driving for a few frames
+	before := len(port.commands())
+
+	q.StopIfActive()
+	time.Sleep(100 * time.Millisecond)
+
+	got := port.commands()
+	if len(got) <= before || got[len(got)-1] != CommandStop {
+		t.Fatalf("Stop had not reached the robot 100 ms after the path was dropped: %q", got)
+	}
+	if q.HasActiveCommand() {
+		t.Error("the drive command is still active after the stop")
+	}
+}
+
+func TestCommandQueue_StopIfActive_IdleQueueWritesNothing(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.Start()
+	defer q.Stop()
+
+	time.Sleep(120 * time.Millisecond) // let the heartbeat's first idle Stop go out
+	before := len(port.commands())
+
+	for i := 0; i < 20; i++ { // autonomy calls this every frame while idle
+		q.StopIfActive()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := port.commands(); len(got) != before {
+		t.Errorf("an idle queue wrote %q; StopIfActive must not spam Stop", got[before:])
+	}
+}
+
+func TestCommandQueue_StopIfActive_HaltedQueueStaysHalted(t *testing.T) {
+	q, port := newRecordingQueue()
+	q.Start()
+	q.EmergencyStop()
+	n := len(port.commands())
+
+	q.StopIfActive()
+	time.Sleep(60 * time.Millisecond)
+	if got := port.commands(); len(got) != n {
+		t.Errorf("wrote after the e-stop: %q", got)
+	}
+}

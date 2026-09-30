@@ -333,9 +333,10 @@ func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags 
 		if rs.cfg != nil {
 			robots = rs.cfg.Robots
 		}
-		rs.web.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.io.robotCommands)
-
 		rs.executeAutonomousControl(trackingResult.Tracks)
+
+		// After autonomy, so the motion state sent is this frame's, not last frame's.
+		rs.web.webServer.BroadcastTracks(trackingResult.Tracks, robots, rs.io.robotCommands)
 	}
 
 	if rs.detection.detectionPipe != nil && rs.web.webServer != nil && rs.web.webServer.CalibrationViewActive() {

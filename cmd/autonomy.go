@@ -39,7 +39,18 @@ func (rs *RobotSystem) movesTowardObstacle(robotID int, cmd controller.Command, 
 
 // executeAutonomousControl handles path-following for all tracked robots.
 func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
-	if rs.GetControlMode() != ControlModeAutonomous || rs.IsEmergencyStopped() {
+	// Hold the control-state lock for the whole frame, not just the check.
+	// SetControlMode takes it for writing while it stops the robot, so a switch
+	// to Hold/Pilot now waits for a frame already in flight instead of being
+	// followed by that frame's drive command (which would run until the 2 s
+	// deadman). Nothing below may take the read lock again (GetControlMode,
+	// IsEmergencyStopped): with a writer waiting, that deadlocks.
+	rs.control.controlMu.RLock()
+	defer rs.control.controlMu.RUnlock()
+	if rs.control.controlMode != ControlModeAutonomous || rs.control.emergencyStopped {
+		// Autonomy is not driving, so no robot is: the UI must not keep drawing
+		// the last thing it did.
+		clear(rs.io.robotCommands)
 		return
 	}
 	// Demo mode can fall back from a real camera that's temporarily
@@ -48,8 +59,16 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	// let synthetic demo-tag positions drive real hardware.
 	if rs.demoMode && rs.io.arduino != nil && rs.io.arduino.IsConnected() {
 		utils.Logf("Refusing autonomous control: demo mode is active with a real Arduino connected")
+		clear(rs.io.robotCommands)
 		return
 	}
+
+	// robotCommands is what the UI draws as each robot's motion. Rebuild it every
+	// frame so a robot that autonomy did not command this frame (goal or path
+	// gone) reads as stopped instead of keeping its last state. prevCommands is
+	// only for the "not in view" log line below.
+	prevCommands := rs.io.robotCommands
+	rs.io.robotCommands = make(map[int]string)
 
 	commandIssued := false
 	anyPath := false
@@ -171,7 +190,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		if inView[robotID] {
 			continue
 		}
-		if rs.io.commandQueue != nil && rs.io.robotCommands[robotID] != "stopped" {
+		if rs.io.commandQueue != nil && prevCommands[robotID] != "stopped" {
 			utils.Logf("Robot %d has a goal but is not confirmed in view: stopping", robotID)
 		}
 		if rs.io.commandQueue != nil {
@@ -186,11 +205,13 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		rs.io.pathExecutor.Reset()
 	}
 
-	// Only clear the active command when no robot is following a path. Doing
-	// it per robot let a path-less robot wipe the command just issued for the
-	// robot that does have one.
+	// Only stop when no robot is following a path. Doing it per robot let a
+	// path-less robot wipe the command just issued for the robot that does have
+	// one. A path can vanish under a driving robot (an obstacle blocks the goal,
+	// a replan fails); merely clearing the command left it running on the last
+	// one until the next heartbeat, so send the Stop now.
 	if !anyPath && rs.io.commandQueue != nil && rs.io.commandQueue.IsRunning() {
-		rs.io.commandQueue.ClearActiveCommand()
+		rs.io.commandQueue.StopIfActive()
 	}
 
 	// Safety: stop re-sending stale commands when tracking is lost for too long.

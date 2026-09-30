@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
 import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { handleDriveKeyDown, handleDriveKeyUp } from '@/utils/driveKeys'
 import VideoOverlay from '@/components/VideoOverlay.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
 import TempObstaclesPanel from '@/components/TempObstaclesPanel.vue'
@@ -74,26 +75,11 @@ async function loadInitialData(): Promise<void> {
 
 // Keyboard controls
 function handleKeyDown(event: KeyboardEvent): void {
-    const key = event.key.toLowerCase()
-    const validKeys = ['w', 'a', 's', 'd', 'x', 'e', 'z', 'c']
-
-    if (validKeys.includes(key)) {
-        uiStore.setKey(key as Parameters<typeof uiStore.setKey>[0], true)
-
-        // Prevent default for these keys
-        if (['w', 'a', 's', 'd', 'x', 'e'].includes(key)) {
-            event.preventDefault()
-        }
-    }
+    handleDriveKeyDown(event, uiStore)
 }
 
 function handleKeyUp(event: KeyboardEvent): void {
-    const key = event.key.toLowerCase()
-    const validKeys = ['w', 'a', 's', 'd', 'x', 'e', 'z', 'c']
-
-    if (validKeys.includes(key)) {
-        uiStore.setKey(key as Parameters<typeof uiStore.setKey>[0], false)
-    }
+    handleDriveKeyUp(event, uiStore)
 }
 
 // The keyup for a held key is never delivered once the window loses focus or

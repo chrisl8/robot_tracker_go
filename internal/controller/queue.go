@@ -220,6 +220,22 @@ func (q *CommandQueue) ClearActiveCommand() {
 	q.mu.Unlock()
 }
 
+// StopIfActive stops the robot now if a movement command is being held, and
+// does nothing when the queue is idle. ClearActiveCommand on its own only stops
+// the heartbeat re-sending the command: the robot keeps running on it until the
+// next heartbeat writes Stop, up to HeartbeatTimeoutMs later. Use this when the
+// robot must not keep moving because what it was following is gone (its path).
+// Being a no-op while idle, it is safe to call every frame without writing a
+// Stop each time.
+func (q *CommandQueue) StopIfActive() {
+	q.mu.Lock()
+	active := q.hasActiveCommand
+	q.mu.Unlock()
+	if active {
+		q.Enqueue(CommandStop)
+	}
+}
+
 func (q *CommandQueue) runLoop(commandCh chan Command, stopCh chan struct{}) {
 	ticker := time.NewTicker(q.interval)
 	defer ticker.Stop()
