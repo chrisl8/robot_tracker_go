@@ -79,6 +79,8 @@ Connect the Arduino over USB. The tracker sends single ASCII characters at 9600 
 
 Format: `{char}\r\n` — for example `F\r\n`.
 
+For Vorpal the Hexapod, the Arduino is a gamepad that relays these commands to the robot over Bluetooth. The firmware for both is in `Arduino/` (see `Arduino/README.md`), and the gamepad also polls the robot once a second so the UI can show whether the robot itself is powered and answering.
+
 ```bash
 # Auto-detect serial port
 ./scripts/run.sh
@@ -221,7 +223,7 @@ robot_tracker_go/
 │   ├── ui/                     # Gin HTTP server, MJPEG stream, WebSocket, REST API
 │   └── utils/                  # Logging utilities
 ├── ui/                         # Vue 3 + TypeScript frontend (Pinia stores, canvas overlay)
-├── Arduino/                    # Arduino gamepad firmware
+├── Arduino/                    # Gamepad and robot firmware (see Arduino/README.md)
 ├── assets/                     # AprilTag print sheets
 ├── config/                     # Configuration YAML files
 └── scripts/                    # Build, run, test, and install wrappers
