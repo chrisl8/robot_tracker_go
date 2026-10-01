@@ -191,6 +191,7 @@ func (s *WebServer) setupRoutes() {
 		s.router.engine.GET("/calibration-tags/*path", gin.WrapH(http.FileServer(http.FS(staticFS))))
 	}
 	s.router.engine.GET("/", s.handleIndex)
+	s.router.engine.GET("/api/version", s.handleVersion)
 	s.router.engine.GET("/stream", s.handleMJPEG)
 	s.router.engine.GET("/ws", s.handleWebSocket)
 	s.router.engine.POST("/api/command", s.handleCommand)

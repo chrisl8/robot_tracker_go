@@ -502,3 +502,20 @@ func TestRecomputeObstacleWorld_UncalibratedLeavesObstaclesAlone(t *testing.T) {
 		t.Error("nothing changed, but the planner was notified")
 	}
 }
+
+// The page compares its own build id with this one, so the shape matters: an
+// object with a string "id" (empty when no UI build is embedded).
+func TestHandleVersion(t *testing.T) {
+	s := NewWebServer(":0")
+	w := postJSON(t, s, "GET", "/api/version", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", w.Code)
+	}
+	var v map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v["id"]; !ok {
+		t.Errorf("response %s has no id field", w.Body.String())
+	}
+}

@@ -18,6 +18,7 @@ import TelemetryPanel from '@/components/TelemetryPanel.vue'
 import CommStatus from '@/components/CommStatus.vue'
 import ActivityLog from '@/components/ActivityLog.vue'
 import CalibrationWizard from '@/components/CalibrationWizard.vue'
+import UpdateBanner from '@/components/UpdateBanner.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import BottomBar from '@/components/BottomBar.vue'
 import FpsWarning from '@/components/FpsWarning.vue'
@@ -44,6 +45,7 @@ const { isConnected } = useWebSocket(wsUrl, {
         // The backend may have restarted and forgotten the goal, paths and
         // motion state: drop ours, then take the server's word for it.
         robotStore.resetTransientState()
+        uiStore.checkForUpdate()
         loadInitialData()
     },
 })
@@ -103,6 +105,7 @@ function handleVisibilityChange(): void {
 // Lifecycle
 onMounted(() => {
     loadInitialData()
+    uiStore.checkForUpdate()
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
     window.addEventListener('blur', handleFocusLost)
@@ -119,6 +122,7 @@ onUnmounted(() => {
 
 <template>
     <div class="app-container">
+        <UpdateBanner />
         <div class="main-layout">
             <aside class="panel-left">
                 <TrackList />

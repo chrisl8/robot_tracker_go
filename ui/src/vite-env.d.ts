@@ -10,3 +10,6 @@ declare module 'element-plus/dist/index.css' {
     const content: string
     export default content
 }
+
+// Injected by vite.config.ts: the id of the build this bundle came from.
+declare const __BUILD_ID__: string

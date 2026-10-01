@@ -16,6 +16,8 @@ export default tseslint.config(
             globals: {
                 ...globals.browser,
                 ...globals.node,
+                // Injected by vite.config.ts `define`.
+                __BUILD_ID__: 'readonly',
             },
         },
     },

@@ -160,3 +160,43 @@ describe('toast and log ids', () => {
         expect(new Set(store.activityLog.map(e => e.id)).size).toBe(store.activityLog.length)
     })
 })
+
+describe('checkForUpdate', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals()
+    })
+
+    function serve(body: unknown, ok = true): void {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok, json: () => Promise.resolve(body) }))
+    }
+
+    beforeEach(() => {
+        setActivePinia(createPinia())
+        vi.stubGlobal('__BUILD_ID__', 'mine')
+    })
+
+    it('flags an update when the server reports a different build', async () => {
+        serve({ id: 'newer' })
+        const ui = useUIStore()
+        await ui.checkForUpdate()
+        expect(ui.updateAvailable).toBe(true)
+    })
+
+    it.each([
+        ['the same build', { id: 'mine' }, true],
+        ['no build embedded', { id: '' }, true],
+        ['an error response', { id: 'newer' }, false],
+    ])('does not flag an update for %s', async (_name, body, ok) => {
+        serve(body, ok)
+        const ui = useUIStore()
+        await ui.checkForUpdate()
+        expect(ui.updateAvailable).toBe(false)
+    })
+
+    it('does not flag an update when the server is unreachable', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
+        const ui = useUIStore()
+        await ui.checkForUpdate()
+        expect(ui.updateAvailable).toBe(false)
+    })
+})

@@ -30,6 +30,9 @@ export const useUIStore = defineStore('ui', () => {
 
     const toasts = ref<Toast[]>([])
 
+    // True once the server reports a different build than this page was loaded from.
+    const updateAvailable = ref(false)
+
     const calibration = ref<CalibrationState>({
         state: 'not_calibrated',
         message: '',
@@ -171,8 +174,25 @@ export const useUIStore = defineStore('ui', () => {
         activityLog.value = []
     }
 
+    // Compares this page's build id with the server's. Never claims an update on
+    // any doubt (dev server, old server without the endpoint, unreachable).
+    async function checkForUpdate(): Promise<void> {
+        const mine = typeof __BUILD_ID__ === 'undefined' ? '' : __BUILD_ID__
+        if (!mine) return
+        try {
+            const response = await fetch('/api/version')
+            if (!response.ok) return
+            const data = (await response.json()) as { id?: string }
+            if (data.id && data.id !== mine) updateAvailable.value = true
+        } catch {
+            // ignore fetch errors
+        }
+    }
+
     return {
         // State
+        updateAvailable,
+        checkForUpdate,
         panels,
         toasts,
         calibration,
