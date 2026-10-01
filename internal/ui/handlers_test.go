@@ -414,6 +414,35 @@ func TestHandleDestination_RequiresAllFields(t *testing.T) {
 	}
 }
 
+func TestHandleDestinationGet(t *testing.T) {
+	s := NewWebServer(":0")
+	get := func() DestinationMessage {
+		t.Helper()
+		w := postJSON(t, s, "GET", "/api/destination", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d, want 200", w.Code)
+		}
+		var d DestinationMessage
+		if err := json.Unmarshal(w.Body.Bytes(), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	if d := get(); d.Valid {
+		t.Errorf("fresh server reports a destination: %+v", d)
+	}
+	if w := postJSON(t, s, "POST", "/api/destination", `{"robot_id":2,"x":10,"y":20}`); w.Code != http.StatusOK {
+		t.Fatalf("set: status %d", w.Code)
+	}
+	if d := get(); !d.Valid || d.RobotID != 2 || d.X != 10 || d.Y != 20 {
+		t.Errorf("after set: %+v", d)
+	}
+	s.ClearDestination(2)
+	if d := get(); d.Valid {
+		t.Errorf("after clear: %+v", d)
+	}
+}
+
 func TestHandleDestinationClear_RequiresRobotID(t *testing.T) {
 	s := NewWebServer(":0")
 	cleared := false

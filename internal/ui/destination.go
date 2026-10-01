@@ -91,6 +91,16 @@ func (s *WebServer) handleDestination(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "destination": gin.H{"robot_id": robotID, "x": x, "y": y}})
 }
 
+// handleDestinationGet reports the pending destination so a browser that
+// (re)connects, for instance after the service restarted, can drop a goal it
+// remembers but the server does not. valid is false when there is none.
+func (s *WebServer) handleDestinationGet(c *gin.Context) {
+	s.destination.mutex.RLock()
+	dest := s.destination.current
+	s.destination.mutex.RUnlock()
+	c.JSON(http.StatusOK, dest)
+}
+
 func (s *WebServer) ClearDestination(robotID int) {
 	s.destination.mutex.Lock()
 	s.destination.current = DestinationMessage{Valid: false}

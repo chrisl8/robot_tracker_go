@@ -194,6 +194,7 @@ func (s *WebServer) setupRoutes() {
 	s.router.engine.GET("/stream", s.handleMJPEG)
 	s.router.engine.GET("/ws", s.handleWebSocket)
 	s.router.engine.POST("/api/command", s.handleCommand)
+	s.router.engine.GET("/api/destination", s.handleDestinationGet)
 	s.router.engine.POST("/api/destination", s.handleDestination)
 	s.router.engine.DELETE("/api/destination", s.handleDestinationClear)
 	s.router.engine.GET("/api/status", s.handleStatus)

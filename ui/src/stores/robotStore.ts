@@ -339,6 +339,40 @@ export const useRobotStore = defineStore('robot', () => {
         }
     }
 
+    // Run when the WebSocket comes back: the backend may have restarted and
+    // forgotten all of this (goals are deliberately not persisted), and
+    // anything still true is re-sent or re-fetched right after.
+    function resetTransientState(): void {
+        tracks.value = []
+        paths.value = []
+        destination.value = null
+        motion.value = null
+        selectedTrackId.value = null
+        selectedTagId.value = null
+        destinationMode.value = false
+    }
+
+    // Takes the backend's word for whether a goal is pending.
+    async function fetchDestination(): Promise<void> {
+        try {
+            const response = await fetch('/api/destination')
+            if (!response.ok) return
+            const d = await response.json()
+            if (d.valid) {
+                destination.value = {
+                    id: `dest-${d.robot_id}-${Date.now()}`,
+                    robot_id: d.robot_id,
+                    x: d.x,
+                    y: d.y,
+                }
+            } else {
+                destination.value = null
+            }
+        } catch {
+            // ignore fetch errors
+        }
+    }
+
     function clearPaths(): void {
         paths.value = []
     }
@@ -453,6 +487,8 @@ export const useRobotStore = defineStore('robot', () => {
         setDestination,
         clearDestination,
         clearPaths,
+        resetTransientState,
+        fetchDestination,
         setControlMode,
         emergencyStop,
         clearEmergencyStop,

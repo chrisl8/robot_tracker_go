@@ -41,6 +41,9 @@ const { isConnected } = useWebSocket(wsUrl, {
     onReconnect() {
         // Bust the MJPEG stream cache to force a new HTTP connection
         streamUrl.value = `/stream?t=${Date.now()}`
+        // The backend may have restarted and forgotten the goal, paths and
+        // motion state: drop ours, then take the server's word for it.
+        robotStore.resetTransientState()
         loadInitialData()
     },
 })
@@ -60,6 +63,9 @@ async function loadInitialData(): Promise<void> {
 
         // Mode / e-stop may have changed while we were disconnected
         await robotStore.fetchControlState()
+
+        // Goal pending on the server (or set from another tab)
+        await robotStore.fetchDestination()
 
         // Load calibration status
         const calibrationResponse = await fetch('/api/calibration/status')

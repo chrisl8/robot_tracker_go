@@ -223,3 +223,50 @@ describe('confirmDestination fails loudly', () => {
         expect(ctx.robot.destinationMode).toBe(false)
     })
 })
+
+describe('reconnecting to a backend that may have restarted', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals()
+    })
+
+    it('resetTransientState drops the goal, paths, motion, tracks and selection', () => {
+        const { robot } = setup()
+        robot.setTracks([track(7, 1)])
+        robot.selectTrack(7)
+        robot.setDestination({ id: 'd', robot_id: 1, x: 5, y: 6 })
+        robot.handleWebSocketMessage({
+            type: 'motion',
+            motion: { code: 'moving', text: 'Driving', severity: 'ok' },
+        } as never)
+
+        robot.resetTransientState()
+
+        expect(robot.destination).toBeNull()
+        expect(robot.motion).toBeNull()
+        expect(robot.tracks).toEqual([])
+        expect(robot.paths).toEqual([])
+        expect(robot.selectedTrackId).toBeNull()
+        expect(robot.destinationMode).toBe(false)
+    })
+
+    it('fetchDestination restores a goal the server still has', async () => {
+        const { robot } = setup()
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(jsonResponse(200, { robot_id: 2, x: 10, y: 20, valid: true }))
+        )
+        await robot.fetchDestination()
+        expect(robot.destination).toMatchObject({ robot_id: 2, x: 10, y: 20 })
+    })
+
+    it('fetchDestination clears a goal the server does not have', async () => {
+        const { robot } = setup()
+        robot.setDestination({ id: 'd', robot_id: 1, x: 5, y: 6 })
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(jsonResponse(200, { robot_id: 0, x: 0, y: 0, valid: false }))
+        )
+        await robot.fetchDestination()
+        expect(robot.destination).toBeNull()
+    })
+})
