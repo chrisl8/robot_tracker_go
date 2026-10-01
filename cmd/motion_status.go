@@ -125,6 +125,7 @@ func (rs *RobotSystem) publishMotion(rep autonomyReport) {
 	if rs.web.webServer == nil {
 		return
 	}
+	rs.io.lastAutonomy = rep
 	in := motionInputs{
 		estop:         rs.control.emergencyStopped,
 		arduinoUp:     rs.io.arduino != nil && rs.io.arduino.IsConnected(),

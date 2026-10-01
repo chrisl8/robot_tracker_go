@@ -67,6 +67,9 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		// Autonomy is not driving, so no robot is: the UI must not keep drawing
 		// the last thing it did.
 		clear(rs.io.robotCommands)
+		// The goal still matters to the motion status: "Hold mode, goal set"
+		// reads differently from "Hold mode".
+		report = rs.buildAutonomyReport(nil, false)
 		return
 	}
 	// Demo mode can fall back from a real camera that's temporarily
@@ -75,6 +78,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	// let synthetic demo-tag positions drive real hardware.
 	if rs.demoMode && rs.io.arduino != nil && rs.io.arduino.IsConnected() {
 		utils.Logf("Refusing autonomous control: demo mode is active with a real Arduino connected")
+		report = rs.buildAutonomyReport(nil, false)
 		report.demoRefused = true
 		clear(rs.io.robotCommands)
 		return

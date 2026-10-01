@@ -87,6 +87,13 @@ func TestExecuteAutonomousControl_PublishesMotionEveryFrame(t *testing.T) {
 		t.Errorf("autonomous, goal, no Arduino: lastMotionCode = %q, want no_controller", got)
 	}
 
+	rs.control.controlMode = ControlModeIdle
+	rs.control.emergencyStopped = false
+	rs.executeAutonomousControl([]tracking.Track{})
+	if !rs.io.lastAutonomy.hasGoal {
+		t.Error("Hold mode with a goal: the status must know there is a goal")
+	}
+
 	rs.control.emergencyStopped = true // the early-return path
 	rs.executeAutonomousControl([]tracking.Track{})
 	if got := rs.io.lastMotionCode; got != "estop" {
