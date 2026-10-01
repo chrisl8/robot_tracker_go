@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -52,6 +53,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 			}
 		}
 		rs.planning.planner.SetGoal(robotID, [2]float64{worldPos.X, worldPos.Y})
+		rs.io.lastStop.set("")
 		utils.Logf("Destination set for robot %d: pixel(%d,%d) -> world(%.2f,%.2f)",
 			robotID, int(pixelPos[0]), int(pixelPos[1]), worldPos.X, worldPos.Y)
 		return nil
@@ -59,6 +61,7 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 
 	rs.web.webServer.Callbacks.OnDestinationClear = func(robotID int) {
 		utils.Logf("Destination cleared for robot %d", robotID)
+		rs.io.lastStop.set("goal cleared")
 		rs.planning.planner.CompletePath(robotID)
 		if rs.io.commandQueue != nil {
 			rs.io.commandQueue.Enqueue(controller.CommandStop)
@@ -169,6 +172,7 @@ func (rs *RobotSystem) releaseAllGoals(reason string) {
 		rs.planning.planner.CompletePath(robotID)
 		rs.web.webServer.ClearDestination(robotID)
 		released = true
+		rs.io.lastStop.set("goal released: " + strings.ToLower(reason))
 	}
 	if released && rs.io.commandQueue != nil {
 		rs.io.commandQueue.Enqueue(controller.CommandStop)

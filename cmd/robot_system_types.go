@@ -84,6 +84,8 @@ type controlIOSubsystem struct {
 	lastCommandTime     time.Time
 	robotCommands       map[int]string       // tag_id -> current motion state
 	lastRobotLink       controller.RobotLink // last state reported, to log transitions; frame loop only
+	lastMotionCode      string               // last motion status code, to log transitions; frame loop only
+	lastStop            lastStopNote         // why the last goal ended, for the "no goal" status
 }
 
 // webSubsystem owns the HTTP/WebSocket/MJPEG server.

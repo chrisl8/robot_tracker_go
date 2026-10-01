@@ -12,6 +12,17 @@ type OverlayMessage struct {
 	Destination   *DestinationMessage       `json:"destination,omitempty"`
 	TempObstacles *TempObstaclesMessage     `json:"temp_obstacles,omitempty"`
 	Control       *ControlStateResponse     `json:"control,omitempty"`
+	Motion        *MotionStatus             `json:"motion,omitempty"`
+}
+
+// MotionStatus says what the robot is doing right now, or why it is not moving.
+// Code is a stable machine-readable key ("moving", "no_goal", "no_path", ...),
+// Text is for the operator, and Severity is "ok" (driving), "info" (idle for a
+// normal reason), "warn" or "error" (something needs attention).
+type MotionStatus struct {
+	Code     string `json:"code"`
+	Text     string `json:"text"`
+	Severity string `json:"severity"`
 }
 
 // TempObstacleResponse is one temporary (detected, not user-marked) obstacle.
@@ -108,6 +119,9 @@ type StatusMessage struct {
 	// of seconds; FPS is then 0 and FrameAgeSec says for how long.
 	CameraStalled bool    `json:"cameraStalled,omitempty"`
 	FrameAgeSec   float64 `json:"frameAgeSec,omitempty"`
+	// Motion repeats the latest motion status, so a browser that connects (or
+	// missed a "motion" message) catches up within a second.
+	Motion *MotionStatus `json:"motion,omitempty"`
 }
 
 type DestinationMessage struct {

@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/uiStore'
 import { useRobotStore } from '@/stores/robotStore'
+import MotionStatus from '@/components/MotionStatus.vue'
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Gamepad2 } from '@lucide/vue'
 import type { CommandRequest, RobotCommand } from '@/types/api'
 
@@ -132,6 +133,8 @@ watch(
 <template>
     <div class="panel">
         <h3><Gamepad2 :size="14" /> Direct Control</h3>
+
+        <MotionStatus />
 
         <!-- Emergency Stop -->
         <button

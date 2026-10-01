@@ -120,6 +120,9 @@ type statsStore struct {
 	robotServos  string // "asleep", "awake" or "" (unknown)
 	robotMode    string
 	robotReboots int
+
+	motionMutex sync.RWMutex
+	motion      MotionStatus // latest SetMotionStatus; zero until the first
 }
 
 // destinationStore holds the single pending click-to-drive destination.

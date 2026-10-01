@@ -8,6 +8,7 @@ import { useFpsHealthStore } from '@/stores/fpsHealthStore'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { handleDriveKeyDown, handleDriveKeyUp } from '@/utils/driveKeys'
 import VideoOverlay from '@/components/VideoOverlay.vue'
+import MotionStatus from '@/components/MotionStatus.vue'
 import ControlPanel from '@/components/ControlPanel.vue'
 import TempObstaclesPanel from '@/components/TempObstaclesPanel.vue'
 import TrackList from '@/components/TrackList.vue'
@@ -124,6 +125,7 @@ onUnmounted(() => {
                     <img id="video" :src="streamUrl" alt="Video Stream" />
                     <VideoOverlay />
                     <FpsWarning />
+                    <MotionStatus overlay />
                     <ForegroundPreview />
                     <AbsorbPopover />
                 </div>

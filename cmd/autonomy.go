@@ -37,6 +37,17 @@ func (rs *RobotSystem) movesTowardObstacle(robotID int, cmd controller.Command, 
 	return rs.planning.planner.ClearanceAt(robotID, probe) < clearance
 }
 
+// autonomyReport is what one autonomy frame learned about the goal robot, for
+// the operator's motion status (see computeMotion).
+type autonomyReport struct {
+	demoRefused   bool
+	hasGoal       bool
+	inView        bool
+	hasPath       bool
+	cmd           string
+	proximityHeld bool
+}
+
 // executeAutonomousControl handles path-following for all tracked robots.
 func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	// Hold the control-state lock for the whole frame, not just the check.
@@ -47,6 +58,11 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	// IsEmergencyStopped): with a writer waiting, that deadlocks.
 	rs.control.controlMu.RLock()
 	defer rs.control.controlMu.RUnlock()
+	// Runs before the unlock above (defers run last-in first), so publishMotion
+	// may read the control fields directly.
+	var report autonomyReport
+	defer func() { rs.publishMotion(report) }()
+	proximityHeld := false
 	if rs.control.controlMode != ControlModeAutonomous || rs.control.emergencyStopped {
 		// Autonomy is not driving, so no robot is: the UI must not keep drawing
 		// the last thing it did.
@@ -59,6 +75,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 	// let synthetic demo-tag positions drive real hardware.
 	if rs.demoMode && rs.io.arduino != nil && rs.io.arduino.IsConnected() {
 		utils.Logf("Refusing autonomous control: demo mode is active with a real Arduino connected")
+		report.demoRefused = true
 		clear(rs.io.robotCommands)
 		return
 	}
@@ -126,6 +143,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 					rs.planning.planner.CompletePath(robotID)
 					rs.web.webServer.ClearDestination(robotID)
 					utils.Logf("Robot %d reached goal (%.2fm away), stopping", robotID, distToGoal)
+					rs.io.lastStop.set("reached the goal")
 					if rs.io.commandQueue != nil {
 						rs.io.commandQueue.Enqueue(controller.CommandStop)
 						commandIssued = true
@@ -138,6 +156,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 			// Advance past any reached or overshot waypoints
 			if !rs.planning.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.io.waypointThreshold) {
 				utils.Logf("Robot %d reached final waypoint, stopping", robotID)
+				rs.io.lastStop.set("reached the end of the path")
 				if rs.io.commandQueue != nil {
 					rs.io.commandQueue.Enqueue(controller.CommandStop)
 					commandIssued = true
@@ -164,6 +183,7 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				if tooClose && rs.movesTowardObstacle(robotID, cmd, worldPos, track.Heading, clearance) {
 					utils.Debugf("PROXIMITY: Robot %d clearance=%.3fm, %c would close in: stopping", robotID, clearance, byte(cmd))
 					cmd = controller.CommandStop
+					proximityHeld = true
 				}
 				rs.io.commandQueue.Enqueue(cmd)
 				commandIssued = true
@@ -199,6 +219,8 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		rs.io.robotCommands[robotID] = "stopped"
 	}
 
+	report = rs.buildAutonomyReport(inView, proximityHeld)
+
 	// Steering state (burst/wait phase, turn hysteresis) belongs to one
 	// continuous run; a frame with no steering ends it.
 	if !steered && rs.io.pathExecutor != nil {
@@ -219,5 +241,24 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		rs.io.lastCommandTime = time.Now()
 	} else if rs.io.commandQueue != nil && time.Since(rs.io.lastCommandTime) > rs.io.trackingLostTimeout {
 		rs.io.commandQueue.ClearActiveCommand()
+	}
+}
+
+// buildAutonomyReport summarises this frame for the goal robot (there is only
+// ever one; see OnDestinationSet). It runs after the frame's decisions, so
+// rs.io.robotCommands is already this frame's.
+func (rs *RobotSystem) buildAutonomyReport(inView map[int]bool, proximityHeld bool) autonomyReport {
+	goals := rs.planning.planner.RobotsWithGoals()
+	if len(goals) == 0 {
+		return autonomyReport{}
+	}
+	id := goals[0]
+	_, hasPath := rs.planning.planner.GetNextWaypoint(id)
+	return autonomyReport{
+		hasGoal:       true,
+		inView:        inView[id],
+		hasPath:       hasPath,
+		cmd:           rs.io.robotCommands[id],
+		proximityHeld: proximityHeld,
 	}
 }

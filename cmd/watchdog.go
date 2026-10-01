@@ -89,6 +89,9 @@ func (rs *RobotSystem) startFrameWatchdog() {
 					age := time.Since(last)
 					if age > frameStallThreshold && rs.web.webServer != nil {
 						rs.web.webServer.BroadcastCameraStalled(time.Since(rs.stats.startTime).Seconds(), age.Seconds())
+						// The frame loop publishes the motion status, and it is
+						// the thing that has stopped.
+						rs.web.webServer.SetMotionStatus(computeMotion(motionInputs{cameraStalled: true, arduinoUp: true}))
 					}
 					// Autonomous control only runs from the frame loop, so with no
 					// frames nothing would ever stop the robot. Halt it once per

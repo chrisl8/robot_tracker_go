@@ -57,6 +57,21 @@ export interface RobotStatus {
     cameraStalled?: boolean
     // Seconds since the last frame; present when cameraStalled.
     frameAgeSec?: number
+    // What the robot is doing, or why it is not moving. Absent from an older backend.
+    motion?: MotionStatus
+}
+
+// Maps to ui.MotionStatus in internal/ui/messages.go. severity: ok = being
+// driven, info = idle for a normal reason, warn/error = needs attention.
+export interface MotionStatus {
+    code: string
+    text: string
+    severity: 'ok' | 'info' | 'warn' | 'error'
+}
+
+export interface MotionMessage {
+    type: 'motion'
+    motion: MotionStatus
 }
 
 // Calibration types
@@ -144,6 +159,7 @@ export type WebSocketMessage =
     | PathsMessage
     | TempObstaclesMessage
     | ControlStateMessage
+    | MotionMessage
 
 export interface ControlStateMessage {
     type: 'control_state'

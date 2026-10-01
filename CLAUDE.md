@@ -68,6 +68,10 @@ The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems, 
 - Several independent deadmen stand between a dropped link and a walking robot: the UI re-sends held keys every 250 ms; `CommandQueue` drops a command nobody re-sends within 2 s; the gamepad firmware reverts to its own buttons after `SERIAL_TIMEOUT_MS` (500 ms) of no Mac commands; the robot firmware stands still after 1 s without a valid packet. The camera watchdog (`watchdog.go`) broadcasts status and halts the robot once per stall when frames stop, because autonomy runs from the frame loop.
 - **Goals are released, with a Stop, in two cases:** recalibration (the goal was in the old world frame) and the robot going silent (see below). `releaseAllGoals(reason)` in `cmd/web_callbacks.go` does it. A switched-off robot is still visible to the camera, so without the release autonomy would keep commanding it and it would walk toward the old goal when powered back on.
 
+### Motion status (why is the robot not moving?)
+
+`computeMotion` (`cmd/motion_status.go`) turns the current state into one `ui.MotionStatus` (`code`, `text`, `severity`), checked in priority order: e-stop, camera stalled, Arduino down, Hold/Manual mode, demo refusal, robot silent, no goal, tag not in view, no path, proximity hold, then driving/turning/pausing. `executeAutonomousControl` builds an `autonomyReport` each frame (also on its early returns, via a defer) and calls `publishMotion`; the watchdog publishes `camera_stalled` itself. It reaches the UI as a `motion` WebSocket message on change, repeated in the 1 s status message and `/api/status`, and is shown by `MotionStatus.vue` (chip over the video plus a Control panel row). It describes the state *now*; "no goal" appends why the last goal ended (`rs.io.lastStop`). New reason to stop the robot? Add it to `computeMotion`, in priority order, with a test.
+
 ### Robot link (is the robot itself answering?)
 
 `IsConnected()` only says the USB link to the gamepad Arduino is up. Whether the *robot* is powered and in radio range comes from a heartbeat:

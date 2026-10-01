@@ -37,6 +37,7 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 		"robotServos":  robot.servos,
 		"robotMode":    robot.mode,
 		"robotReboots": robot.reboots,
+		"motion":       s.motionSnapshot(),
 		"hostMemoryMB": hostMemMB,
 		"uptimeSec":    uptimeSec,
 	})
@@ -131,6 +132,31 @@ func (s *WebServer) broadcastStatus(trackCount int, fps, uptimeSec, frameAgeSec 
 
 			CameraStalled: stalled,
 			FrameAgeSec:   frameAgeSec,
+			Motion:        s.motionSnapshot(),
 		},
 	})
+}
+
+// SetMotionStatus records what the robot is doing (or why it is not moving) and,
+// when it differs from the last one, tells every connected UI at once. The
+// status message repeats it each second for browsers that missed this one.
+func (s *WebServer) SetMotionStatus(m MotionStatus) {
+	s.stats.motionMutex.Lock()
+	changed := s.stats.motion != m
+	s.stats.motion = m
+	s.stats.motionMutex.Unlock()
+	if changed {
+		s.BroadcastOverlay(OverlayMessage{Type: "motion", Motion: &m})
+	}
+}
+
+// motionSnapshot returns the latest motion status, or nil before the first.
+func (s *WebServer) motionSnapshot() *MotionStatus {
+	s.stats.motionMutex.RLock()
+	defer s.stats.motionMutex.RUnlock()
+	if s.stats.motion.Code == "" {
+		return nil
+	}
+	m := s.stats.motion
+	return &m
 }

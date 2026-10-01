@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type {
     Track,
     RobotStatus,
+    MotionStatus,
     WebSocketMessage,
     Destination,
     DestinationRequest,
@@ -31,6 +32,8 @@ export const useRobotStore = defineStore('robot', () => {
     const destination = ref<Destination | null>(null)
     const paths = ref<PathMessage[]>([])
     const controlMode = ref<'hold' | 'manual' | 'autonomous'>('hold')
+    // Latest answer to "why is the robot (not) moving"; null until the backend sends one.
+    const motion = ref<MotionStatus | null>(null)
     const emergencyStopped = ref(false)
 
     // Computed
@@ -116,6 +119,9 @@ export const useRobotStore = defineStore('robot', () => {
                     emergencyStopped.value = data.control.emergency_stopped
                 }
                 break
+            case 'motion':
+                if (data.motion) motion.value = data.motion
+                break
             case 'paths':
                 if (data.paths && Array.isArray(data.paths.paths)) {
                     paths.value = data.paths.paths
@@ -168,6 +174,7 @@ export const useRobotStore = defineStore('robot', () => {
 
     function setStatus(newStatus: RobotStatus): void {
         status.value = newStatus
+        if (newStatus.motion) motion.value = newStatus.motion
         announceRobotLink(newStatus)
         announceRobotReboots(newStatus)
     }
@@ -424,6 +431,7 @@ export const useRobotStore = defineStore('robot', () => {
         destination,
         paths,
         controlMode,
+        motion,
         emergencyStopped,
         // Computed
         confirmedTracks,
