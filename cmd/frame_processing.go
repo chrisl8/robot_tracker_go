@@ -10,6 +10,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/camera"
 	"github.com/chrisl8/robot_tracker_go/internal/controller"
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
+	"github.com/chrisl8/robot_tracker_go/internal/planning"
 	"github.com/chrisl8/robot_tracker_go/internal/position"
 	"github.com/chrisl8/robot_tracker_go/internal/tracking"
 	"github.com/chrisl8/robot_tracker_go/internal/ui"
@@ -101,7 +102,24 @@ func (rs *RobotSystem) updateTrackWorldPosition(track *tracking.Track, applyCent
 func (rs *RobotSystem) noteFrameSize(width, height int) {
 	if rs.position.positionEst != nil {
 		rs.position.positionEst.SetFrameSize(width, height)
+		rs.updatePlanningArea()
 	}
+}
+
+// updatePlanningArea confines the planner to the floor the camera can see. A
+// robot driven out of view loses its tag and is lost, so paths must stay in
+// frame. It runs every frame (it is cheap and the planner ignores an unchanged
+// area), which also picks up a recalibration or a change of frame size. With
+// no usable calibration the planner is left unrestricted.
+func (rs *RobotSystem) updatePlanningArea() {
+	if rs.planning.planner == nil {
+		return
+	}
+	var area *planning.Area
+	if corners, ok := rs.position.positionEst.VisibleWorldCorners(); ok {
+		area, _ = planning.NewArea(corners)
+	}
+	rs.planning.planner.SetArea(area)
 }
 
 // updateRobotLink reads the robot's link state and heartbeat details from the

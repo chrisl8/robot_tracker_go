@@ -246,3 +246,40 @@ func TestLoadCalibration_AcceptsIntegerWorldScale(t *testing.T) {
 		t.Errorf("PixelsPerMeter = %v, want 250 (an integer world_scale was ignored)", got)
 	}
 }
+
+func TestPositionEstimator_VisibleWorldCorners(t *testing.T) {
+	// A scale-and-shift homography: world = pixel/100 - (1, 0.5).
+	newEst := func(h2 [3]float64, w, h int) *PositionEstimator {
+		est := &PositionEstimator{homography: NewHomography()}
+		est.homography.SetFromValues(0.01, 0, -1, 0, 0.01, -0.5, h2[0], h2[1], h2[2])
+		est.homography.ComputeInverse()
+		est.SetFrameSize(w, h)
+		return est
+	}
+
+	t.Run("projects the frame corners", func(t *testing.T) {
+		got, ok := newEst([3]float64{0, 0, 1}, 400, 300).VisibleWorldCorners()
+		want := [4][2]float64{{-1, -0.5}, {3, -0.5}, {3, 2.5}, {-1, 2.5}}
+		if !ok || got != want {
+			t.Errorf("got %v ok=%v, want %v", got, ok, want)
+		}
+	})
+	t.Run("no calibration", func(t *testing.T) {
+		est := &PositionEstimator{homography: NewHomography()}
+		est.SetFrameSize(400, 300)
+		if _, ok := est.VisibleWorldCorners(); ok {
+			t.Error("ok without a calibration")
+		}
+	})
+	t.Run("no frame yet", func(t *testing.T) {
+		if _, ok := newEst([3]float64{0, 0, 1}, 0, 0).VisibleWorldCorners(); ok {
+			t.Error("ok before a frame size is known")
+		}
+	})
+	t.Run("corner beyond the horizon", func(t *testing.T) {
+		// w = 1 - 0.01*y goes negative for y > 100: the bottom corners are behind the camera.
+		if _, ok := newEst([3]float64{0, -0.01, 1}, 400, 300).VisibleWorldCorners(); ok {
+			t.Error("ok with a corner past the horizon")
+		}
+	})
+}

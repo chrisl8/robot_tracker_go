@@ -81,8 +81,10 @@ func TestProcessDemoFrame_RegistersRobotAndRunsAutonomousControl(t *testing.T) {
 
 	// Goal set before the robot is registered: AddRobot's first call plans
 	// a path immediately once it sees this stored goal (see
-	// internal/planning/planner.go's AddRobot).
-	rs.planning.planner.SetGoal(demoAutonomyTagID, [2]float64{5.2, 5.4})
+	// internal/planning/planner.go's AddRobot). It is far away but inside the
+	// 6.4 x 4.8 m the 640x480 frame covers; a goal outside the view is
+	// refused (TestProcessDemoFrame_NoPathOutsideCameraView).
+	rs.planning.planner.SetGoal(demoAutonomyTagID, [2]float64{5.2, 3.4})
 
 	img := image.NewRGBA(image.Rect(0, 0, 640, 480))
 	tag := demoTagAt(320, 240)
@@ -107,6 +109,35 @@ func TestProcessDemoFrame_RegistersRobotAndRunsAutonomousControl(t *testing.T) {
 	}
 	if _, ok := rs.io.robotCommands[demoAutonomyTagID]; !ok {
 		t.Errorf("executeAutonomousControl did not run: rs.io.robotCommands has no entry for robot %d", demoAutonomyTagID)
+	}
+}
+
+// A goal outside the camera's view must not get a path: a robot driven out of
+// frame loses its tag and is lost. The goal here is 6.5 m along x in a view
+// that is 6.4 m wide; the in-view goal gets a path.
+func TestProcessDemoFrame_NoPathOutsideCameraView(t *testing.T) {
+	tests := []struct {
+		name    string
+		goal    [2]float64
+		hasPath bool
+	}{
+		{"inside the view", [2]float64{5.2, 2.4}, true},
+		{"beyond the right edge", [2]float64{6.5, 2.4}, false},
+		{"beyond the bottom edge", [2]float64{3.2, 5.4}, false},
+		{"inside the edge margin", [2]float64{6.35, 2.4}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := newDemoAutonomyRig(t)
+			rs.planning.planner.SetGoal(demoAutonomyTagID, tt.goal)
+			img := image.NewRGBA(image.Rect(0, 0, 640, 480))
+			for i := 0; i < 5; i++ {
+				rs.ProcessDemoFrame(img, i, []detection.AprilTag{demoTagAt(320, 240)})
+			}
+			if _, hasPath := rs.planning.planner.GetNextWaypoint(demoAutonomyTagID); hasPath != tt.hasPath {
+				t.Errorf("goal %v: hasPath = %v, want %v", tt.goal, hasPath, tt.hasPath)
+			}
+		})
 	}
 }
 

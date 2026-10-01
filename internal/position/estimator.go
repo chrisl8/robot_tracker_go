@@ -313,6 +313,30 @@ func (e *PositionEstimator) ResolutionMismatch() bool {
 	return e.calibratedRes != e.frameRes
 }
 
+// VisibleWorldCorners returns where the four corners of the camera frame
+// (top-left, top-right, bottom-right, bottom-left) fall on the floor, in world
+// coordinates. ok is false when there is no calibration or frame size yet, or
+// when a corner lies at or beyond the horizon so it has no floor position.
+func (e *PositionEstimator) VisibleWorldCorners() (corners [4][2]float64, ok bool) {
+	e.mu.Lock()
+	h, w, ht := e.homography, float64(e.frameRes[0]), float64(e.frameRes[1])
+	e.mu.Unlock()
+	if !h.IsValid() || w <= 0 || ht <= 0 {
+		return corners, false
+	}
+	for i, px := range [4][2]float64{{0, 0}, {w, 0}, {w, ht}, {0, ht}} {
+		// The homogeneous w must be positive: a negative one is a point behind
+		// the camera's horizon, which PixelToWorld would still turn into a
+		// plausible-looking, wrong, position.
+		if h.H[2][0]*px[0]+h.H[2][1]*px[1]+h.H[2][2] <= 0 {
+			return corners, false
+		}
+		p := h.PixelToWorld(Point2D{px[0], px[1]})
+		corners[i] = [2]float64{p.X, p.Y}
+	}
+	return corners, true
+}
+
 func (e *PositionEstimator) PixelToWorld(pixelX, pixelY int) *Point2D {
 	h := e.currentHomography()
 	if !h.IsValid() {

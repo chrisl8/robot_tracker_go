@@ -33,6 +33,7 @@ type Planner struct {
 	coordinator      *Coordinator
 	obstacles        []Obstacle
 	dynamicObstacles []Obstacle
+	area             *Area                // where robots may drive (camera view); nil = unrestricted
 	paths            map[int][][2]float64 // robotID -> list of waypoints
 	currentWaypoint  map[int]int          // robotID -> index into paths
 
@@ -47,6 +48,9 @@ const (
 	// dynamicObstacleEpsilon is how far (metres) an obstacle edge may move
 	// before it counts as a change worth replanning for.
 	dynamicObstacleEpsilon = 0.03
+	// areaEpsilon is how far (metres) an area corner may move before it counts
+	// as a change worth replanning for.
+	areaEpsilon = 0.01
 	// minDynamicReplanInterval bounds how often changing obstacles can force
 	// every robot to replan.
 	minDynamicReplanInterval = 500 * time.Millisecond
@@ -110,7 +114,7 @@ func (p *Planner) lineClearLocked(a, b [2]float64, margin float64) bool {
 func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]float64, bool) {
 	margin := p.marginLocked(robotID)
 	allObstacles := p.allObstaclesLocked()
-	path, ok := p.globalPlanner.Plan(start, goal, allObstacles, margin)
+	path, ok := p.globalPlanner.PlanWithin(start, goal, allObstacles, margin, p.area)
 	if ok && len(path) > 2 {
 		before := len(path)
 		originalPath := make([][2]float64, len(path))
@@ -123,6 +127,20 @@ func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]floa
 		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(allObstacles))
 	}
 	return path, ok
+}
+
+// SetArea restricts planning to the part of the floor the camera can see (nil
+// lifts the restriction). Paths stay a robot-radius-plus-margin inside it so
+// the tag is never partly out of frame. A real change replans every robot's
+// path; an unchanged area (this is called every frame) does nothing.
+func (p *Planner) SetArea(area *Area) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.area.equal(area, areaEpsilon) {
+		return
+	}
+	p.area = area
+	p.replanAllPathsLocked()
 }
 
 func (p *Planner) SetObstacles(obstacles []Obstacle) {

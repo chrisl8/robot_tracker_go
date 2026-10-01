@@ -74,6 +74,13 @@ func NewAStar(config *AStarConfig) *AStar {
 }
 
 func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float64) ([][2]float64, bool) {
+	return a.PlanWithin(start, goal, obstacles, margin, nil)
+}
+
+// PlanWithin is Plan restricted to area (nil means unrestricted): the path
+// stays at least margin inside it, and a goal outside that is a failure. A
+// start already closer to an edge than margin may stay no closer to it.
+func (a *AStar) PlanWithin(start, goal [2]float64, obstacles []Obstacle, margin float64, area *Area) ([][2]float64, bool) {
 	gridWidth := int(a.config.GridWidthMeters / a.config.Resolution)
 	gridHeight := int(a.config.GridHeightMeters / a.config.Resolution)
 
@@ -99,6 +106,26 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 		goalNode.Pos[1] < 0 || goalNode.Pos[1] >= gridHeight {
 		utils.Debugf("A*: FAILED - goal out of bounds")
 		return nil, false
+	}
+
+	// outside reports grid cells (judged at their centre, like obstacles)
+	// that lie beyond the area the robot may use.
+	outside := func(x, y int) bool { return false }
+	if area != nil {
+		if !area.Contains(goal, margin) {
+			utils.Debugf("A*: FAILED - goal outside the camera area")
+			return nil, false
+		}
+		limit := area.limits(margin, start)
+		outside = func(x, y int) bool {
+			d := area.edgeDistances([2]float64{a.cellCentre(x, offsetX), a.cellCentre(y, offsetY)})
+			for i := range d {
+				if d[i] < limit[i] {
+					return true
+				}
+			}
+			return false
+		}
 	}
 
 	obstacleMap := make(map[[2]int]bool)
@@ -190,7 +217,7 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 			return path, true
 		}
 
-		neighbors := a.getNeighbors(current, gridWidth, gridHeight, obstacleMap)
+		neighbors := a.getNeighbors(current, gridWidth, gridHeight, obstacleMap, outside)
 		for _, neighbor := range neighbors {
 			tentativeG := gScore[current.Pos] + a.dist(current.Pos, neighbor.Pos)
 
@@ -210,14 +237,14 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 	return nil, false
 }
 
-func (a *AStar) getNeighbors(node *Node, width, height int, obstacles map[[2]int]bool) []*Node {
+func (a *AStar) getNeighbors(node *Node, width, height int, obstacles map[[2]int]bool, outside func(x, y int) bool) []*Node {
 	directions := [][2]int{
 		{0, 1}, {1, 0}, {0, -1}, {-1, 0},
 		{1, 1}, {1, -1}, {-1, 1}, {-1, -1},
 	}
 
 	free := func(x, y int) bool {
-		return x >= 0 && x < width && y >= 0 && y < height && !obstacles[[2]int{x, y}]
+		return x >= 0 && x < width && y >= 0 && y < height && !obstacles[[2]int{x, y}] && !outside(x, y)
 	}
 
 	neighbors := make([]*Node, 0)
