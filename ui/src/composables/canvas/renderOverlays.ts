@@ -52,19 +52,51 @@ export function createOverlayRenderer({
 
             const color = path.color || '#FFFF00'
 
-            // Draw path line
-            ctx.value.beginPath()
-            ctx.value.strokeStyle = color
-            ctx.value.lineWidth = 2
-
-            const first = naturalToCanvas(path.points[0][0], path.points[0][1])
-            ctx.value.moveTo(first.x, first.y)
-
-            for (let i = 1; i < path.points.length; i++) {
-                const p = naturalToCanvas(path.points[i][0], path.points[i][1])
-                ctx.value.lineTo(p.x, p.y)
+            // The planner's path starts at the next waypoint, so begin the line at the
+            // robot itself; that also gives a one-point path (just the goal) a line.
+            const robot = robotStore.tracks.find(
+                t => t.tag_id === path.robot_id && t.state === 'confirmed'
+            )
+            const pts: { x: number; y: number }[] = []
+            if (robot) {
+                pts.push(
+                    naturalToCanvas(
+                        (robot.bbox[0] + robot.bbox[2]) / 2,
+                        (robot.bbox[1] + robot.bbox[3]) / 2
+                    )
+                )
             }
+            for (const pt of path.points) pts.push(naturalToCanvas(pt[0], pt[1]))
+
+            const tracePolyline = (): void => {
+                const c = ctx.value
+                if (!c) return
+                c.beginPath()
+                c.moveTo(pts[0].x, pts[0].y)
+                for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y)
+            }
+
+            // Base line, then bright dashes flowing toward the goal so direction and
+            // "still live" are visible. Negative offset moves the dashes forward.
+            ctx.value.save()
+            ctx.value.lineCap = 'round'
+            ctx.value.lineJoin = 'round'
+            tracePolyline()
+            ctx.value.globalAlpha = 0.45
+            ctx.value.strokeStyle = color
+            ctx.value.lineWidth = 3
             ctx.value.stroke()
+
+            tracePolyline()
+            ctx.value.globalAlpha = 0.95
+            ctx.value.strokeStyle = '#ffffff'
+            ctx.value.shadowBlur = 6
+            ctx.value.shadowColor = color
+            ctx.value.lineWidth = 2
+            ctx.value.setLineDash([6, 22])
+            ctx.value.lineDashOffset = -animation.getPathPhase() * 60
+            ctx.value.stroke()
+            ctx.value.restore()
 
             const lastIdx = path.points.length - 1
             const pulse = 0.5 + 0.5 * Math.sin(animation.getPathPhase() * 4 * Math.PI)
