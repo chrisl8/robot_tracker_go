@@ -326,19 +326,21 @@ func TestOnCalibrationComplete_ReleasesGoalsFromTheOldFrame(t *testing.T) {
 
 // Being close to an obstacle must never pin the robot in place: it may turn and
 // drive away, and only a move that closes the gap is refused. (It used to stop
-// whenever the gap was under 8 cm, before steering, so a robot that started or
+// whenever the gap was under a few cm, before steering, so a robot that started or
 // ended up that close could never leave in Auto.)
 func TestExecuteAutonomousControl_NearObstacleCanDriveAwayButNotCloserIn(t *testing.T) {
-	const gap = 0.05 // robot edge to obstacle, under proximityClearance
+	const gap = 0.03 // robot edge to obstacle, under proximityClearance
 	robotPos := [2]float64{1.0 - 0.15 - gap, 0}
 	for _, tc := range []struct {
 		name        string
 		goal        [2]float64
 		heading     float64
+		path        [][2]float64 // overrides the planned path when set
 		wantForward bool
 	}{
-		{"goal behind, facing away: drives off", [2]float64{-1, 0}, math.Pi, true},
-		{"goal beyond, facing the obstacle: does not close in", [2]float64{3, 0}, 0, false},
+		{"goal behind, facing away: drives off", [2]float64{-1, 0}, math.Pi, nil, true},
+		{"goal beyond, facing the obstacle: does not close in", [2]float64{3, 0}, 0, nil, false},
+		{"path straight at the obstacle: held", [2]float64{3, 0}, 0, [][2]float64{{0.95, 0}, {3, 0}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rs := newDemoAutonomyRig(t)
@@ -348,6 +350,9 @@ func TestExecuteAutonomousControl_NearObstacleCanDriveAwayButNotCloserIn(t *test
 			})
 			rs.planning.planner.AddRobot(demoAutonomyTagID, robotPos, 0.3)
 			rs.planning.planner.SetGoal(demoAutonomyTagID, tc.goal)
+			if tc.path != nil {
+				rs.planning.planner.SetPath(demoAutonomyTagID, tc.path)
+			}
 
 			track := confirmedTrack(1, demoAutonomyTagID)
 			track.WorldPos = robotPos

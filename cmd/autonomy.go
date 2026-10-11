@@ -15,8 +15,10 @@ import (
 // proximityClearance is the gap (metres, robot edge to obstacle) under which
 // the robot may not drive any closer to the obstacle. It may still turn in
 // place and drive away, so a robot that starts, or ends up, this close can
-// always get out.
-const proximityClearance = 0.08
+// always get out. It sits below the planner's hard limit (obstacleHardPad,
+// 0.07 m) on purpose: a path that squeezes through a tight gap runs at that
+// limit and must not be held up by this backstop.
+const proximityClearance = 0.04
 
 // proximityProbeStep is how far (metres) ahead movesTowardObstacle looks.
 const proximityProbeStep = 0.05
