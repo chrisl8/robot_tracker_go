@@ -97,7 +97,7 @@ func TestPlanPath_SimplificationDoesNotCutTowardObstacles(t *testing.T) {
 		goal := [2]float64{rng.Float64()*3 - 1.5, rng.Float64()*3 - 1.5}
 
 		margin := p.marginLocked(1)
-		raw, ok := p.globalPlanner.Plan(start, goal, obstacles, margin)
+		raw, ok := p.globalPlanner.PlanWithOptions(start, goal, obstacles, p.planOptionsLocked(1), nil)
 		if !ok || len(raw) < 3 {
 			continue
 		}

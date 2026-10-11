@@ -80,14 +80,60 @@ func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, b
 	return p.planPathLocked(robotID, start, goal)
 }
 
-// marginLocked is how far paths must stay from obstacles for this robot: its
-// radius plus a safety margin for obstacle-detection bbox inaccuracy and chair
-// legs. Callers must hold p.mu.
-func (p *Planner) marginLocked(robotID int) float64 {
+// Clearances, beyond the robot's radius. A path would like to keep
+// obstacleSafetyPad from every obstacle (for obstacle-detection bbox
+// inaccuracy and chair legs) but may squeeze as close as obstacleHardPad when
+// that is the only way through, at a path-cost penalty (see PlanOptions).
+// areaEdgeMargin is how far from the camera frame's edge the robot's centre
+// (its tag) may go: only far enough that the tag stays fully in view.
+const (
+	obstacleSafetyPad = 0.12
+	obstacleHardPad   = 0.07
+	areaEdgeMargin    = 0.10
+	defaultRadius     = 0.15 - obstacleSafetyPad
+)
+
+func (p *Planner) robotRadiusLocked(robotID int) float64 {
 	if robot, exists := p.coordinator.GetRobotState(robotID); exists && robot.Diameter > 0 {
-		return robot.Diameter/2 + 0.12
+		return robot.Diameter / 2
 	}
-	return 0.15
+	return defaultRadius
+}
+
+// marginLocked is how far paths would like to stay from obstacles for this
+// robot: its radius plus the safety pad. Callers must hold p.mu.
+func (p *Planner) marginLocked(robotID int) float64 {
+	return p.robotRadiusLocked(robotID) + obstacleSafetyPad
+}
+
+// planOptionsLocked is the clearance the path planner works to for this robot.
+// Callers must hold p.mu.
+func (p *Planner) planOptionsLocked(robotID int) PlanOptions {
+	r := p.robotRadiusLocked(robotID)
+	return PlanOptions{Hard: r + obstacleHardPad, Soft: r + obstacleSafetyPad, Edge: areaEdgeMargin}
+}
+
+// clearanceAt is the distance from pt to the nearest obstacle (+Inf for none).
+func clearanceAt(pt [2]float64, obstacles []Obstacle) float64 {
+	best := math.Inf(1)
+	for _, obs := range obstacles {
+		if d := distanceToQuad(pt, obs.Quad); d < best {
+			best = d
+		}
+	}
+	return best
+}
+
+// clearanceTolerance is how much a simplified or shortcut segment may dip
+// below the clearance of the points it connects (grid discretisation).
+const clearanceTolerance = 0.025
+
+// segmentMargin is the clearance a straight segment must keep when it joins
+// points whose own clearances are given: the full soft margin if they have
+// it, otherwise no less than they do (so a path squeezing through a gap is not
+// rejected for being in the gap), and never below the hard limit.
+func segmentMargin(opts PlanOptions, endpointClearance float64) float64 {
+	return math.Max(opts.Hard, math.Min(opts.Soft, endpointClearance-clearanceTolerance))
 }
 
 // allObstaclesLocked returns static plus dynamic obstacles. Callers must hold p.mu.
@@ -112,9 +158,9 @@ func (p *Planner) lineClearLocked(a, b [2]float64, margin float64) bool {
 // already hold p.mu — it exists so other Planner methods can plan a path
 // without re-entering the lock.
 func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]float64, bool) {
-	margin := p.marginLocked(robotID)
+	opts := p.planOptionsLocked(robotID)
 	allObstacles := p.allObstaclesLocked()
-	path, ok := p.globalPlanner.PlanWithin(start, goal, allObstacles, margin, p.area)
+	path, ok := p.globalPlanner.PlanWithOptions(start, goal, allObstacles, opts, p.area)
 	if ok && len(path) > 2 {
 		before := len(path)
 		originalPath := make([][2]float64, len(path))
@@ -123,15 +169,23 @@ func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]floa
 		// The validated path is final. Simplifying it again (same epsilon)
 		// would drop the very waypoints validation restored to keep a
 		// segment clear of an obstacle.
-		path = ValidateSimplifiedPath(originalPath, simplified, allObstacles, margin, 0.05)
+		// A simplified segment must keep the soft margin, or else as much
+		// clearance as the stretch of A* path it replaces had.
+		path = validateSimplified(originalPath, simplified, allObstacles, 0.05, func(from, to int) float64 {
+			c := math.Inf(1)
+			for j := from; j <= to; j++ {
+				c = math.Min(c, clearanceAt(originalPath[j], allObstacles))
+			}
+			return segmentMargin(opts, c)
+		})
 		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(allObstacles))
 	}
 	return path, ok
 }
 
 // SetArea restricts planning to the part of the floor the camera can see (nil
-// lifts the restriction). Paths stay a robot-radius-plus-margin inside it so
-// the tag is never partly out of frame. A real change replans every robot's
+// lifts the restriction). Paths stay areaEdgeMargin inside it so the
+// tag is never partly out of frame. A real change replans every robot's
 // path; an unchanged area (this is called every frame) does nothing.
 func (p *Planner) SetArea(area *Area) {
 	p.mu.Lock()
@@ -315,7 +369,8 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 
 	wpIdx := p.currentWaypoint[robotID]
 	advanced := 0
-	margin := p.marginLocked(robotID)
+	opts := p.planOptionsLocked(robotID)
+	obstacles := p.allObstaclesLocked()
 
 	for wpIdx < len(path)-1 {
 		dx := path[wpIdx][0] - pos[0]
@@ -334,7 +389,13 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 		// obstacle deliberately has waypoints that are "behind" or farther than
 		// what follows, and skipping one would steer the robot into the
 		// obstacle.
-		canShortcut := wpIdx+1 < len(path) && p.lineClearLocked(pos, path[wpIdx+1], margin)
+		canShortcut := false
+		if wpIdx+1 < len(path) {
+			// Cutting straight to the next waypoint must not take the robot
+			// closer to an obstacle than it, or that waypoint, already is.
+			endpoints := math.Min(clearanceAt(pos, obstacles), clearanceAt(path[wpIdx+1], obstacles))
+			canShortcut = p.lineClearLocked(pos, path[wpIdx+1], segmentMargin(opts, endpoints))
+		}
 
 		// Check if we overshot: closer to next waypoint than current one
 		if canShortcut {

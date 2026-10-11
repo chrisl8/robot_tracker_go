@@ -73,6 +73,24 @@ func NewAStar(config *AStarConfig) *AStar {
 	return &AStar{config: config}
 }
 
+// clearanceCostWeight scales how much a step through the soft clearance zone
+// costs: a step right at the hard limit costs (1+weight) times a step in the
+// open. Large enough that A* detours around a squeeze when there is room, small
+// enough that it still takes the squeeze when there is no other way.
+const clearanceCostWeight = 5.0
+
+// PlanOptions says how far a path must stay from things.
+//
+// Hard is the closest a path may come to an obstacle: cells nearer than that
+// are blocked. Soft (>= Hard) is the distance a path would like to keep: cells
+// between Hard and Soft stay usable but cost more the nearer they are to Hard,
+// so tight gaps are used only when needed. Edge is how far a path must stay
+// inside the Area, which is a different thing from an obstacle: it only has
+// to keep the robot's tag in view.
+type PlanOptions struct {
+	Hard, Soft, Edge float64
+}
+
 func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float64) ([][2]float64, bool) {
 	return a.PlanWithin(start, goal, obstacles, margin, nil)
 }
@@ -81,6 +99,15 @@ func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float6
 // stays at least margin inside it, and a goal outside that is a failure. A
 // start already closer to an edge than margin may stay no closer to it.
 func (a *AStar) PlanWithin(start, goal [2]float64, obstacles []Obstacle, margin float64, area *Area) ([][2]float64, bool) {
+	return a.PlanWithOptions(start, goal, obstacles, PlanOptions{Hard: margin, Soft: margin, Edge: margin}, area)
+}
+
+// PlanWithOptions is PlanWithin with separate obstacle and edge clearances and
+// a graded (soft) obstacle clearance; see PlanOptions.
+func (a *AStar) PlanWithOptions(start, goal [2]float64, obstacles []Obstacle, opts PlanOptions, area *Area) ([][2]float64, bool) {
+	if opts.Soft < opts.Hard {
+		opts.Soft = opts.Hard
+	}
 	gridWidth := int(a.config.GridWidthMeters / a.config.Resolution)
 	gridHeight := int(a.config.GridHeightMeters / a.config.Resolution)
 
@@ -112,11 +139,11 @@ func (a *AStar) PlanWithin(start, goal [2]float64, obstacles []Obstacle, margin 
 	// that lie beyond the area the robot may use.
 	outside := func(x, y int) bool { return false }
 	if area != nil {
-		if !area.Contains(goal, margin) {
+		if !area.Contains(goal, opts.Edge) {
 			utils.Debugf("A*: FAILED - goal outside the camera area")
 			return nil, false
 		}
-		limit := area.limits(margin, start)
+		limit := area.limits(opts.Edge, start)
 		outside = func(x, y int) bool {
 			d := area.edgeDistances([2]float64{a.cellCentre(x, offsetX), a.cellCentre(y, offsetY)})
 			for i := range d {
@@ -129,10 +156,18 @@ func (a *AStar) PlanWithin(start, goal [2]float64, obstacles []Obstacle, margin 
 	}
 
 	obstacleMap := make(map[[2]int]bool)
+	// penalty is 0..1 for cells in the soft zone: 1 at the hard limit, 0 at
+	// the soft distance.
+	penalty := make(map[[2]int]float64)
 	for _, obs := range obstacles {
-		gridObs := worldToGrid(obs, margin, a.config.Resolution, gridWidth, gridHeight)
-		for _, cell := range gridObs {
-			obstacleMap[cell] = true
+		for _, cd := range cellsWithin(obs, opts.Soft, a.config.Resolution, gridWidth, gridHeight) {
+			if cd.dist <= opts.Hard {
+				obstacleMap[cd.cell] = true
+				continue
+			}
+			if f := (opts.Soft - cd.dist) / (opts.Soft - opts.Hard); f > penalty[cd.cell] {
+				penalty[cd.cell] = f
+			}
 		}
 	}
 
@@ -219,7 +254,7 @@ func (a *AStar) PlanWithin(start, goal [2]float64, obstacles []Obstacle, margin 
 
 		neighbors := a.getNeighbors(current, gridWidth, gridHeight, obstacleMap, outside)
 		for _, neighbor := range neighbors {
-			tentativeG := gScore[current.Pos] + a.dist(current.Pos, neighbor.Pos)
+			tentativeG := gScore[current.Pos] + a.dist(current.Pos, neighbor.Pos)*(1+clearanceCostWeight*penalty[neighbor.Pos])
 
 			if existingG, exists := gScore[neighbor.Pos]; !exists || tentativeG < existingG {
 				cameFrom[neighbor.Pos] = current
@@ -383,6 +418,13 @@ func segmentIntersectsObstacle(p1, p2 [2]float64, obs Obstacle, margin, resoluti
 // through an obstacle, the original unsimplified waypoints for that segment
 // are restored.
 func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, margin, resolution float64) [][2]float64 {
+	return validateSimplified(originalPath, simplifiedPath, obstacles, resolution, func(int, int) float64 { return margin })
+}
+
+// validateSimplified is ValidateSimplifiedPath with the margin chosen per
+// segment: marginFor receives the range of original-path indices the
+// simplified segment replaces.
+func validateSimplified(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, resolution float64, marginFor func(fromOrig, toOrig int) float64) [][2]float64 {
 	if len(simplifiedPath) <= 1 || len(obstacles) == 0 {
 		return simplifiedPath
 	}
@@ -406,6 +448,7 @@ func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles
 		p1 := simplifiedPath[i]
 		p2 := simplifiedPath[i+1]
 
+		margin := marginFor(origIndices[i], origIndices[i+1])
 		blocked := false
 		for _, obs := range obstacles {
 			if segmentIntersectsObstacle(p1, p2, obs, margin, resolution) {
@@ -429,6 +472,12 @@ func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles
 	return validated
 }
 
+// cellDist is a grid cell and its centre's distance to an obstacle's footprint.
+type cellDist struct {
+	cell [2]int
+	dist float64
+}
+
 // worldToGrid returns the grid cells within margin of obs's exact footprint
 // (its Quad — a plain rectangle for an axis-aligned obstacle, an arbitrary
 // quadrilateral for a detected, oriented one). This folds rasterization and
@@ -436,7 +485,17 @@ func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles
 // its center is within margin of the shape, so there is no separate
 // expand-the-rectangle step before this runs.
 func worldToGrid(obs Obstacle, margin, resolution float64, width, height int) [][2]int {
-	cells := make([][2]int, 0)
+	within := cellsWithin(obs, margin, resolution, width, height)
+	cells := make([][2]int, 0, len(within))
+	for _, cd := range within {
+		cells = append(cells, cd.cell)
+	}
+	return cells
+}
+
+// cellsWithin is worldToGrid that also reports each cell's distance.
+func cellsWithin(obs Obstacle, margin, resolution float64, width, height int) []cellDist {
+	cells := make([]cellDist, 0)
 
 	offsetX := width / 2
 	offsetY := height / 2
@@ -459,8 +518,8 @@ func worldToGrid(obs Obstacle, margin, resolution float64, width, height int) []
 				(float64(x-offsetX) + 0.5) * resolution,
 				(float64(y-offsetY) + 0.5) * resolution,
 			}
-			if distanceToQuad(cellCenter, obs.Quad) <= margin {
-				cells = append(cells, [2]int{x, y})
+			if d := distanceToQuad(cellCenter, obs.Quad); d <= margin {
+				cells = append(cells, cellDist{cell: [2]int{x, y}, dist: d})
 			}
 		}
 	}
