@@ -531,3 +531,29 @@ Files fixed: `cmd/main.go` (3 instances), `cmd/demo_mode.go` (2 instances).
 - [BUGS.md](BUGS.md) - Active bug tracker with open issues
 - [PLAN.md](PLAN.md) - Implementation plan and architecture
 - [AGENTS.md](AGENTS.md) - Agent guidelines and build commands
+
+---
+
+## MEDIUM - Resolved
+
+### UI-001: WebSocket Connection Has No Reconnect Logic - RESOLVED (Oct 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Medium |
+| **Component** | `ui/src/composables/useWebSocket.ts`, `internal/ui/ws_hub.go` |
+
+**Fix:** the frontend reconnects with a scheduled retry and an `onReconnect` hook (`App.vue` resets transient state and re-syncs the goal from the server); the server pings every 54 s and drops a client silent for 60 s.
+
+---
+
+### UI-002: MJPEG Stream Has No Error Recovery - RESOLVED (Oct 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Medium |
+| **Component** | `internal/ui/mjpeg_stream.go`, `ui/src/App.vue` |
+
+**Fix:** a capture error no longer ends the stream (the handler keeps serving and simply sends no frames), and `App.vue` re-requests `/stream` with a cache-busting parameter on every WebSocket reconnect. A dead camera is recovered by the service restart in `watchdog.go`; verified on the hardware on 2026-10-12 (video came back on its own after an unplug).

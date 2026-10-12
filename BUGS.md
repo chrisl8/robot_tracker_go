@@ -4,7 +4,7 @@
 
 This document tracks **open** bugs, issues, and technical debt in the Robot Tracker Go project.
 
-> **Resolved bugs have been moved to [ARCHIVED_BUGS.md](ARCHIVED_BUGS.md)** to keep this file focused on active issues while preserving institutional memory.
+> **Resolved bugs have been moved to [ARCHIVED_BUGS.md](docs/archived/ARCHIVED_BUGS.md)** to keep this file focused on active issues while preserving institutional memory.
 
 ## Bug Categories
 
@@ -23,38 +23,13 @@ This document tracks **open** bugs, issues, and technical debt in the Robot Trac
 
 ## HIGH
 
-*(No open HIGH bugs - test coverage exists, see ARCHIVED_BUGS.md)*
+*(No open HIGH bugs - test coverage exists, see docs/archived/ARCHIVED_BUGS.md)*
 
 ---
 
 ## MEDIUM
 
-### UI-001: WebSocket Connection Has No Reconnect Logic
-
-| Field | Value |
-|-------|-------|
-| **Status** | Open |
-| **Severity** | Medium |
-| **Impact** | Clients cannot reconnect after disconnection |
-| **Component** | `internal/ui/webserver.go` |
-
-**Fix Plan:**
-- Add WebSocket reconnect logic to frontend
-- Implement heartbeat/ping-pong in WebSocket handler
-
----
-
-### UI-002: MJPEG Stream Has No Error Recovery
-
-| Field | Value |
-|-------|-------|
-| **Status** | Open |
-| **Severity** | Medium |
-| **Impact** | Stream fails permanently on capture error |
-| **Component** | `internal/ui/webserver.go` |
-
-**Fix Plan:**
-- Add error recovery and stream restart in MJPEG server
+*(No open MEDIUM bugs)*
 
 ---
 
@@ -152,7 +127,7 @@ px, py := (track.Bbox[0]+track.Bbox[2])/2, (track.Bbox[1]+track.Bbox[3])/2
 
 ## Related Documents
 
-- [ARCHIVED_BUGS.md](ARCHIVED_BUGS.md) - Resolved bugs for historical reference
+- [ARCHIVED_BUGS.md](docs/archived/ARCHIVED_BUGS.md) - Resolved bugs for historical reference
 - [PLAN.md](PLAN.md) - Implementation plan and architecture
 - [AGENTS.md](AGENTS.md) - Agent guidelines and build commands
 - `internal/camera/camera.go` - Camera interface
