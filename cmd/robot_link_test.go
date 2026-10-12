@@ -69,15 +69,33 @@ func TestApplyRobotLink_ReleasesGoalsWhenRobotNeverAnswered(t *testing.T) {
 	}
 }
 
-func TestApplyRobotLink_UnknownDoesNotReleaseGoals(t *testing.T) {
+// The Arduino dropping (alive or silent -> unknown) releases the goal: found on the
+// hardware, the robot otherwise resumed driving by itself when the cable was replugged.
+func TestApplyRobotLink_ReleasesGoalsWhenArduinoDrops(t *testing.T) {
+	for _, from := range []controller.RobotLink{controller.RobotLinkAlive, controller.RobotLinkSilent} {
+		t.Run(string(from), func(t *testing.T) {
+			rs, setGoal, hasGoal := robotLinkRig(t)
+			rs.applyRobotLink(from)
+			setGoal()
+
+			rs.applyRobotLink(controller.RobotLinkUnknown)
+
+			if hasGoal() {
+				t.Error("the goal must be released when the Arduino connection drops")
+			}
+		})
+	}
+}
+
+// Unknown at startup (never connected, or demo mode with no controller) is not a drop.
+func TestApplyRobotLink_InitialUnknownDoesNotReleaseGoals(t *testing.T) {
 	rs, setGoal, hasGoal := robotLinkRig(t)
 	setGoal()
 
-	rs.applyRobotLink(controller.RobotLinkAlive)
-	rs.applyRobotLink(controller.RobotLinkUnknown) // e.g. the USB link dropped
+	rs.applyRobotLink(controller.RobotLinkUnknown)
 
 	if !hasGoal() {
-		t.Error("an unknown link (USB reconnecting) must not release the goal; only a silent robot does")
+		t.Error("the first unknown link is not a disconnect and must not release the goal")
 	}
 }
 

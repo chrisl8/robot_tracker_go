@@ -135,9 +135,11 @@ func (rs *RobotSystem) updateRobotLink() controller.RobotInfo {
 
 // applyRobotLink logs each change of the robot's link state, so a robot that went
 // silent shows up in the service log too, and releases any goal when it goes
-// silent. A powered-off robot is still visible to the camera, so without the
-// release autonomy would keep commanding it and it would walk off toward the old
-// goal the moment it was switched back on.
+// silent or when the Arduino link drops (alive or silent -> unknown, which only
+// happens on a disconnect). A powered-off robot is still visible to the camera, so
+// without the release autonomy would keep commanding it and it would walk off
+// toward the old goal the moment it was switched back on; the same goes for a
+// replugged Arduino, found on the hardware to resume driving by itself.
 func (rs *RobotSystem) applyRobotLink(link controller.RobotLink) {
 	prev := rs.io.lastRobotLink
 	if link == prev {
@@ -149,6 +151,8 @@ func (rs *RobotSystem) applyRobotLink(link controller.RobotLink) {
 	rs.io.lastRobotLink = link
 	if link == controller.RobotLinkSilent {
 		rs.releaseAllGoals("Robot stopped answering")
+	} else if link == controller.RobotLinkUnknown && prev != "" {
+		rs.releaseAllGoals("Arduino connection lost")
 	}
 }
 

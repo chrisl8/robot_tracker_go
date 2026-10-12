@@ -66,7 +66,7 @@ The `RobotSystem` struct in `cmd/main.go` owns and orchestrates all subsystems, 
 
 - Control mode is `hold` (default), `manual` or `autonomous` (`cmd/control_state.go`); leaving manual or autonomous clears the active command and stops the robot. Emergency stop halts everything until cleared.
 - Several independent deadmen stand between a dropped link and a walking robot: the UI re-sends held keys every 250 ms; `CommandQueue` drops a command nobody re-sends within 2 s; the gamepad firmware reverts to its own buttons after `SERIAL_TIMEOUT_MS` (500 ms) of no Mac commands; the robot firmware stands still after 1 s without a valid packet. The camera watchdog (`watchdog.go`) broadcasts status and halts the robot once per stall when frames stop, because autonomy runs from the frame loop.
-- **Goals are released, with a Stop, in two cases:** recalibration (the goal was in the old world frame) and the robot going silent (see below). `releaseAllGoals(reason)` in `cmd/web_callbacks.go` does it. A switched-off robot is still visible to the camera, so without the release autonomy would keep commanding it and it would walk toward the old goal when powered back on.
+- **Goals are released, with a Stop, in three cases:** recalibration (the goal was in the old world frame), the robot going silent (see below), and the Arduino link dropping (alive/silent -> unknown in `applyRobotLink`; found on the hardware: without it the robot resumed driving by itself when the cable was replugged). `releaseAllGoals(reason)` in `cmd/web_callbacks.go` does it. A switched-off robot is still visible to the camera, so without the release autonomy would keep commanding it and it would walk toward the old goal when powered back on.
 
 ### Path followers and the simulator
 
