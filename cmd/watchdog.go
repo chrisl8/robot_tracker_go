@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -58,6 +60,40 @@ func (rs *RobotSystem) logPerf() {
 // stalled camera worth telling the UI about.
 const frameStallThreshold = 2 * time.Second
 
+const (
+	// cameraDeadRestartAfter is how long a camera that has been delivering
+	// frames may then go without one before the service restarts itself. It
+	// outlasts the camera's own reopen attempts (each can block ~45 s on the
+	// dead device), because on macOS a camera that was unplugged never delivers
+	// frames to the same process again, even once it is plugged back in.
+	cameraDeadRestartAfter = 60 * time.Second
+	launchdLabel           = "com.chrisl8.robot-tracker"
+)
+
+// restartService asks launchd to restart this service (SIGTERM to us, which stops
+// the robot cleanly, then a fresh start). A var so tests can replace it.
+var restartService = func() error {
+	// #nosec G204 -- fixed arguments: a constant label and our own uid
+	return exec.Command("launchctl", "kickstart", "-k",
+		fmt.Sprintf("gui/%d/%s", os.Getuid(), launchdLabel)).Run()
+}
+
+// restartIfCameraDead restarts the service when frames, which did flow before,
+// have been missing for cameraDeadRestartAfter. It reports whether it asked for
+// a restart. A camera that never delivered a frame is left alone, so a missing
+// camera permission cannot put the service into a restart loop. Outside launchd
+// (a hand-run process) the restart fails and the log says so.
+func (rs *RobotSystem) restartIfCameraDead(age time.Duration) bool {
+	if age <= cameraDeadRestartAfter || rs.stats.lastFrameNanos.Load() == 0 {
+		return false
+	}
+	utils.Logf("Camera has delivered no frames for %.0fs and reopening did not help: restarting the service", age.Seconds())
+	if err := restartService(); err != nil {
+		utils.Logf("Could not restart the service (not running under launchd?): %v; restart it by hand", err)
+	}
+	return true
+}
+
 // startFrameWatchdog broadcasts status once a second while no frames are being
 // processed. The normal status update rides on the frame loop, so without this
 // a dead camera would leave the UI silently showing the last good FPS.
@@ -73,6 +109,7 @@ func (rs *RobotSystem) startFrameWatchdog() {
 			defer ticker.Stop()
 			ticks := 0
 			stallHalted := false
+			var lastRestartAsk time.Time
 			for {
 				select {
 				case <-stop:
@@ -104,6 +141,10 @@ func (rs *RobotSystem) startFrameWatchdog() {
 						}
 					} else if age <= frameStallThreshold {
 						stallHalted = false
+					}
+					// Give launchd time to stop us; do not ask again every tick.
+					if time.Since(lastRestartAsk) > 30*time.Second && rs.restartIfCameraDead(age) {
+						lastRestartAsk = time.Now()
 					}
 				}
 			}
