@@ -224,6 +224,10 @@ type PathExecutionConfig struct {
 	MaxWaitFrames        int     `yaml:"max_wait_frames"`
 	ForwardThresholdDeg  float64 `yaml:"forward_threshold_deg"`
 	TrackingLostTimeoutS float64 `yaml:"tracking_lost_timeout_s"`
+	// Follower picks how the robot follows a planned path: "carrot" (the
+	// default) steers at a point ahead of its progress along the path;
+	// "waypoint" hops from waypoint to waypoint (docs/pure-pursuit-plan.md).
+	Follower string `yaml:"follower"`
 }
 
 type AprilTagConfig struct {

@@ -93,6 +93,8 @@ type PathMessage struct {
 	RobotID int      `json:"robot_id"`
 	Points  [][2]int `json:"points"`
 	Color   string   `json:"color"`
+	// Carrot is the point the robot is steering at, in pixels (carrot follower only).
+	Carrot *[2]int `json:"carrot,omitempty"`
 }
 
 type PathsMessage struct {

@@ -104,6 +104,8 @@ func (rs *RobotSystem) registerWebServerCallbacks() {
 		return paths
 	}
 
+	rs.web.webServer.Callbacks.OnCarrots = rs.carrotPoints
+
 	rs.web.webServer.Callbacks.OnCommand = func(cmdStr string) error {
 		if rs.IsEmergencyStopped() {
 			return fmt.Errorf("emergency stop is active")

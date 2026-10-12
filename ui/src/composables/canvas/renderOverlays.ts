@@ -98,6 +98,20 @@ export function createOverlayRenderer({
             ctx.value.stroke()
             ctx.value.restore()
 
+            // The carrot: the point the robot is steering at (carrot follower only)
+            if (path.carrot) {
+                const cp = naturalToCanvas(path.carrot[0], path.carrot[1])
+                ctx.value.save()
+                ctx.value.fillStyle = '#FF8800'
+                ctx.value.strokeStyle = '#FFFFFF'
+                ctx.value.lineWidth = 2
+                ctx.value.beginPath()
+                ctx.value.arc(cp.x, cp.y, 7, 0, Math.PI * 2)
+                ctx.value.fill()
+                ctx.value.stroke()
+                ctx.value.restore()
+            }
+
             const lastIdx = path.points.length - 1
             const pulse = 0.5 + 0.5 * Math.sin(animation.getPathPhase() * 4 * Math.PI)
 

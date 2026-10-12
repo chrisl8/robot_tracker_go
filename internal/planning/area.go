@@ -80,3 +80,14 @@ func (a *Area) equal(b *Area, eps float64) bool {
 	}
 	return true
 }
+
+// Margin is how far p is inside the area: its distance to the nearest edge,
+// negative when outside.
+func (a *Area) Margin(p [2]float64) float64 {
+	d := a.edgeDistances(p)
+	m := d[0]
+	for _, v := range d[1:] {
+		m = math.Min(m, v)
+	}
+	return m
+}

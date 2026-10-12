@@ -185,6 +185,7 @@ export interface PathMessage {
     robot_id: number
     points: [number, number][]
     color: string
+    carrot?: [number, number]
 }
 
 export interface PathsNestedResponse {

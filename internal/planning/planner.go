@@ -129,8 +129,8 @@ func clearanceAt(pt [2]float64, obstacles []Obstacle) float64 {
 const clearanceTolerance = 0.025
 
 // segmentMargin is the clearance a straight segment must keep when it joins
-// points whose own clearances are given: the full soft margin if they have
-// it, otherwise no less than they do (so a path squeezing through a gap is not
+// points whose own clearances are given: the full soft margin if they have it,
+// otherwise no less than they do (so a path squeezing through a gap is not
 // rejected for being in the gap), and never below the hard limit.
 func segmentMargin(opts PlanOptions, endpointClearance float64) float64 {
 	return math.Max(opts.Hard, math.Min(opts.Soft, endpointClearance-clearanceTolerance))
@@ -154,6 +154,29 @@ func (p *Planner) lineClearLocked(a, b [2]float64, margin float64) bool {
 	return true
 }
 
+// CanDriveStraight reports whether robotID can go straight from a to b
+// without taking its centre closer to an obstacle than it, or b, already is.
+// Unlike the strict check used for skipping waypoints, a robot already inside
+// the hard limit (it drifted, or a replan started it there) may head out: it
+// only has to get no closer. b must itself be as clear as a, up to the hard
+// limit, or a target inside an obstacle would relax the margin to nothing
+// (the margin follows the worse end).
+func (p *Planner) CanDriveStraight(robotID int, a, b [2]float64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	opts, obstacles := p.planOptionsLocked(robotID), p.allObstaclesLocked()
+	ca, cb := clearanceAt(a, obstacles), clearanceAt(b, obstacles)
+	if cb < math.Min(opts.Hard, ca)-clearanceTolerance {
+		return false
+	}
+	worse := math.Min(ca, cb)
+	margin := math.Min(opts.Soft, worse-clearanceTolerance)
+	if worse >= opts.Hard {
+		margin = math.Max(margin, opts.Hard)
+	}
+	return p.lineClearLocked(a, b, margin)
+}
+
 // planPathLocked is the unexported implementation of PlanPath. Callers must
 // already hold p.mu — it exists so other Planner methods can plan a path
 // without re-entering the lock.
@@ -163,22 +186,8 @@ func (p *Planner) planPathLocked(robotID int, start, goal [2]float64) ([][2]floa
 	path, ok := p.globalPlanner.PlanWithOptions(start, goal, allObstacles, opts, p.area)
 	if ok && len(path) > 2 {
 		before := len(path)
-		originalPath := make([][2]float64, len(path))
-		copy(originalPath, path)
-		simplified := SimplifyPath(path, 0.15)
-		// The validated path is final. Simplifying it again (same epsilon)
-		// would drop the very waypoints validation restored to keep a
-		// segment clear of an obstacle.
-		// A simplified segment must keep the soft margin, or else as much
-		// clearance as the stretch of A* path it replaces had.
-		path = validateSimplified(originalPath, simplified, allObstacles, 0.05, func(from, to int) float64 {
-			c := math.Inf(1)
-			for j := from; j <= to; j++ {
-				c = math.Min(c, clearanceAt(originalPath[j], allObstacles))
-			}
-			return segmentMargin(opts, c)
-		})
-		utils.Debugf("Path simplified: %d -> %d waypoints (validated against %d obstacles)", before, len(path), len(allObstacles))
+		path = SimplifyPathClear(path, 0.15, allObstacles, opts)
+		utils.Debugf("Path simplified: %d -> %d waypoints (checked against %d obstacles)", before, len(path), len(allObstacles))
 	}
 	return path, ok
 }
@@ -556,3 +565,51 @@ func boxesClose(a, b Obstacle, eps float64) bool {
 		math.Abs(a.WorldBottomRight[0]-b.WorldBottomRight[0]) <= eps &&
 		math.Abs(a.WorldBottomRight[1]-b.WorldBottomRight[1]) <= eps
 }
+
+// FullPath returns a copy of robotID's whole planned path, whatever has been
+// followed so far (GetPathsWithGoals returns only what remains). nil if none.
+func (p *Planner) FullPath(robotID int) [][2]float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	path := p.paths[robotID]
+	out := make([][2]float64, len(path))
+	copy(out, path)
+	return out
+}
+
+// SetWaypointIndex says which waypoint of robotID's path is next, for a
+// follower that tracks its own progress along the path (the path drawn to the
+// operator and GetNextWaypoint read it). Out of range is clamped.
+func (p *Planner) SetWaypointIndex(robotID, idx int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	path, ok := p.paths[robotID]
+	if !ok || len(path) == 0 {
+		return
+	}
+	p.currentWaypoint[robotID] = max(0, min(len(path)-1, idx))
+}
+
+// RobotDiameter is the footprint robotID was registered with.
+func (p *Planner) RobotDiameter(robotID int) (float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	robot, ok := p.coordinator.GetRobotState(robotID)
+	if !ok || robot.Diameter <= 0 {
+		return 0, false
+	}
+	return robot.Diameter, true
+}
+
+// RobotWorld is the planner's answers about obstacles for one robot, as the
+// carrot path tracker (package pursuit) asks for them.
+type RobotWorld struct {
+	p  *Planner
+	id int
+}
+
+// World returns robotID's view of the obstacles.
+func (p *Planner) World(robotID int) RobotWorld { return RobotWorld{p, robotID} }
+
+// CanDriveStraight: see Planner.CanDriveStraight.
+func (w RobotWorld) CanDriveStraight(a, b [2]float64) bool { return w.p.CanDriveStraight(w.id, a, b) }

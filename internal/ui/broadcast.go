@@ -80,6 +80,10 @@ func (s *WebServer) BroadcastPaths() {
 	}
 
 	paths := s.Callbacks.OnPathsChanged()
+	var carrots map[int][2]float64
+	if s.Callbacks.OnCarrots != nil {
+		carrots = s.Callbacks.OnCarrots()
+	}
 	if len(paths) == 0 {
 		s.BroadcastOverlay(OverlayMessage{
 			Type:  "paths",
@@ -103,11 +107,16 @@ func (s *WebServer) BroadcastPaths() {
 
 		brightColors := []string{"#FFFF00", "#00FF00", "#FF00FF", "#00FFFF", "#FF6600", "#FF0066", "#66FF00", "#0099FF"}
 		color := brightColors[robotID%len(brightColors)]
-		pathMessages = append(pathMessages, PathMessage{
+		msg := PathMessage{
 			RobotID: robotID,
 			Points:  pixels,
 			Color:   color,
-		})
+		}
+		if c, ok := carrots[robotID]; ok {
+			px, py := estimator.WorldToPixel(position.Point2D{X: c[0], Y: c[1]})
+			msg.Carrot = &[2]int{px, py}
+		}
+		pathMessages = append(pathMessages, msg)
 		utils.Debugf("BroadcastPaths: robot %d has %d waypoints, first pixel=(%d,%d)", robotID, len(pixels), pixels[0][0], pixels[0][1])
 	}
 

@@ -345,34 +345,55 @@ func (a *AStar) reconstructPath(cameFrom map[[2]int]*Node, current *Node, offset
 	return path
 }
 
-// SimplifyPath removes waypoints that are nearly collinear using Douglas-Peucker.
-// epsilon is the max perpendicular distance (meters) a point can be from the line
-// before it's considered significant.
-func SimplifyPath(path [][2]float64, epsilon float64) [][2]float64 {
+// SimplifyPathClear thins an A* path (a waypoint every cell) with
+// Douglas-Peucker: a run of points collapses to its two ends when none of them
+// is more than epsilon (metres) from the straight line between them AND that
+// line is itself clear of the obstacles. Otherwise the run is split at its
+// farthest point and each half is tried again, so a chord that would cut a
+// corner costs a waypoint or two where it matters, not the whole stretch.
+//
+// A chord must keep opts.Soft from every obstacle, or as much clearance as the
+// raw points it replaces had (never less than opts.Hard): see segmentMargin.
+// A path squeezing through a gap is therefore not rejected for being in the
+// gap, and one in open ground is not allowed to cut towards an obstacle.
+func SimplifyPathClear(path [][2]float64, epsilon float64, obstacles []Obstacle, opts PlanOptions) [][2]float64 {
 	if len(path) <= 2 {
 		return path
 	}
-
-	// Find point with max distance from line between first and last
-	maxDist := 0.0
-	maxIdx := 0
-	start := path[0]
-	end := path[len(path)-1]
-
-	for i := 1; i < len(path)-1; i++ {
-		d := perpendicularDistance(path[i], start, end)
-		if d > maxDist {
-			maxDist = d
-			maxIdx = i
+	var simplify func(lo, hi int) [][2]float64
+	simplify = func(lo, hi int) [][2]float64 {
+		a, b := path[lo], path[hi]
+		if hi-lo < 2 {
+			return [][2]float64{a, b}
 		}
-	}
-
-	if maxDist > epsilon {
-		left := SimplifyPath(path[:maxIdx+1], epsilon)
-		right := SimplifyPath(path[maxIdx:], epsilon)
+		maxDist, maxIdx := 0.0, (lo+hi)/2
+		clearance := math.Inf(1)
+		for i := lo; i <= hi; i++ {
+			clearance = math.Min(clearance, clearanceAt(path[i], obstacles))
+			if i > lo && i < hi {
+				if d := perpendicularDistance(path[i], a, b); d > maxDist {
+					maxDist, maxIdx = d, i
+				}
+			}
+		}
+		if maxDist <= epsilon && chordClear(a, b, obstacles, segmentMargin(opts, clearance)) {
+			return [][2]float64{a, b}
+		}
+		left, right := simplify(lo, maxIdx), simplify(maxIdx, hi)
 		return append(left[:len(left)-1], right...)
 	}
-	return [][2]float64{start, end}
+	return simplify(0, len(path)-1)
+}
+
+// chordClear reports whether the segment a-b stays at least margin from every
+// obstacle, sampling every 5 cm like the A* grid.
+func chordClear(a, b [2]float64, obstacles []Obstacle, margin float64) bool {
+	for _, obs := range obstacles {
+		if segmentIntersectsObstacle(a, b, obs, margin, 0.05) {
+			return false
+		}
+	}
+	return true
 }
 
 func perpendicularDistance(point, lineStart, lineEnd [2]float64) float64 {
@@ -411,65 +432,6 @@ func segmentIntersectsObstacle(p1, p2 [2]float64, obs Obstacle, margin, resoluti
 		}
 	}
 	return false
-}
-
-// ValidateSimplifiedPath checks each segment of a simplified path against the
-// obstacles' exact footprints plus margin. If a simplified segment passes
-// through an obstacle, the original unsimplified waypoints for that segment
-// are restored.
-func ValidateSimplifiedPath(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, margin, resolution float64) [][2]float64 {
-	return validateSimplified(originalPath, simplifiedPath, obstacles, resolution, func(int, int) float64 { return margin })
-}
-
-// validateSimplified is ValidateSimplifiedPath with the margin chosen per
-// segment: marginFor receives the range of original-path indices the
-// simplified segment replaces.
-func validateSimplified(originalPath, simplifiedPath [][2]float64, obstacles []Obstacle, resolution float64, marginFor func(fromOrig, toOrig int) float64) [][2]float64 {
-	if len(simplifiedPath) <= 1 || len(obstacles) == 0 {
-		return simplifiedPath
-	}
-
-	// Build index mapping: for each simplified waypoint, find its index in the original path.
-	// SimplifyPath preserves exact points from the original (Douglas-Peucker property).
-	origIndices := make([]int, len(simplifiedPath))
-	origIdx := 0
-	for si, sp := range simplifiedPath {
-		for origIdx < len(originalPath) {
-			if originalPath[origIdx] == sp {
-				origIndices[si] = origIdx
-				break
-			}
-			origIdx++
-		}
-	}
-
-	validated := [][2]float64{simplifiedPath[0]}
-	for i := 0; i < len(simplifiedPath)-1; i++ {
-		p1 := simplifiedPath[i]
-		p2 := simplifiedPath[i+1]
-
-		margin := marginFor(origIndices[i], origIndices[i+1])
-		blocked := false
-		for _, obs := range obstacles {
-			if segmentIntersectsObstacle(p1, p2, obs, margin, resolution) {
-				blocked = true
-				break
-			}
-		}
-
-		if blocked {
-			// Restore original waypoints between these two simplified points
-			startOrig := origIndices[i] + 1
-			endOrig := origIndices[i+1]
-			for j := startOrig; j <= endOrig; j++ {
-				validated = append(validated, originalPath[j])
-			}
-		} else {
-			validated = append(validated, p2)
-		}
-	}
-
-	return validated
 }
 
 // cellDist is a grid cell and its centre's distance to an obstacle's footprint.

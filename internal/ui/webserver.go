@@ -156,6 +156,8 @@ type WebServerCallbacks struct {
 	OnGetControlState     func() (string, bool)
 
 	OnPathsChanged func() map[int][][2]float64
+	// OnCarrots returns the point each robot is steering at (carrot follower only).
+	OnCarrots func() map[int][2]float64
 }
 
 func NewWebServer(addr string) *WebServer {

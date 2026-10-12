@@ -248,7 +248,12 @@ func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 
 	rs.broadcastFrameStats(len(detectionResult.Tags), len(trackingResult.Tracks), detectionResult.Tags, width, height, nil)
 
-	if rs.stats.frameNum%10 == 0 && rs.web.webServer != nil {
+	// The carrot moves, so redraw more often when it is in use.
+	pathEvery := 10
+	if rs.io.useCarrot {
+		pathEvery = 2
+	}
+	if rs.stats.frameNum%pathEvery == 0 && rs.web.webServer != nil {
 		rs.web.webServer.BroadcastPaths()
 	}
 

@@ -80,6 +80,8 @@ type controlIOSubsystem struct {
 	commandQueue        *controller.CommandQueue
 	pathExecutor        *controller.PathExecutor
 	waypointThreshold   float64
+	useCarrot           bool                 // path_execution.follower: carrot
+	carrots             map[int]*carrotState // carrot trackers, by tag_id; frame loop only
 	trackingLostTimeout time.Duration
 	lastCommandTime     time.Time
 	robotCommands       map[int]string       // tag_id -> current motion state

@@ -52,9 +52,13 @@ func TestPlanPath_TakesTheGapThatFits(t *testing.T) {
 		t.Fatal("no path")
 	}
 	passedLeft := false
-	for _, wp := range path {
-		if wp[1] > 0.55 && wp[1] < 0.85 && wp[0] < 0.36 {
-			passedLeft = true
+	for i := 0; i+1 < len(path); i++ {
+		for f := 0.0; f <= 1; f += 0.02 {
+			x := path[i][0] + f*(path[i+1][0]-path[i][0])
+			y := path[i][1] + f*(path[i+1][1]-path[i][1])
+			if y > 0.6 && y < 0.78 && x < 0.36 {
+				passedLeft = true
+			}
 		}
 	}
 	if !passedLeft {
@@ -128,6 +132,34 @@ func TestSegmentMargin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := segmentMargin(opts, tt.endpoints); math.Abs(got-tt.want) > 1e-9 {
 				t.Errorf("segmentMargin = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// A robot that has ended up inside the hard limit (it drifted, or a replan
+// started it there) must be able to head out, but never further in.
+func TestCanDriveStraight_ARobotInsideTheHardLimitMayLeaveButNotGoDeeper(t *testing.T) {
+	p := NewPlanner(nil)
+	p.AddRobot(1, [2]float64{0, 0}, 0.30)
+	box := NewRectObstacle("box", [2]float64{-1, 0.5}, [2]float64{1, 1.5})
+	p.SetObstacles([]Obstacle{box})
+	// Centre 0.15 m from the box: well inside the 0.22 m hard limit.
+	in := [2]float64{0, 0.35}
+	tests := []struct {
+		name string
+		to   [2]float64
+		want bool
+	}{
+		{"straight away from the box", [2]float64{0, -0.3}, true},
+		{"along the box at the same distance", [2]float64{0.5, 0.35}, true},
+		{"towards the box", [2]float64{0, 0.45}, false},
+		{"into the box", [2]float64{0, 1.0}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.CanDriveStraight(1, in, tt.to); got != tt.want {
+				t.Errorf("CanDriveStraight(%v -> %v) = %v, want %v", in, tt.to, got, tt.want)
 			}
 		})
 	}

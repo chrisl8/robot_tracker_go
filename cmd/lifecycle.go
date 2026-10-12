@@ -177,6 +177,7 @@ func (rs *RobotSystem) initPathExecutor() {
 	rs.io.pathExecutor = controller.NewPathExecutor()
 	rs.io.waypointThreshold = 0.1
 	rs.io.trackingLostTimeout = 3 * time.Second
+	rs.io.useCarrot = true
 	if rs.cfg != nil {
 		pe := rs.cfg.PathExecution
 		if pe.WaypointThreshold > 0 {
@@ -197,9 +198,20 @@ func (rs *RobotSystem) initPathExecutor() {
 		if pe.TrackingLostTimeoutS > 0 {
 			rs.io.trackingLostTimeout = time.Duration(pe.TrackingLostTimeoutS * float64(time.Second))
 		}
+		switch pe.Follower {
+		case "waypoint":
+			rs.io.useCarrot = false
+		case "", "carrot":
+		default:
+			utils.Logf("WARNING: unknown path_execution.follower %q: using \"carrot\"", pe.Follower)
+		}
 	}
-	utils.Logf("Path executor: waypoint=%.3f tracking_timeout=%.1fs",
-		rs.io.waypointThreshold, rs.io.trackingLostTimeout.Seconds())
+	follower := "waypoint"
+	if rs.io.useCarrot {
+		follower = "carrot"
+	}
+	utils.Logf("Path executor: follower=%s waypoint=%.3f tracking_timeout=%.1fs",
+		follower, rs.io.waypointThreshold, rs.io.trackingLostTimeout.Seconds())
 	utils.Logf("Path executor: spin=%.1f° burst=%d wait=%d forward=%.1f°",
 		rs.io.pathExecutor.SpinThresholdDeg, rs.io.pathExecutor.BurstFrames, rs.io.pathExecutor.MaxWaitFrames,
 		rs.io.pathExecutor.ForwardThresholdDeg)

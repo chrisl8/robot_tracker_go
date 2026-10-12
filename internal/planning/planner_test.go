@@ -519,3 +519,49 @@ func TestPlanner_UnplannableGoalDropsOldPath(t *testing.T) {
 		})
 	}
 }
+
+func TestPlanner_FullPathAndWaypointIndex(t *testing.T) {
+	p := NewPlanner(nil)
+	p.AddRobot(1, [2]float64{0, 0}, 0.3)
+	p.SetObstacles([]Obstacle{NewRectObstacle("box", [2]float64{0.9, -1}, [2]float64{1.1, 1})})
+	p.SetGoal(1, [2]float64{2, 0})
+	full := p.FullPath(1)
+	if len(full) < 3 {
+		t.Fatalf("expected a path round the box, got %v", full)
+	}
+	full[0] = [2]float64{99, 99} // a copy: changing it must not touch the planner
+	if p.FullPath(1)[0] == [2]float64{99, 99} {
+		t.Error("FullPath returned the planner's own slice")
+	}
+
+	p.SetWaypointIndex(1, 2)
+	if wp, _ := p.GetNextWaypoint(1); wp != p.FullPath(1)[2] {
+		t.Errorf("next waypoint %v, want path[2] %v", wp, p.FullPath(1)[2])
+	}
+	if remaining := p.GetPathsWithGoals()[1]; len(remaining) != len(p.FullPath(1))-2 {
+		t.Errorf("remaining path has %d points, want %d: the drawn path must start at the next waypoint", len(remaining), len(p.FullPath(1))-2)
+	}
+	if len(p.FullPath(1)) != len(full) {
+		t.Error("the full path changed when the waypoint index moved")
+	}
+
+	p.SetWaypointIndex(1, 999)
+	if wp, ok := p.GetNextWaypoint(1); !ok || wp != p.FullPath(1)[len(full)-1] {
+		t.Errorf("an out-of-range index should clamp to the last waypoint, got %v ok=%v", wp, ok)
+	}
+	p.SetWaypointIndex(42, 1) // no such robot: nothing happens
+	if len(p.FullPath(42)) != 0 {
+		t.Error("FullPath for an unknown robot")
+	}
+}
+
+func TestPlanner_RobotDiameter(t *testing.T) {
+	p := NewPlanner(nil)
+	if _, ok := p.RobotDiameter(1); ok {
+		t.Error("diameter for a robot that was never added")
+	}
+	p.AddRobot(1, [2]float64{0, 0}, 0.3)
+	if d, ok := p.RobotDiameter(1); !ok || d != 0.3 {
+		t.Errorf("diameter = %v ok=%v, want 0.3", d, ok)
+	}
+}

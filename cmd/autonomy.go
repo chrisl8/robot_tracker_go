@@ -159,22 +159,36 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 				}
 			}
 
-			// Advance past any reached or overshot waypoints
-			if !rs.planning.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.io.waypointThreshold) {
-				utils.Logf("Robot %d reached final waypoint, stopping", robotID)
-				rs.io.lastStop.set("reached the end of the path")
-				if rs.io.commandQueue != nil {
-					rs.io.commandQueue.Enqueue(controller.CommandStop)
-					commandIssued = true
+			// The point to steer at. The waypoint follower (the default) hops
+			// from waypoint to waypoint, skipping reached or overshot ones; the
+			// carrot follower steers at a point ahead of its progress along
+			// the path.
+			var waypoint [2]float64
+			if rs.io.useCarrot {
+				target, ok := rs.carrotTarget(robotID, [2]float64{worldPos.X, worldPos.Y})
+				if !ok {
+					continue
 				}
-				rs.io.robotCommands[robotID] = "stopped"
-				continue
-			}
+				waypoint = target
+			} else {
+				// Advance past any reached or overshot waypoints
+				if !rs.planning.planner.AdvancePastWaypoints(robotID, [2]float64{worldPos.X, worldPos.Y}, rs.io.waypointThreshold) {
+					utils.Logf("Robot %d reached final waypoint, stopping", robotID)
+					rs.io.lastStop.set("reached the end of the path")
+					if rs.io.commandQueue != nil {
+						rs.io.commandQueue.Enqueue(controller.CommandStop)
+						commandIssued = true
+					}
+					rs.io.robotCommands[robotID] = "stopped"
+					continue
+				}
 
-			// Get updated waypoint after advancing
-			waypoint, stillHasPath := rs.planning.planner.GetNextWaypoint(robotID)
-			if !stillHasPath {
-				continue
+				// Get updated waypoint after advancing
+				next, stillHasPath := rs.planning.planner.GetNextWaypoint(robotID)
+				if !stillHasPath {
+					continue
+				}
+				waypoint = next
 			}
 
 			// Heading-based steering: turn to face waypoint, then drive forward
@@ -224,6 +238,8 @@ func (rs *RobotSystem) executeAutonomousControl(tracks []tracking.Track) {
 		}
 		rs.io.robotCommands[robotID] = "stopped"
 	}
+
+	rs.pruneCarrots()
 
 	report = rs.buildAutonomyReport(inView, proximityHeld)
 

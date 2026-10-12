@@ -151,7 +151,15 @@ obstacles:
 # it was tested at 0.4 and caused 20-40° heading lag during turns, making
 # navigation significantly slower (48s vs 25s for ~1m paths).
 path_execution:
-  waypoint_threshold: 0.1  # meters - distance to waypoint before advancing
+  follower: carrot         # how the robot follows a planned path:
+                           #   waypoint = hop from waypoint to waypoint, "arriving" within
+                           #              waypoint_threshold (the old behaviour);
+                           #   carrot   = (default) steer at a point ~1 robot diameter ahead of its progress
+                           #              along the path, held at bends until within ~0.2 diameters
+                           #              of them. Keeps corners from being cut into obstacles
+                           #              (simulator: no collisions, ~60% fewer proximity replans).
+                           #              See docs/pure-pursuit-plan.md.
+  waypoint_threshold: 0.1  # meters - distance to waypoint before advancing (also the goal-arrival radius)
   spin_threshold_deg: 20.0 # heading delta (°/frame) above which robot brakes.
                            # 10° triggered false positives from normal detection noise.
                            # 20° catches genuine uncontrolled spinning without false triggers.

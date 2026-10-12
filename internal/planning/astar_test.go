@@ -288,70 +288,68 @@ func TestSegmentIntersectsObstacle(t *testing.T) {
 	}
 }
 
-func TestValidateSimplifiedPath(t *testing.T) {
-	// Obstacle in the middle that a diagonal shortcut would cross
+func TestSimplifyPathClear(t *testing.T) {
 	obs := []Obstacle{
 		NewRectObstacle("box", [2]float64{1.0, 0.5}, [2]float64{2.0, 1.5}),
 	}
+	none := PlanOptions{}
 
-	t.Run("restores waypoints when simplified segment crosses obstacle", func(t *testing.T) {
-		// Original path goes around the obstacle
-		original := [][2]float64{
-			{0, 0},
-			{0.5, 0},
-			{0.8, 0},
-			{0.8, 0.3},
-			{1.5, 0.3}, // passes below obstacle (y=0.3 < 0.5)
-			{2.5, 0.3},
-			{2.5, 1.0},
-			{3, 2},
+	t.Run("a chord through an obstacle is split, not replaced by every raw point", func(t *testing.T) {
+		// Dense path (a point every 0.1 m) that goes under the box, up the far
+		// side and on; the straight chord start->end crosses the box.
+		var path [][2]float64
+		for x := 0.0; x <= 2.5; x += 0.1 {
+			path = append(path, [2]float64{x, 0.3})
 		}
-		// Simplified path takes a diagonal shortcut through the obstacle
-		simplified := [][2]float64{
-			{0, 0},
-			{3, 2},
+		for y := 0.4; y <= 2.0; y += 0.1 {
+			path = append(path, [2]float64{2.5, y})
 		}
-
-		validated := ValidateSimplifiedPath(original, simplified, obs, 0, 0.05)
-		// Should restore the original waypoints since the shortcut crosses the obstacle
-		if len(validated) <= 2 {
-			t.Errorf("validated path should have more than 2 waypoints (got %d), original waypoints should be restored", len(validated))
+		got := SimplifyPathClear(path, 0.15, obs, none)
+		if len(got) > 4 {
+			t.Errorf("got %d waypoints from %d, want the corner kept and the straight runs collapsed: %v", len(got), len(path), got)
+		}
+		if c := minClearance(got, obs); c <= 0 {
+			t.Errorf("simplified path touches the obstacle (clearance %.3f): %v", c, got)
+		}
+		if got[0] != path[0] || got[len(got)-1] != path[len(path)-1] {
+			t.Errorf("ends moved: %v", got)
 		}
 	})
 
-	t.Run("keeps simplified path when no obstacles crossed", func(t *testing.T) {
-		// Path that doesn't cross any obstacle
-		original := [][2]float64{
-			{0, 3},
-			{0.5, 3},
-			{1, 3},
-			{1.5, 3},
-			{2, 3},
-			{3, 3},
+	t.Run("a small detour round a blocked chord keeps only the detour", func(t *testing.T) {
+		// The 12 cm bump is under epsilon, so distance alone would flatten it
+		// straight through the post; the chord is blocked, so it must stay,
+		// but each side of it must still collapse to one segment.
+		post := []Obstacle{NewRectObstacle("post", [2]float64{1.0, -0.05}, [2]float64{1.1, 0.05})}
+		path := [][2]float64{{0, 0}, {0.5, 0}, {0.95, 0}, {1.05, 0.12}, {1.15, 0}, {1.6, 0}, {2, 0}}
+		got := SimplifyPathClear(path, 0.15, post, none)
+		if len(got) != 3 {
+			t.Errorf("got %d waypoints, want 3 (the ends and the top of the bump): %v", len(got), got)
 		}
-		simplified := [][2]float64{
-			{0, 3},
-			{3, 3},
-		}
-
-		validated := ValidateSimplifiedPath(original, simplified, obs, 0, 0.05)
-		if len(validated) != 2 {
-			t.Errorf("validated path should have 2 waypoints (no obstacles crossed), got %d", len(validated))
+		if c := minClearance(got, post); c <= 0 {
+			t.Errorf("simplified path goes through the post (clearance %.3f): %v", c, got)
 		}
 	})
 
-	t.Run("handles empty obstacles", func(t *testing.T) {
-		simplified := [][2]float64{{0, 0}, {3, 3}}
-		validated := ValidateSimplifiedPath(nil, simplified, nil, 0, 0.05)
-		if len(validated) != 2 {
-			t.Errorf("with no obstacles, should return simplified path unchanged, got %d waypoints", len(validated))
+	t.Run("collapses a clear straight run to its ends", func(t *testing.T) {
+		path := [][2]float64{{0, 3}, {0.5, 3}, {1, 3}, {1.5, 3}, {2, 3}, {3, 3}}
+		if got := SimplifyPathClear(path, 0.15, obs, none); len(got) != 2 {
+			t.Errorf("got %d waypoints, want 2: %v", len(got), got)
 		}
 	})
 
-	t.Run("handles single-point path", func(t *testing.T) {
-		validated := ValidateSimplifiedPath([][2]float64{{0, 0}}, [][2]float64{{0, 0}}, obs, 0, 0.05)
-		if len(validated) != 1 {
-			t.Errorf("single-point path should pass through unchanged, got %d waypoints", len(validated))
+	t.Run("a deviation over epsilon is kept even with nothing in the way", func(t *testing.T) {
+		path := [][2]float64{{0, 0}, {1, 0}, {1, 1}}
+		if got := SimplifyPathClear(path, 0.15, nil, none); len(got) != 3 {
+			t.Errorf("got %v, want the corner kept", got)
+		}
+	})
+
+	t.Run("short paths pass through", func(t *testing.T) {
+		for _, p := range [][][2]float64{nil, {{0, 0}}, {{0, 0}, {3, 3}}} {
+			if got := SimplifyPathClear(p, 0.15, obs, none); len(got) != len(p) {
+				t.Errorf("SimplifyPathClear(%v) = %v", p, got)
+			}
 		}
 	})
 }
