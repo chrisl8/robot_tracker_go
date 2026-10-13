@@ -187,6 +187,7 @@ func (rs *RobotSystem) broadcastFrameStats(tagCount, trackCount int, tags []dete
 	rs.web.webServer.UpdateDetectedTags(detectedTags, width, height)
 }
 
+// ProcessFrame handles one camera frame: it detects tags, updates the tracker, converts tracks to world positions, registers confirmed robots with the planner, computes headings, runs autonomous control and publishes the overlay, status and video to the web UI. It does nothing once the system has stopped.
 func (rs *RobotSystem) ProcessFrame(img image.Image, frameData []byte) {
 	rs.capture.frameMu.Lock()
 	defer rs.capture.frameMu.Unlock()

@@ -7,6 +7,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+// Homography is the 3x3 projective mapping from image pixels to world metres (H), its inverse (HInv), and the image scale. Valid is false until it has been computed.
 type Homography struct {
 	H              [3][3]float64
 	HInv           [3][3]float64
@@ -14,6 +15,7 @@ type Homography struct {
 	Valid          bool
 }
 
+// NewHomography returns an invalid homography; compute or load one before use.
 func NewHomography() *Homography {
 	return &Homography{
 		Valid: false,
@@ -220,6 +222,7 @@ func (h *Homography) determinant() float64 {
 		h.H[0][0]*h.H[1][2]*h.H[2][1]
 }
 
+// ComputeInverse sets HInv from H. It leaves HInv unchanged when H is singular.
 func (h *Homography) ComputeInverse() {
 	det := h.determinant()
 
@@ -249,6 +252,7 @@ func (h *Homography) EstimateScale() {
 	h.PixelsPerMeter = 100.0
 }
 
+// PixelToWorld maps a pixel to world metres. An invalid homography returns the pixel unchanged.
 func (h *Homography) PixelToWorld(pixel Point2D) *Point2D {
 	if !h.Valid {
 		return &Point2D{pixel.X, pixel.Y}
@@ -271,6 +275,7 @@ func (h *Homography) PixelToWorld(pixel Point2D) *Point2D {
 	}
 }
 
+// WorldToPixel maps world metres to the nearest pixel. An invalid homography returns the coordinates truncated to integers.
 func (h *Homography) WorldToPixel(world Point2D) (int, int) {
 	if !h.Valid {
 		return int(world.X), int(world.Y)
@@ -309,10 +314,12 @@ func (h *Homography) SetFromValues(h0, h1, h2, h3, h4, h5, h6, h7, h8 float64) {
 	h.Valid = true
 }
 
+// IsValid reports whether the homography has been computed.
 func (h *Homography) IsValid() bool {
 	return h.Valid
 }
 
+// SetPixelsPerMeter records the approximate image scale.
 func (h *Homography) SetPixelsPerMeter(ppm float64) {
 	h.PixelsPerMeter = ppm
 }

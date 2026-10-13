@@ -23,6 +23,7 @@ type KalmanFilter struct {
 	initialized bool
 }
 
+// NewKalmanFilter returns an uninitialised filter; the first measurement initialises it.
 func NewKalmanFilter() *KalmanFilter {
 	kf := &KalmanFilter{
 		initialized: false,
@@ -64,6 +65,7 @@ func NewKalmanFilter() *KalmanFilter {
 	return kf
 }
 
+// Initialize sets the state to position (x, y) and velocity (cx, cy) and resets the covariance to a large uncertainty.
 func (kf *KalmanFilter) Initialize(x, y, cx, cy float64) {
 	kf.x[0] = x
 	kf.x[1] = y
@@ -133,6 +135,7 @@ func (kf *KalmanFilter) Predict(dt float64) [4]float64 {
 	return kf.x
 }
 
+// Update folds a position measurement (x, y) into the state and returns the new state [x, y, vx, vy]. The first measurement initialises the filter instead.
 func (kf *KalmanFilter) Update(measurement [2]float64) [4]float64 {
 	if !kf.initialized {
 		kf.Initialize(measurement[0], measurement[1], 0, 0)
@@ -200,10 +203,12 @@ func (kf *KalmanFilter) Update(measurement [2]float64) [4]float64 {
 	return kf.x
 }
 
+// GetState returns the state [x, y, vx, vy].
 func (kf *KalmanFilter) GetState() [4]float64 {
 	return kf.x
 }
 
+// GetCovariance returns the 4x4 state covariance.
 func (kf *KalmanFilter) GetCovariance() [4][4]float64 {
 	return kf.P
 }

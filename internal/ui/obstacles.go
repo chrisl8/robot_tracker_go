@@ -14,6 +14,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/planning"
 )
 
+// BroadcastObstacles sends the static obstacle list to every client.
 func (s *WebServer) BroadcastObstacles() {
 	s.obstacles.mutex.RLock()
 	defer s.obstacles.mutex.RUnlock()
@@ -320,12 +321,14 @@ func (s *WebServer) RecomputeObstacleWorld() {
 	s.notifyObstaclesChanged()
 }
 
+// GetObstacles returns the static obstacles.
 func (s *WebServer) GetObstacles() []planning.Obstacle {
 	s.obstacles.mutex.RLock()
 	defer s.obstacles.mutex.RUnlock()
 	return s.obstacles.list
 }
 
+// SetObstacles replaces the static obstacles and notifies the OnObstaclesChanged callback.
 func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
 	s.obstacles.mutex.Lock()
 	s.obstacles.list = obstacles
@@ -336,6 +339,7 @@ func (s *WebServer) SetObstacles(obstacles []planning.Obstacle) {
 	}
 }
 
+// GetObstaclesPath returns the file the obstacles are saved in: the configured path, or the per-camera default.
 func (s *WebServer) GetObstaclesPath() string {
 	s.obstacles.mutex.RLock()
 	configured := s.obstacles.path

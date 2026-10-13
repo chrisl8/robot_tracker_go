@@ -14,6 +14,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// SetCameraName records the camera's name, which names its calibration and obstacle files.
 func (s *WebServer) SetCameraName(name string) {
 	s.calibration.mutex.Lock()
 	s.calibration.cameraName = name
@@ -32,6 +33,7 @@ func (s *WebServer) estimator() *position.PositionEstimator {
 	return s.calibration.positionEstimator
 }
 
+// SetCalibrationState records the calibration status shown in the UI (state, message, file and tag size) and broadcasts it.
 func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize float64) {
 	s.calibration.mutex.Lock()
 	s.calibration.state = state
@@ -56,6 +58,7 @@ func (s *WebServer) SetCalibrationState(state, message, filename string, tagSize
 	})
 }
 
+// SetPositionEstimator gives the server the estimator it uses to convert between pixels and world coordinates.
 func (s *WebServer) SetPositionEstimator(pe *position.PositionEstimator) {
 	s.calibration.mutex.Lock()
 	s.calibration.positionEstimator = pe
@@ -82,6 +85,7 @@ func (s *WebServer) pixelCornersToWorld(pixelTL, pixelBR [2]int) ([2]float64, [2
 		[2]float64{float64(pixelBR[0]), float64(pixelBR[1])}
 }
 
+// CalibrationStatusMessage is the calibration status sent to the UI: its state, a message, the saved file, the tag size, and whether the calibration was made at a different resolution than the current video.
 type CalibrationStatusMessage struct {
 	State              string  `json:"state"`
 	Message            string  `json:"message"`
@@ -120,6 +124,7 @@ func (s *WebServer) handleCalibrationStart(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "state": "detecting"})
 }
 
+// DetectedTagInfo is one tag currently seen by the camera: its ID, centre and corners in pixels.
 type DetectedTagInfo struct {
 	ID      int           `json:"id"`
 	Center  [2]float64    `json:"center"`
@@ -140,6 +145,7 @@ func calibrationTargetSpec() CalibrationTargetSpec {
 	}
 }
 
+// CalibrationDetectedTagsResponse is the reply of the detected-tags endpoint: the tags in view, the frame size they are measured in, and the layout of the calibration target.
 type CalibrationDetectedTagsResponse struct {
 	Tags        []DetectedTagInfo     `json:"tags"`
 	Count       int                   `json:"count"`
@@ -148,6 +154,7 @@ type CalibrationDetectedTagsResponse struct {
 	Target      CalibrationTargetSpec `json:"target"`
 }
 
+// UpdateDetectedTags stores the tags seen in the latest frame for the calibration wizard.
 func (s *WebServer) UpdateDetectedTags(tags []DetectedTagInfo, frameWidth, frameHeight int) {
 	s.calibration.detectedTagsMut.Lock()
 	s.calibration.detectedTags = tags
@@ -196,15 +203,18 @@ func (s *WebServer) handleCalibrationDetectedTags(c *gin.Context) {
 	})
 }
 
+// CalibrationTagCapture is one calibration tag as captured by the wizard: its ID and corners in pixels.
 type CalibrationTagCapture struct {
 	ID      int           `json:"id"`
 	Corners [4][2]float64 `json:"corners"`
 }
 
+// CalibrationComputeRequest is the body of the calibration compute request: the captured tags.
 type CalibrationComputeRequest struct {
 	Tags []CalibrationTagCapture `json:"tags"`
 }
 
+// CalibrationComputeResponse is the result of a calibration attempt: the fit quality (RMS and maximum error in centimetres, a rating), per-tag fits and distance checks, and a message or error.
 type CalibrationComputeResponse struct {
 	State      string                   `json:"state"`
 	RMSCm      float64                  `json:"rmsCm"`

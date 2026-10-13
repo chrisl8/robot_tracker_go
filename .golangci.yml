@@ -8,6 +8,16 @@ linters:
     - gocritic
     - misspell
     - prealloc
+    - revive
+  settings:
+    revive:
+      # Only the doc-comment rule: every exported identifier needs a comment that
+      # starts with its name (BUGS.md DOC-001). The stutter check is off because
+      # names like camera.CameraConfig already exist.
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
 
 linters-settings:
   gocritic:

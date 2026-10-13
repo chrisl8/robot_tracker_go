@@ -35,34 +35,7 @@ This document tracks **open** bugs, issues, and technical debt in the Robot Trac
 
 ## LOW
 
-### DOC-001: API Documentation Incomplete
-
-| Field | Value |
-|-------|-------|
-| **Status** | Open |
-| **Severity** | Low |
-| **Impact** | Hard to understand API usage |
-| **Component** | All packages |
-
-**Fix Plan:**
-- Add godoc comments to all exported types and functions
-- Add example code to package documentation
-
----
-
-### CONFIG-001: No Validation for YAML Configuration
-
-| Field | Value |
-|-------|-------|
-| **Status** | Open |
-| **Severity** | Low |
-| **Impact** | Silent failures on invalid config |
-| **Component** | `internal/config/config.go` |
-
-**Fix Plan:**
-- Add `Validate()` method to Config struct
-- Add validation for required fields
-- Add default values for optional fields
+*(No open LOW bugs)*
 
 ---
 

@@ -10,8 +10,9 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
-// DestinationRequest's fields are pointers so a missing field is a 400 rather
-// than silently becoming 0 (robot 0, or pixel (0,0)).
+// DestinationRequest is the body of a destination request. Its fields are
+// pointers so a missing field is a 400 rather than silently becoming 0 (robot 0,
+// or pixel (0,0)).
 type DestinationRequest struct {
 	RobotID *int `json:"robot_id"`
 	X       *int `json:"x"`
@@ -101,6 +102,7 @@ func (s *WebServer) handleDestinationGet(c *gin.Context) {
 	c.JSON(http.StatusOK, dest)
 }
 
+// ClearDestination forgets the destination and tells every client to remove it.
 func (s *WebServer) ClearDestination(robotID int) {
 	s.destination.mutex.Lock()
 	s.destination.current = DestinationMessage{Valid: false}

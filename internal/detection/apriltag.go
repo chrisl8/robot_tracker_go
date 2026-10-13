@@ -13,6 +13,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// AprilTagDetector finds AprilTags in BGR frames using OpenCV's ArUco/AprilTag detector.
 type AprilTagDetector struct {
 	detector  *gocv.ArucoDetector
 	family    string
@@ -20,6 +21,7 @@ type AprilTagDetector struct {
 	quadSigma float32
 }
 
+// NewAprilTagDetector builds a detector for the configured tag family (an unknown or empty family means tag36h11). A QuadDecimate of 0 means 2.0.
 func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 	var dictCode gocv.ArucoDictionaryCode
 	switch config.Family {
@@ -86,6 +88,7 @@ func NewAprilTagDetector(config AprilTagConfig) (*AprilTagDetector, error) {
 	}, nil
 }
 
+// Detect returns every tag found in a BGR image of the given size, or an empty slice for an empty image. Tag positions and corners are in pixels.
 func (d *AprilTagDetector) Detect(image []byte, width, height int) []AprilTag {
 	tags := make([]AprilTag, 0)
 
@@ -263,6 +266,7 @@ func drawLabel(img *image.RGBA, x, y int, text string, textColor, bgColor color.
 	}
 }
 
+// Close releases the OpenCV detector. It is safe to call more than once.
 func (d *AprilTagDetector) Close() error {
 	if d.detector != nil {
 		_ = d.detector.Close()

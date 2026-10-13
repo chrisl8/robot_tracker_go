@@ -15,6 +15,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// CameraIntrinsics are the lens parameters: the camera matrix, the distortion coefficients and the image size they were measured at.
 type CameraIntrinsics struct {
 	CameraMatrix     [3][3]float64
 	DistortionCoeffs [5]float64
@@ -22,12 +23,14 @@ type CameraIntrinsics struct {
 	Height           int
 }
 
+// CalibrationData is a loaded calibration: lens parameters, the pixel-to-world homography and the world scale.
 type CalibrationData struct {
 	Intrinsics CameraIntrinsics
 	Homography *Homography
 	WorldScale float64
 }
 
+// CalibrationConfig is the YAML file format of a saved calibration (config/calibration_<camera>.yaml).
 type CalibrationConfig struct {
 	Version      int               `yaml:"version"`
 	Camera       CameraInfo        `yaml:"camera"`
@@ -142,11 +145,13 @@ func backUpCalibration(path string, now time.Time) error {
 	return nil
 }
 
+// CameraInfo records which camera and image size a calibration was made for.
 type CameraInfo struct {
 	Name       string `yaml:"name"`
 	Resolution [2]int `yaml:"resolution"`
 }
 
+// PositionEstimator converts between camera pixels and world metres using the calibration's homography. It is safe for concurrent use: a live recalibration swaps the calibration while frames are being converted. Without a calibration it passes coordinates through unchanged.
 type PositionEstimator struct {
 	// mu guards homography, intrinsics, calibratedRes, and frameRes. Those
 	// are mutated by LoadCalibration/SetFrameSize (e.g. from an HTTP handler
@@ -160,6 +165,7 @@ type PositionEstimator struct {
 	intrinsics    *CameraIntrinsics
 }
 
+// NewPositionEstimator returns an estimator, loading the calibration at calibrationPath when that file exists. A calibration that fails to load is reported as a warning and leaves the estimator uncalibrated.
 func NewPositionEstimator(calibrationPath string) (*PositionEstimator, error) {
 	est := &PositionEstimator{
 		homography: NewHomography(),
@@ -175,6 +181,7 @@ func NewPositionEstimator(calibrationPath string) (*PositionEstimator, error) {
 	return est, nil
 }
 
+// LoadCalibration reads a calibration file and makes it the current one.
 func (e *PositionEstimator) LoadCalibration(path string) error {
 	// #nosec G304
 	data, err := os.ReadFile(path)
@@ -337,6 +344,7 @@ func (e *PositionEstimator) VisibleWorldCorners() (corners [4][2]float64, ok boo
 	return corners, true
 }
 
+// PixelToWorld converts a pixel to world metres. Without a calibration it returns the pixel coordinates unchanged.
 func (e *PositionEstimator) PixelToWorld(pixelX, pixelY int) *Point2D {
 	h := e.currentHomography()
 	if !h.IsValid() {
@@ -345,6 +353,7 @@ func (e *PositionEstimator) PixelToWorld(pixelX, pixelY int) *Point2D {
 	return h.PixelToWorld(Point2D{float64(pixelX), float64(pixelY)})
 }
 
+// PixelToWorldFloat is PixelToWorld for sub-pixel coordinates.
 func (e *PositionEstimator) PixelToWorldFloat(pixelX, pixelY float64) *Point2D {
 	h := e.currentHomography()
 	if !h.IsValid() {
@@ -353,6 +362,7 @@ func (e *PositionEstimator) PixelToWorldFloat(pixelX, pixelY float64) *Point2D {
 	return h.PixelToWorld(Point2D{pixelX, pixelY})
 }
 
+// WorldToPixel converts world metres to the nearest pixel. Without a calibration it returns the coordinates truncated to integers.
 func (e *PositionEstimator) WorldToPixel(world Point2D) (int, int) {
 	h := e.currentHomography()
 	if !h.IsValid() {
@@ -372,20 +382,24 @@ func (e *PositionEstimator) currentHomography() *Homography {
 	return e.homography
 }
 
+// GetHomography returns the current homography (never nil; check IsValid).
 func (e *PositionEstimator) GetHomography() *Homography {
 	return e.currentHomography()
 }
 
+// IsCalibrated reports whether a valid calibration is loaded.
 func (e *PositionEstimator) IsCalibrated() bool {
 	return e.currentHomography().IsValid()
 }
 
+// PositionResult is the world positions of all tracked robots in one frame.
 type PositionResult struct {
 	Positions []RobotPosition
 	Timestamp float64
 	FrameIdx  int
 }
 
+// RobotPosition is one robot's position in world metres, with the track and tag it came from.
 type RobotPosition struct {
 	TrackID    int
 	X, Y       float64

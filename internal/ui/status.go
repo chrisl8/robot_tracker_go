@@ -43,12 +43,14 @@ func (s *WebServer) handleStatus(c *gin.Context) {
 	})
 }
 
+// UpdateStats records how many tags were seen in the latest frame, for the status message.
 func (s *WebServer) UpdateStats(tagCount int) {
 	s.stats.mutex.Lock()
 	s.stats.lastTagCount = tagCount
 	s.stats.mutex.Unlock()
 }
 
+// SetArduinoConnected records whether the Arduino link is up, for the status message.
 func (s *WebServer) SetArduinoConnected(connected bool) {
 	s.stats.arduinoMutex.Lock()
 	s.stats.arduinoConnected = connected
@@ -84,6 +86,7 @@ func (s *WebServer) SetRobotInfo(link, servos, mode string, reboots int) {
 	s.stats.arduinoMutex.Unlock()
 }
 
+// BroadcastStatus sends a status message with the given track count, frame rate and uptime.
 func (s *WebServer) BroadcastStatus(trackCount int, fps float64, uptimeSec float64) {
 	s.broadcastStatus(trackCount, fps, uptimeSec, 0, false)
 }

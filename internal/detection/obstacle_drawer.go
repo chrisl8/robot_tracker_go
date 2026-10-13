@@ -7,6 +7,7 @@ import (
 	"image/color"
 )
 
+// Obstacle is a marked static obstacle as the drawer needs it: its pixel and world rectangles and the clearance to draw around it.
 type Obstacle struct {
 	ID               string
 	PixelTopLeft     [2]int
@@ -16,8 +17,10 @@ type Obstacle struct {
 	Clearance        float64
 }
 
+// ObstacleDrawer draws obstacles onto video frames.
 type ObstacleDrawer struct{}
 
+// NewObstacleDrawer returns an ObstacleDrawer.
 func NewObstacleDrawer() *ObstacleDrawer {
 	return &ObstacleDrawer{}
 }

@@ -7,14 +7,19 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// ControlMode is who is driving the robot: nobody (hold), the operator's keys (manual), or the planner (autonomous).
 type ControlMode int
 
 const (
+	// ControlModeIdle is "hold": the robot is not driven. It is the default, and what an unknown mode name parses to.
 	ControlModeIdle ControlMode = iota
+	// ControlModeManual drives the robot only from the operator's key presses.
 	ControlModeManual
+	// ControlModeAutonomous drives the robot along planned paths to its goal.
 	ControlModeAutonomous
 )
 
+// String returns the mode's API name: "hold", "manual" or "autonomous".
 func (m ControlMode) String() string {
 	switch m {
 	case ControlModeManual:
@@ -26,6 +31,7 @@ func (m ControlMode) String() string {
 	}
 }
 
+// ParseControlMode converts an API mode name to a ControlMode. Anything unrecognised is ControlModeIdle, the safe choice.
 func ParseControlMode(s string) ControlMode {
 	switch s {
 	case "manual":
@@ -39,12 +45,14 @@ func ParseControlMode(s string) ControlMode {
 	}
 }
 
+// GetControlMode returns the current control mode.
 func (rs *RobotSystem) GetControlMode() ControlMode {
 	rs.control.controlMu.RLock()
 	defer rs.control.controlMu.RUnlock()
 	return rs.control.controlMode
 }
 
+// SetControlMode switches the control mode. It is ignored while the emergency stop is active. Leaving manual or autonomous clears the active command and stops the robot.
 func (rs *RobotSystem) SetControlMode(mode ControlMode) {
 	rs.control.controlMu.Lock()
 	defer rs.control.controlMu.Unlock()
@@ -64,12 +72,14 @@ func (rs *RobotSystem) SetControlMode(mode ControlMode) {
 	}
 }
 
+// IsEmergencyStopped reports whether the emergency stop is active.
 func (rs *RobotSystem) IsEmergencyStopped() bool {
 	rs.control.controlMu.RLock()
 	defer rs.control.controlMu.RUnlock()
 	return rs.control.emergencyStopped
 }
 
+// EmergencyStop halts the robot at once and refuses all movement until ClearEmergencyStop. The Stop goes straight to the Arduino so it does not wait for the command queue or an autonomy frame.
 func (rs *RobotSystem) EmergencyStop() {
 	// Stop the robot before touching controlMu: an autonomy frame holds its
 	// read lock while it runs (see executeAutonomousControl), and an e-stop must
@@ -90,6 +100,7 @@ func (rs *RobotSystem) EmergencyStop() {
 	utils.Logf("EMERGENCY STOP activated")
 }
 
+// ClearEmergencyStop ends the emergency stop and restarts the command queue. The robot stays stopped until it is driven again.
 func (rs *RobotSystem) ClearEmergencyStop() {
 	rs.control.controlMu.Lock()
 	rs.control.emergencyStopped = false

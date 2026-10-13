@@ -1,5 +1,6 @@
 package planning
 
+// Obstacle is something the robot must not drive into: a user-marked static obstacle or a detected temporary one, in world metres and in pixels.
 type Obstacle struct {
 	Name              string
 	WorldTopLeft      [2]float64

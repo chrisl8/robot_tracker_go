@@ -2,6 +2,7 @@
 
 package ui
 
+// OverlayMessage is the envelope of every WebSocket message to the UI. Type says which of the other fields is filled in.
 type OverlayMessage struct {
 	Type          string                    `json:"type"`
 	Tracks        *TracksMessage            `json:"tracks,omitempty"`
@@ -63,15 +64,18 @@ type ForegroundState struct {
 	ShadowSuppressed int `json:"shadow_suppressed"`
 }
 
+// TracksMessage is the list of tracks sent to the UI.
 type TracksMessage struct {
 	Tracks []TrackMessage `json:"tracks"`
 }
 
+// ObstaclesMessage is the list of static obstacles sent to the UI.
 type ObstaclesMessage struct {
 	Obstacles []ObstacleResponse `json:"obstacles"`
 	Count     int                `json:"count"`
 }
 
+// TrackMessage is one tracked object as the UI draws it: ID, tag, pixel box, history, colour, confidence, state and the robot's pose.
 type TrackMessage struct {
 	ID            int            `json:"id"`
 	TagID         *int           `json:"tag_id,omitempty"`
@@ -89,6 +93,7 @@ type TrackMessage struct {
 	MotionState   *string        `json:"motion_state,omitempty"`
 }
 
+// PathMessage is one robot's remaining path in pixels, with the colour to draw it.
 type PathMessage struct {
 	RobotID int      `json:"robot_id"`
 	Points  [][2]int `json:"points"`
@@ -97,10 +102,12 @@ type PathMessage struct {
 	Carrot *[2]int `json:"carrot,omitempty"`
 }
 
+// PathsMessage is the set of robot paths sent to the UI.
 type PathsMessage struct {
 	Paths []PathMessage `json:"paths"`
 }
 
+// StatusMessage is the periodic status sent to the UI: connection state, frame rate, Arduino and robot link state, motion status and host health.
 type StatusMessage struct {
 	Connected    bool    `json:"connected"`
 	FPS          float64 `json:"fps"`
@@ -126,6 +133,7 @@ type StatusMessage struct {
 	Motion *MotionStatus `json:"motion,omitempty"`
 }
 
+// DestinationMessage is a robot's destination in pixels. Valid is false when the destination has been cleared.
 type DestinationMessage struct {
 	RobotID int  `json:"robot_id"`
 	X       int  `json:"x"`

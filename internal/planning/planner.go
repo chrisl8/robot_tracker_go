@@ -9,6 +9,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// PlannerConfig configures NewPlanner; a nil AStarConfig selects the A* defaults.
 type PlannerConfig struct {
 	AStarConfig *AStarConfig
 }
@@ -56,6 +57,7 @@ const (
 	minDynamicReplanInterval = 500 * time.Millisecond
 )
 
+// NewPlanner returns a Planner with no robots, goals or obstacles. A nil config selects the A* defaults.
 func NewPlanner(config *PlannerConfig) *Planner {
 	planner := &Planner{
 		paths:           make(map[int][][2]float64),
@@ -74,6 +76,7 @@ func NewPlanner(config *PlannerConfig) *Planner {
 	return planner
 }
 
+// PlanPath plans a path from start to goal for the robot without storing it as the robot's current path, reporting false if none exists.
 func (p *Planner) PlanPath(robotID int, start, goal [2]float64) ([][2]float64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -206,6 +209,7 @@ func (p *Planner) SetArea(area *Area) {
 	p.replanAllPathsLocked()
 }
 
+// SetObstacles replaces the obstacle set and re-plans every robot's path against it.
 func (p *Planner) SetObstacles(obstacles []Obstacle) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -240,6 +244,7 @@ func (p *Planner) SetDynamicObstacles(obstacles []Obstacle) {
 	p.replanAllPathsLocked()
 }
 
+// AddRobot registers or updates a robot's position and diameter. If the robot has a goal but no path yet, it plans one from this position.
 func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -264,6 +269,7 @@ func (p *Planner) AddRobot(id int, position [2]float64, diameter float64) {
 	}
 }
 
+// SetGoal gives the robot a destination and plans a path to it from the robot's last position. If the robot is not known yet, or no path exists, the goal is kept and any old path is dropped; planning is retried by AddRobot and GetPathsWithGoals.
 func (p *Planner) SetGoal(robotID int, goal [2]float64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -352,6 +358,7 @@ func (p *Planner) ClearanceAt(robotID int, pos [2]float64) float64 {
 	return clearance(robot, p.allObstaclesLocked())
 }
 
+// GetNextWaypoint returns the waypoint the robot is heading for, or false when it has no path or has used it up.
 func (p *Planner) GetNextWaypoint(robotID int) ([2]float64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -452,6 +459,7 @@ func (p *Planner) AdvancePastWaypoints(robotID int, pos [2]float64, threshold fl
 	return true
 }
 
+// GetPathsWithGoals returns every robot's remaining waypoints (from the current waypoint on). First it plans a path for any robot that has a goal and a known position but no path.
 func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -490,6 +498,7 @@ func (p *Planner) GetPathsWithGoals() map[int][][2]float64 {
 	return remaining
 }
 
+// GetGoal returns the robot's destination and whether it has one.
 func (p *Planner) GetGoal(robotID int) ([2]float64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -508,6 +517,7 @@ func (p *Planner) RobotsWithGoals() []int {
 	return ids
 }
 
+// CompletePath forgets the robot's path and goal, once the goal is reached or released.
 func (p *Planner) CompletePath(robotID int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -611,5 +621,6 @@ type RobotWorld struct {
 // World returns robotID's view of the obstacles.
 func (p *Planner) World(robotID int) RobotWorld { return RobotWorld{p, robotID} }
 
-// CanDriveStraight: see Planner.CanDriveStraight.
+// CanDriveStraight reports whether this robot can go straight from a to b; see
+// Planner.CanDriveStraight.
 func (w RobotWorld) CanDriveStraight(a, b [2]float64) bool { return w.p.CanDriveStraight(w.id, a, b) }

@@ -34,6 +34,7 @@ cd ui && npm run test:coverage                        # with coverage
 ```
 
 Conventions:
+- Every exported identifier needs a godoc comment starting with its name; `revive`'s `exported` rule in `.golangci.yml` enforces it.
 - Table-driven Go tests. A new test must be shown capable of failing: break the code (a mutation) and confirm the test catches it.
 - `internal/controller` tests use `recordingPort` (`queue_stop_test.go`), a fake serial port with queued `incoming` bytes and `failReads`/`failWrites` switches; `stubSerialOpen` makes `Connect()` hand out fake ports. `cmd/` tests build a rig with `newDemoAutonomyRig`.
 - `nilaway` is strict: a test helper that returns a possibly-nil slice has failed it before. Return `make(...)`, not `var out []T`.
@@ -103,7 +104,7 @@ Mac --USB serial 9600--> gamepad (Arduino Nano) --Bluetooth HC-05, 9600--> robot
 
 ## Configuration
 
-`config/tracking_config.yaml` — `cameras`, `april_tags`, `foreground`, `tracking`, `position`, `processing` (frame-rate cap), `controller` (serial port/baud, command interval, heartbeat timeout), `robots` (tag IDs, sizes, `heading_offset_degrees`), `obstacles` (file), `path_execution`. The `path_execution` values (`spin_threshold_deg`, `burst_frames`, `max_wait_frames`) were tuned empirically against AprilTag heading noise; the comments in the file say what broke at other values, so read them before changing anything, and do not add heading smoothing. Static obstacles live in `config/obstacles_<camera>.yaml` (per-camera name, from `GetObstaclesFilename`). The `foreground` section controls the detector that finds temporary obstacles; with `apply_to_planner: false` (the current setting) it runs in **shadow mode**: detections are shown in the UI but the planner does not steer around them, until it is turned on in the config or the UI toggle.
+`config/tracking_config.yaml` — loaded and checked by `config.Load` (`internal/config/validate.go`): an invalid value (negative, out of range, unknown follower/family/camera type, duplicate or reserved robot tag ID) is an error naming every problem, and the service then runs demo-only; an unknown key is only a startup warning in the log (`config line N: unknown key ...`). Zero means "use the default", never an error. Sections: `cameras`, `april_tags`, `foreground`, `tracking`, `position`, `processing` (frame-rate cap), `controller` (serial port/baud, command interval, heartbeat timeout), `robots` (tag IDs, sizes, `heading_offset_degrees`), `obstacles` (file), `path_execution`. The `path_execution` values (`spin_threshold_deg`, `burst_frames`, `max_wait_frames`) were tuned empirically against AprilTag heading noise; the comments in the file say what broke at other values, so read them before changing anything, and do not add heading smoothing. Static obstacles live in `config/obstacles_<camera>.yaml` (per-camera name, from `GetObstaclesFilename`). The `foreground` section controls the detector that finds temporary obstacles; with `apply_to_planner: false` (the current setting) it runs in **shadow mode**: detections are shown in the UI but the planner does not steer around them, until it is turned on in the config or the UI toggle.
 
 ## Debug logging and logs
 

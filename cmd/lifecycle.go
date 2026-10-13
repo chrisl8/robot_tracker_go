@@ -251,6 +251,7 @@ func (rs *RobotSystem) tryOpenCamera(maxDuration time.Duration) error {
 	}
 }
 
+// StartCamera starts the camera. Having no camera is not an error: the system runs on without video.
 func (rs *RobotSystem) StartCamera() error {
 	utils.Logf("Starting camera...")
 	if rs.capture.cam == nil {

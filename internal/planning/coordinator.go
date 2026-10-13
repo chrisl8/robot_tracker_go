@@ -20,6 +20,7 @@ type Coordinator struct {
 	obstacles []Obstacle
 }
 
+// NewCoordinator returns an empty Coordinator.
 func NewCoordinator() *Coordinator {
 	return &Coordinator{
 		robots:    make(map[int]RobotState),
@@ -28,27 +29,33 @@ func NewCoordinator() *Coordinator {
 	}
 }
 
+// AddRobot stores or replaces a robot's state. Coordinator has no lock; Planner serialises access to it.
 func (c *Coordinator) AddRobot(id int, state RobotState) {
 	c.robots[id] = state
 }
 
+// SetGoal records the robot's destination.
 func (c *Coordinator) SetGoal(robotID int, goal [2]float64) {
 	c.goals[robotID] = goal
 }
 
+// ClearGoal forgets the robot's destination.
 func (c *Coordinator) ClearGoal(robotID int) {
 	delete(c.goals, robotID)
 }
 
+// SetObstacles replaces the obstacle set.
 func (c *Coordinator) SetObstacles(obstacles []Obstacle) {
 	c.obstacles = obstacles
 }
 
+// GetRobotState returns the robot's state and whether it is known.
 func (c *Coordinator) GetRobotState(id int) (RobotState, bool) {
 	state, exists := c.robots[id]
 	return state, exists
 }
 
+// GetGoal returns the robot's destination and whether it has one.
 func (c *Coordinator) GetGoal(robotID int) ([2]float64, bool) {
 	goal, exists := c.goals[robotID]
 	return goal, exists

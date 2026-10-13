@@ -25,6 +25,7 @@ func NewDetectionPipeline(tagConfig AprilTagConfig) *DetectionPipeline {
 	return pipeline
 }
 
+// Detect runs the tag detector on a BGR frame and returns the tags together with the fused detections made from them. With no tag detector it returns an empty result.
 func (p *DetectionPipeline) Detect(image []byte, width, height int, timestamp float64, frameIdx int) *DetectionResult {
 	result := &DetectionResult{
 		Timestamp: timestamp,

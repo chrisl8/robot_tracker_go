@@ -45,6 +45,7 @@ func cameraPermissionHint() string {
 // GoCVCamera is the only Camera implementation.
 var _ Camera = (*GoCVCamera)(nil)
 
+// GoCVCamera is a Camera backed by OpenCV. A background goroutine reads frames continuously and, when the device stops delivering, closes and reopens it (see reopenDevice).
 type GoCVCamera struct {
 	device   frameSource // guarded by mu once the capture loop runs
 	open     func() (frameSource, error)
@@ -283,6 +284,7 @@ func (c *GoCVCamera) isRunning() bool {
 	return c.running
 }
 
+// Start marks the camera as running; the capture goroutine is already reading frames from construction on.
 func (c *GoCVCamera) Start() error {
 	c.setRunning(true)
 	return nil
@@ -347,6 +349,7 @@ func (c *GoCVCamera) GetFrame() (*Frame, error) {
 	return frame, nil
 }
 
+// GetName returns a human-readable name for the camera ("Camera 0" or the stream URL).
 func (c *GoCVCamera) GetName() string {
 	return DisplayName(c.url, c.cameraID)
 }

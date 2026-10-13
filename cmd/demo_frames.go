@@ -258,6 +258,7 @@ func drawCircleOnRGBA(img *image.RGBA, cx, cy, r int, c color.RGBA) {
 	}
 }
 
+// ProcessDemoFrame is ProcessFrame for demo mode: the same tracking, positioning, planning and autonomy steps, fed with a synthetic image and tags instead of a camera frame and detections.
 func (rs *RobotSystem) ProcessDemoFrame(img *image.RGBA, frameNum int, demoTags []detection.AprilTag) {
 	rs.capture.frameMu.Lock()
 	defer rs.capture.frameMu.Unlock()

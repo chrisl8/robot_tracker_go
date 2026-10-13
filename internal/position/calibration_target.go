@@ -14,33 +14,45 @@ const (
 	// ONLY length the calibration is built on; tag positions are solved from it.
 	TargetTagSize = 0.15
 
-	// TargetIDMin..TargetIDMax are the tag IDs reserved for the calibration
-	// target. Robots must not use them.
-	TargetIDMin    = 100
-	TargetIDMax    = 104
+	// TargetIDMin is the lowest tag ID reserved for the calibration target;
+	// TargetIDMax (below) is the highest. Robots must not use them.
+	TargetIDMin = 100
+	// TargetIDMax is the highest tag ID reserved for the calibration target.
+	TargetIDMax = 104
+	// TargetCenterID is the tag ID of the target's centre tag; the other reserved IDs are its corners.
 	TargetCenterID = 100
 
-	// Fit quality thresholds on the RMS reprojection error, in centimetres.
+	// GoodFitRMSCm is the largest RMS reprojection error, in centimetres, rated
+	// "good". OKFitRMSCm and MaxFitRMSCm below are the next thresholds.
 	GoodFitRMSCm = 1.0
-	OKFitRMSCm   = 2.0
+	// OKFitRMSCm is the largest RMS error, in centimetres, still rated "ok"; anything above it up to MaxFitRMSCm is rated "poor".
+	OKFitRMSCm = 2.0
 	// MaxFitRMSCm is the limit above which a calibration is rejected and not saved.
 	MaxFitRMSCm = 3.0
 )
 
 const (
+	// RatingGood is the fit rating for an RMS error up to GoodFitRMSCm.
 	RatingGood = "good"
-	RatingOK   = "ok"
+	// RatingOK is the fit rating for an RMS error up to OKFitRMSCm.
+	RatingOK = "ok"
+	// RatingPoor is the fit rating for a larger error that is still accepted (up to MaxFitRMSCm).
 	RatingPoor = "poor"
 )
 
 const (
+	// RoleCenter marks the target's centre tag.
 	RoleCenter = "center"
+	// RoleCorner marks one of the target's corner tags.
 	RoleCorner = "corner"
 )
 
 var (
-	ErrPoorFit        = errors.New("calibration fit is too inaccurate")
-	ErrMissingTags    = errors.New("calibration target tags missing")
+	// ErrPoorFit means the fitted calibration is less accurate than MaxFitRMSCm, so it is rejected and not saved.
+	ErrPoorFit = errors.New("calibration fit is too inaccurate")
+	// ErrMissingTags means some of the calibration target's tags were not seen.
+	ErrMissingTags = errors.New("calibration target tags missing")
+	// ErrUnknownTargetT means a tag ID is not one of the calibration target's.
 	ErrUnknownTargetT = errors.New("not a calibration target tag")
 )
 

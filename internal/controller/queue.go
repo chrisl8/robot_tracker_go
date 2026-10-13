@@ -8,6 +8,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// CommandQueue serialises commands to the Arduino and keeps the robot safe: it re-sends the active command as a heartbeat, drops it (and sends Stop) if nobody re-enqueues it within the command TTL, and reconnects a dropped serial link, sending Stop on reconnect instead of resuming the old command.
 type CommandQueue struct {
 	controller *ArduinoController
 	commandCh  chan Command
@@ -97,6 +98,7 @@ func (q *CommandQueue) SetCommandTTL(d time.Duration) {
 	q.mu.Unlock()
 }
 
+// Start launches the queue's run loop. It does nothing if the queue is already running, and it clears any halt left by an earlier Stop.
 func (q *CommandQueue) Start() {
 	q.mu.Lock()
 	if q.running {
@@ -356,12 +358,14 @@ func (q *CommandQueue) HasActiveCommand() bool {
 	return q.hasActiveCommand
 }
 
+// GetLastCommand returns the command most recently sent to the Arduino.
 func (q *CommandQueue) GetLastCommand() Command {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.lastCommand
 }
 
+// IsRunning reports whether the run loop is active.
 func (q *CommandQueue) IsRunning() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()

@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 )
 
+// QuietMode silences Log and Logf when set (see SetQuietMode).
+// QuietMode silences Log and Logf when set (see SetQuietMode).
 var QuietMode bool
 
 // debugEnabled gates Debugf. Debug lines are emitted per frame (steering, paths,
@@ -36,6 +38,9 @@ func SetDebug(on bool) { debugEnabled.Store(on) }
 // DebugEnabled reports whether Debugf output is on.
 func DebugEnabled() bool { return debugEnabled.Load() }
 
+// SetQuietMode turns normal logging off or on: when quiet, log output is discarded instead of written to stderr.
+
+// SetQuietMode turns normal logging off or on: when quiet, log output is discarded instead of written to stderr.
 func SetQuietMode(q bool) {
 	QuietMode = q
 	if QuietMode {
@@ -43,12 +48,16 @@ func SetQuietMode(q bool) {
 	} else {
 		log.SetOutput(os.Stderr)
 	}
+	// Log writes a timestamped line to the log, like fmt.Print. Per-frame detail belongs in Debugf, which is off by default.
 }
 
+// Log writes a timestamped line to the log, like fmt.Print. Per-frame detail belongs in Debugf, which is off by default.
 func Log(v ...interface{}) {
+	// Logf is Log with a format string, like fmt.Printf.
 	log.Print(v...)
 }
 
+// Logf is Log with a format string, like fmt.Printf.
 func Logf(format string, v ...interface{}) {
 	log.Printf(format, v...)
 }

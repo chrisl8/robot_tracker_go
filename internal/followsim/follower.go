@@ -81,6 +81,7 @@ type loop struct {
 
 func newLoop(env FollowerEnv) loop { return loop{env: env, exec: env.Exec.newExecutor()} }
 
+// Replans returns how many times the follower re-planned because it got too close to something.
 func (l *loop) Replans() int { return l.replans }
 
 // guard runs the replan and goal checks. havePath is false when the robot has
@@ -141,8 +142,10 @@ func (l *loop) movesTowardObstacle(cmd controller.Command, obs Observation, clea
 // waypoint, arriving within the waypoint threshold, and steer at the next one.
 type Baseline struct{ loop }
 
+// NewBaseline builds the old waypoint-hopping follower, the per-frame logic of cmd/autonomy.go, as the comparison point for the carrot.
 func NewBaseline(env FollowerEnv) Follower { return &Baseline{newLoop(env)} }
 
+// Step returns the next command for the observation, and true once the goal is reached. With no path it stops and keeps waiting.
 func (b *Baseline) Step(obs Observation) (controller.Command, bool) {
 	clearance, tooClose, havePath, done := b.guard(obs)
 	if !havePath {

@@ -7,6 +7,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// Node is one cell of the A* search: its grid position, the cost so far (G), the heuristic to the goal (H), their sum (F), and the cell it was reached from.
 type Node struct {
 	Pos      [2]int
 	G        float64
@@ -16,10 +17,13 @@ type Node struct {
 	Obstacle bool
 }
 
+// PriorityQueue is a min-heap of Nodes ordered by F, implementing container/heap.Interface for the A* open set.
 type PriorityQueue []*Node
 
+// Len returns the number of nodes in the queue.
 func (pq PriorityQueue) Len() int { return len(pq) }
 
+// Less orders nodes by F, lowest first; a nil node never sorts first.
 func (pq PriorityQueue) Less(i, j int) bool {
 	if pq[i] == nil || pq[j] == nil {
 		return false
@@ -27,14 +31,17 @@ func (pq PriorityQueue) Less(i, j int) bool {
 	return pq[i].F < pq[j].F
 }
 
+// Swap exchanges the nodes at i and j.
 func (pq PriorityQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 }
 
+// Push adds a *Node to the queue. It is for container/heap; use heap.Push.
 func (pq *PriorityQueue) Push(x interface{}) {
 	*pq = append(*pq, x.(*Node))
 }
 
+// Pop removes and returns the last node. It is for container/heap; use heap.Pop.
 func (pq *PriorityQueue) Pop() interface{} {
 	old := *pq
 	n := len(old)
@@ -57,10 +64,12 @@ type AStarConfig struct {
 	MaxIterations    int
 }
 
+// AStar plans grid paths between two world points around obstacles.
 type AStar struct {
 	config *AStarConfig
 }
 
+// NewAStar returns a planner for the given grid, or one with a 100 m by 100 m grid at 5 cm resolution when config is nil.
 func NewAStar(config *AStarConfig) *AStar {
 	if config == nil {
 		config = &AStarConfig{
@@ -91,6 +100,7 @@ type PlanOptions struct {
 	Hard, Soft, Edge float64
 }
 
+// Plan finds a path from start to goal that stays at least margin from every obstacle, reporting false if there is none. It is PlanWithin without an area.
 func (a *AStar) Plan(start, goal [2]float64, obstacles []Obstacle, margin float64) ([][2]float64, bool) {
 	return a.PlanWithin(start, goal, obstacles, margin, nil)
 }

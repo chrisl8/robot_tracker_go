@@ -18,6 +18,7 @@ var (
 	arduinoStartupDelay = ArduinoStartupDelay
 )
 
+// ArduinoController owns the USB serial connection to the gamepad Arduino and sends single-letter commands over it. It also reads the gamepad's replies in the background (see readLoop) to track whether the robot itself answers. A failed write or read closes the port and marks it disconnected; CommandQueue reconnects it.
 type ArduinoController struct {
 	port      string // as configured: a device path, or "auto" to detect on every Connect
 	openPort  string // the device actually opened by the last successful Connect
@@ -44,6 +45,7 @@ type ArduinoController struct {
 	reboots      int // cumulative for the process; see noteDisconnected
 }
 
+// NewArduinoController returns a controller for the given serial port ("auto" detects a USB-serial device on every Connect). A baudrate of 0 means BaudRate. It does not open the port; call Connect.
 func NewArduinoController(port string, baudrate int) *ArduinoController {
 	if baudrate == 0 {
 		baudrate = BaudRate
@@ -109,6 +111,7 @@ func (c *ArduinoController) Connect() error {
 	return nil
 }
 
+// Disconnect closes the serial port. It does nothing if the port is not open.
 func (c *ArduinoController) Disconnect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -133,6 +136,7 @@ func (c *ArduinoController) writeAll(data []byte) error {
 	return nil
 }
 
+// SendCommand writes one command to the Arduino. It returns ErrNotConnected without an open port; a failed write closes the port and is returned as an error.
 func (c *ArduinoController) SendCommand(cmd Command) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -160,6 +164,7 @@ func (c *ArduinoController) dropConnectionLocked() {
 	c.noteDisconnected()
 }
 
+// IsConnected reports whether the serial port is open. It says nothing about whether the robot answers; see RobotInfo for that.
 func (c *ArduinoController) IsConnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -220,4 +225,5 @@ func (c *ArduinoController) ListPorts() []string {
 	return globSerialPorts()
 }
 
+// ArduinoStartupDelay is how long an Arduino takes to reset and become ready after its serial port is opened. Connect waits this long before reporting success.
 const ArduinoStartupDelay = 2 * time.Second

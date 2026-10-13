@@ -18,6 +18,7 @@ func (s *WebServer) BroadcastTempObstacles(msg TempObstaclesMessage) {
 	s.BroadcastOverlay(OverlayMessage{Type: "temp_obstacles", TempObstacles: &msg})
 }
 
+// BroadcastTracks sends the current tracks to every connected client, with each robot's colour and last command.
 func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.RobotConfig, robotCommands map[int]string) {
 	trackMessages := make([]TrackMessage, 0, len(tracks))
 	for _, track := range tracks {
@@ -68,6 +69,7 @@ func (s *WebServer) BroadcastTracks(tracks []tracking.Track, robots []config.Rob
 	})
 }
 
+// BroadcastPaths sends every robot's planned path, converted to pixels, to the clients. It does nothing until the path callback and a position estimator are set.
 func (s *WebServer) BroadcastPaths() {
 	if s.Callbacks.OnPathsChanged == nil {
 		utils.Debugf("BroadcastPaths: OnPathsChanged is nil, skipping")

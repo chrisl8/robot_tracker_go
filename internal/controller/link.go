@@ -18,11 +18,14 @@ import (
 type RobotLink string
 
 const (
-	// RobotLinkUnknown: not connected, or connected for less than
+	// RobotLinkUnknown means not connected, or connected for less than
 	// RobotSilentAfter without having heard a reply yet.
 	RobotLinkUnknown RobotLink = "unknown"
-	RobotLinkAlive   RobotLink = "alive"
-	RobotLinkSilent  RobotLink = "silent"
+	// RobotLinkAlive means the robot has answered within RobotSilentAfter.
+	RobotLinkAlive RobotLink = "alive"
+	// RobotLinkSilent means the port is open but the robot has not answered for
+	// RobotSilentAfter, so it is off or out of radio range.
+	RobotLinkSilent RobotLink = "silent"
 )
 
 // RobotSilentAfter is how long without a reply (or, after connecting, without a

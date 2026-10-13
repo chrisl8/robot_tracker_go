@@ -71,6 +71,7 @@ func percentile(xs []float64, p float64) float64 {
 	return s[max(0, min(len(s)-1, i))]
 }
 
+// String formats the summary as one line of percentages and percentiles for the report.
 func (s Summary) String() string {
 	return fmt.Sprintf("runs=%d reached=%.0f%% collided=%.0f%% leftFrame=%.0f%% planFail=%.0f%% | time p50=%.0fs p90=%.0fs | clearance p05=%+.3fm p50=%+.3fm | crossTrack p50=%.3fm p90=%.3fm | replans=%.2f switches/m=%.1f",
 		s.Runs, s.ReachedPct, s.CollidedPct, s.LeftFramePct, s.PlanFailedPct,

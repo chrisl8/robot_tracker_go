@@ -10,6 +10,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// GetCalibrationFilename returns the calibration file for a camera, config/calibration_<camera>.yaml, with the name made safe for a file name.
 func GetCalibrationFilename(cameraName string) string {
 	sanitized := sanitizeCameraName(cameraName)
 	return fmt.Sprintf("config/calibration_%s.yaml", sanitized)

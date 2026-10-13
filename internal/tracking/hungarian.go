@@ -6,6 +6,7 @@ import (
 	"github.com/chrisl8/robot_tracker_go/internal/utils"
 )
 
+// Assignment is the result of an optimal matching: RowToCol[i] is the column assigned to row i (or -1 for none) and Cost is the total cost.
 type Assignment struct {
 	RowToCol []int
 	Cost     float64
@@ -18,6 +19,11 @@ type Assignment struct {
 // matchThresh below that hardcoded value becomes unreachable.
 const NoMatchCost = 1.0
 
+// Hungarian solves the assignment problem: it matches each row of costMatrix
+// (n rows by m columns, not necessarily square) to at most one column so that the
+// total cost is lowest. A row left over when there are more rows than columns
+// gets -1. It is the optimal matching, not a greedy one.
+//
 //gocyclo:ignore
 func Hungarian(costMatrix [][]float64) *Assignment {
 	n := len(costMatrix)
@@ -130,6 +136,7 @@ func Hungarian(costMatrix [][]float64) *Assignment {
 	}
 }
 
+// ComputeIoUCost builds the matching cost for detections (rows) against tracks (columns): 1 minus the IoU where the overlap reaches matchThresh, NoMatchCost where it does not. It returns an empty matrix when either list is empty.
 func ComputeIoUCost(detections []Detection, tracks []Track, matchThresh float64) [][]float64 {
 	n := len(detections)
 	m := len(tracks)

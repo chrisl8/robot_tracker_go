@@ -557,3 +557,30 @@ Files fixed: `cmd/main.go` (3 instances), `cmd/demo_mode.go` (2 instances).
 | **Component** | `internal/ui/mjpeg_stream.go`, `ui/src/App.vue` |
 
 **Fix:** a capture error no longer ends the stream (the handler keeps serving and simply sends no frames), and `App.vue` re-requests `/stream` with a cache-busting parameter on every WebSocket reconnect. A dead camera is recovered by the service restart in `watchdog.go`; verified on the hardware on 2026-10-12 (video came back on its own after an unplug).
+
+---
+
+## LOW - Resolved
+
+### DOC-001: API Documentation Incomplete - RESOLVED (Oct 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Low |
+| **Component** | All packages |
+
+**Fix:** every exported identifier in `cmd/` and `internal/` (about 250 were undocumented) now has a godoc comment. `revive`'s `exported` rule is enabled in `.golangci.yml`, so `scripts/test.sh` fails on a new undocumented export or a comment that does not start with the identifier's name. Package-level example code was not added.
+
+---
+
+### CONFIG-001: No Validation for YAML Configuration - RESOLVED (Oct 2026)
+
+| Field | Value |
+|-------|-------|
+| **Status** | Resolved |
+| **Severity** | Low |
+| **Component** | `internal/config/config.go`, `internal/config/validate.go` |
+
+**Fix:** `Load` now runs `Config.Validate()` and refuses a config with invalid values (negative numbers, ranges such as `tracking.track_thresh` outside 0-1, an unknown `path_execution.follower`, `april_tags.family`, camera `type`, duplicate or reserved robot tag IDs, ...), reporting all of them at once. An unset (zero) value still means "use the default". Unknown YAML keys (typos, settings that no longer exist) do not stop the service: they come back in `Config.Warnings` with their line numbers and are logged at startup. This exposed five dead `april_tags` keys in the shipped config (`quad_sigma`, `refine_edges`, `decode_sharpening`, `min_tag_size`, `max_hamming_distance`), which were never read; they were removed.
+

@@ -160,6 +160,7 @@ type WebServerCallbacks struct {
 	OnCarrots func() map[int][2]float64
 }
 
+// NewWebServer returns a server that will listen on addr. It sets up the routes and the cross-site request guard but does not start listening; call Start.
 func NewWebServer(addr string) *WebServer {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -224,6 +225,7 @@ func (s *WebServer) setupRoutes() {
 	s.router.engine.GET("/api/control-state", s.handleControlState)
 }
 
+// Start begins serving HTTP, WebSocket and the MJPEG stream in the background and returns at once. Stop shuts it down.
 func (s *WebServer) Start() {
 	s.router.isRunning.Store(true)
 	srv := &http.Server{

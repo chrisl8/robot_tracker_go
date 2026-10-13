@@ -1,13 +1,18 @@
 package tracking
 
+// TrackState is where a track is in its life: tentative, confirmed or lost.
 type TrackState int
 
 const (
+	// TrackStateTentative is a new track that has not matched enough detections yet.
 	TrackStateTentative TrackState = iota
+	// TrackStateConfirmed is a track that has matched at least three detections and is trusted.
 	TrackStateConfirmed
+	// TrackStateLost is a confirmed track that has gone unmatched for some frames; the tracker keeps it for a while in case it reappears.
 	TrackStateLost
 )
 
+// Track is one tracked object: its pixel box and tag, its age and hit count, a short history, and, filled in later by the position stage, its world position and heading.
 type Track struct {
 	TrackID       int
 	Bbox          [4]int
@@ -26,11 +31,13 @@ type Track struct {
 	Corners       [4][2]float64
 }
 
+// TrackHistoryPoint is one past position of a track.
 type TrackHistoryPoint struct {
 	Timestamp float64
 	Bbox      [4]int
 }
 
+// TrackingResult is the tracker's output for one frame.
 type TrackingResult struct {
 	Tracks        []Track
 	Timestamp     float64
@@ -39,6 +46,7 @@ type TrackingResult struct {
 	NumTrackers   int
 }
 
+// NewTrack returns a tentative track with its first detection.
 func NewTrack(trackID int, bbox [4]int, timestamp, confidence float64) *Track {
 	return &Track{
 		TrackID:    trackID,
@@ -52,6 +60,7 @@ func NewTrack(trackID int, bbox [4]int, timestamp, confidence float64) *Track {
 	}
 }
 
+// ToDict returns the track as a map for JSON, with at most the last 30 history points.
 func (t *Track) ToDict() map[string]interface{} {
 	history := t.History
 	if len(history) > 30 {
@@ -86,6 +95,7 @@ func (t *Track) ToDict() map[string]interface{} {
 	return result
 }
 
+// StateString returns the track state as text: "tentative", "confirmed" or "lost".
 func (t *Track) StateString() string {
 	switch t.State {
 	case TrackStateTentative:
@@ -99,6 +109,7 @@ func (t *Track) StateString() string {
 	}
 }
 
+// Update records a matched detection: it replaces the box, counts a hit, extends the history (capped at 100 points) and confirms the track after three hits.
 func (t *Track) Update(bbox [4]int, timestamp, confidence float64) {
 	t.Bbox = bbox
 	t.Timestamp = timestamp
@@ -126,6 +137,7 @@ func (t *Track) AgeTrack() {
 	t.Age++
 }
 
+// Detection is one thing seen in a frame, as the tracker takes it: a pixel box, a confidence and the tag it belongs to.
 type Detection struct {
 	Bbox       [4]int
 	Confidence float64
@@ -134,6 +146,7 @@ type Detection struct {
 	Corners    [4][2]float64
 }
 
+// Tracker follows detections over frames. ByteTrack implements it.
 type Tracker interface {
 	Update(detections []Detection, timestamp float64, frameIdx int) *TrackingResult
 	Reset()

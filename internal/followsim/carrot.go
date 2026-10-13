@@ -16,6 +16,7 @@ type Carrot struct {
 	path    [][2]float64
 }
 
+// NewCarrot builds the carrot (look-ahead) follower: the per-frame logic of cmd/carrot.go, driven by the simulator instead of the live system.
 func NewCarrot(env FollowerEnv) Follower {
 	return &Carrot{
 		loop:    newLoop(env),
@@ -23,6 +24,7 @@ func NewCarrot(env FollowerEnv) Follower {
 	}
 }
 
+// Step returns the next command for the observation, and true once the goal is reached. With no path it stops and keeps waiting.
 func (c *Carrot) Step(obs Observation) (controller.Command, bool) {
 	clearance, tooClose, havePath, done := c.guard(obs)
 	if !havePath {

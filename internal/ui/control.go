@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CommandRequest is the body of a manual drive command: F, B, L, R or S.
 type CommandRequest struct {
 	Command string `json:"command"`
 }
@@ -31,10 +32,12 @@ func (s *WebServer) handleCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "command": req.Command})
 }
 
+// ModeRequest is the body of a control-mode change: "hold", "manual" or "autonomous".
 type ModeRequest struct {
 	Mode string `json:"mode"`
 }
 
+// ControlStateResponse is the control mode and emergency-stop state, as sent to the UI.
 type ControlStateResponse struct {
 	Mode             string `json:"mode"`
 	EmergencyStopped bool   `json:"emergency_stopped"`

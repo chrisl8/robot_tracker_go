@@ -64,6 +64,7 @@ const (
 	phaseWaiting                       // post-burst: waiting for heading to catch up (handleWaitPhase)
 )
 
+// NewPathExecutor returns a PathExecutor with conservative defaults. The service overrides them from the path_execution section of the configuration.
 func NewPathExecutor() *PathExecutor {
 	return &PathExecutor{
 		SpinThresholdDeg:    10.0, // conservative default; config overrides to 20° for AprilTag noise
@@ -87,6 +88,7 @@ func (e *PathExecutor) Reset() {
 	e.burstCmd = CommandStop
 }
 
+// BearingToCommand turns the robot's heading, the bearing to the next waypoint (both radians) and the last frame's heading change into one command: Forward when aligned (Backward when the waypoint is behind), otherwise a Left or Right turn, sent in short bursts followed by a wait for the heading to catch up. It keeps state between calls; call Reset when steering stops.
 func (e *PathExecutor) BearingToCommand(robotHeading, bearingToWaypoint, headingDelta float64) Command {
 	angleDiff := bearingToWaypoint - robotHeading
 	// Normalize to [-π, π]

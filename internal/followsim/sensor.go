@@ -20,6 +20,7 @@ type Sensor struct {
 	hasPrev bool
 }
 
+// NewSensor returns a Sensor with the given noise parameters, drawing its randomness from rng.
 func NewSensor(p PlantParams, rng *rand.Rand) *Sensor { return &Sensor{p: p, rng: rng} }
 
 const deg = math.Pi / 180

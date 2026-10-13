@@ -42,6 +42,7 @@ func (s *WebServer) handleMJPEG(c *gin.Context) {
 	s.router.stream.serveHTTP(c.Writer, c.Request)
 }
 
+// PushFrame JPEG-encodes a frame and publishes it to the MJPEG stream.
 func (s *WebServer) PushFrame(img image.Image) {
 	if img == nil {
 		return
@@ -53,6 +54,7 @@ func (s *WebServer) PushFrame(img image.Image) {
 	s.router.stream.updateJPEG(buf.Bytes())
 }
 
+// PushRawJPEG publishes an already-encoded JPEG to the MJPEG stream.
 func (s *WebServer) PushRawJPEG(jpegData []byte) {
 	if len(jpegData) == 0 {
 		return

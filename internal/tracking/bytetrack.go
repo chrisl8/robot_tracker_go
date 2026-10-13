@@ -10,6 +10,7 @@ import "sort"
 // as located just because the tracker is still holding its slot.
 const LostAfterMissedFrames = 3
 
+// ByteTrackConfig sets the tracker's thresholds: the detection confidence that starts a track, how many frames a lost track is kept, the minimum IoU for a match, and the smallest box area accepted.
 type ByteTrackConfig struct {
 	TrackThresh float64
 	TrackBuffer int
@@ -17,6 +18,7 @@ type ByteTrackConfig struct {
 	MinBoxArea  int
 }
 
+// ByteTrack is a multi-object tracker in the style of ByteTrack: it matches each frame's detections to existing tracks by overlap (IoU) with Kalman-predicted positions, starts tracks for unmatched detections and ages out tracks that stop matching.
 type ByteTrack struct {
 	config      *ByteTrackConfig
 	tracks      map[int]*TrackedTrack
@@ -31,12 +33,14 @@ type ByteTrack struct {
 	hasLastTimestamp bool
 }
 
+// TrackedTrack pairs a Track with its Kalman filter and the number of frames since it last matched a detection.
 type TrackedTrack struct {
 	track           *Track
 	kf              *KalmanFilter
 	timeSinceUpdate int
 }
 
+// NewByteTrack returns a tracker. A nil config selects track_thresh 0.5, track_buffer 30, match_thresh 0.3 and min_box_area 100.
 func NewByteTrack(config *ByteTrackConfig) *ByteTrack {
 	if config == nil {
 		config = &ByteTrackConfig{
@@ -55,6 +59,7 @@ func NewByteTrack(config *ByteTrackConfig) *ByteTrack {
 	}
 }
 
+// Update advances the tracker by one frame: it matches the detections to tracks, updates, creates and ages tracks, and returns the resulting tracks. timestamp is in seconds and drives the Kalman prediction.
 func (t *ByteTrack) Update(detections []Detection, timestamp float64, frameIdx int) *TrackingResult {
 	t.frameCount++
 
@@ -346,6 +351,7 @@ func (t *ByteTrack) buildTrackingResult(timestamp float64, frameIdx int, numDete
 	}
 }
 
+// Reset discards all tracks and restarts track numbering.
 func (t *ByteTrack) Reset() {
 	t.tracks = make(map[int]*TrackedTrack)
 	t.nextTrackID = 0
@@ -354,6 +360,7 @@ func (t *ByteTrack) Reset() {
 	t.hasLastTimestamp = false
 }
 
+// GetTrackCount returns how many tracks are held, including lost ones not yet dropped.
 func (t *ByteTrack) GetTrackCount() int {
 	return len(t.tracks)
 }
