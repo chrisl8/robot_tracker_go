@@ -217,6 +217,9 @@ func TestShippedConfigLoads(t *testing.T) {
 	if cfg.Tracking.TrackThresh == 0 {
 		t.Error("tracking threshold not configured")
 	}
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("shipped config has keys the program ignores: %v", cfg.Warnings)
+	}
 }
 
 func TestAddRobotIfMissing(t *testing.T) {

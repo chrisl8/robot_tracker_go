@@ -51,6 +51,7 @@ type RobotSystem struct {
 	stats     frameTimingSubsystem
 }
 
+// NewRobotSystem returns a RobotSystem for the given configuration (nil for demo-only operation). Call Initialize before use.
 func NewRobotSystem(cfg *config.Config) *RobotSystem {
 	return &RobotSystem{
 		cfg: cfg,
@@ -152,6 +153,11 @@ func main() {
 		utils.Logf("Warning: Could not load config: %v", err)
 		utils.Logf("Running with demo mode only")
 		*demoMode = true
+	}
+	if cfg != nil {
+		for _, w := range cfg.Warnings {
+			utils.Logf("Warning: %s", w)
+		}
 	}
 
 	rs := NewRobotSystem(cfg)

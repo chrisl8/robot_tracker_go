@@ -44,11 +44,7 @@ cameras:
 april_tags:
   family: "tag36h11" # 587 unique IDs
   quad_decimate: 1.0 # No downsampling; preserves full resolution for distant/angled tags
-  quad_sigma: 0.0 # Blur before decoding
-  refine_edges: 1
-  decode_sharpening: 0.25
-  min_tag_size: 0.02 # Minimum tag size relative to image dimension
-  max_hamming_distance: 2
+  # Only family and quad_decimate are read; the detector fixes its other parameters in code.
 
 # Temporary-obstacle detection (background subtraction). Finds anything in the
 # arena that is not the empty floor, a robot, or a marked static obstacle. Costs

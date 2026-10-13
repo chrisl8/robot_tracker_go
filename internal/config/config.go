@@ -1,17 +1,21 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/chrisl8/robot_tracker_go/internal/camera"
 	"github.com/chrisl8/robot_tracker_go/internal/detection"
-	"github.com/chrisl8/robot_tracker_go/internal/position"
 )
 
+// Config is the whole YAML configuration (config/tracking_config.yaml). Load fills it in and validates it; an unset field means "use the default", which the Effective* helpers and the consuming packages apply.
 type Config struct {
 	Robots []RobotConfig `yaml:"robots"`
 	// robotsMu guards Robots against AddRobotIfMissing, which demo mode calls
@@ -26,6 +30,10 @@ type Config struct {
 	Controller    ControllerConfig    `yaml:"controller"`
 	Processing    ProcessingConfig    `yaml:"processing"`
 	Foreground    ForegroundConfig    `yaml:"foreground"`
+
+	// Warnings lists what Load noticed but tolerated (unknown keys); the
+	// caller logs them at startup.
+	Warnings []string `yaml:"-"`
 }
 
 // ForegroundConfig configures the background-subtraction detector that finds
@@ -186,6 +194,7 @@ func (c *Config) EffectiveMaxFPS() int {
 	return c.Processing.MaxFPS
 }
 
+// ControllerConfig configures the Arduino serial link and its command pacing.
 type ControllerConfig struct {
 	Enabled bool         `yaml:"enabled"`
 	Serial  SerialConfig `yaml:"serial"`
@@ -199,6 +208,7 @@ type ControllerConfig struct {
 	HeartbeatTimeout float64 `yaml:"heartbeat_timeout"`
 }
 
+// SerialConfig names the serial port ("auto" picks a USB-serial device) and its baud rate; 0 means the controller package default.
 type SerialConfig struct {
 	Port     string `yaml:"port"`
 	BaudRate int    `yaml:"baudrate"`
@@ -208,6 +218,7 @@ type SerialConfig struct {
 // schema and what the camera package consumes cannot drift apart.
 type CameraConfig = camera.CameraConfig
 
+// RobotConfig describes one robot the system may control: its AprilTag ID and name, its footprint, and where its centre and heading sit relative to the tag.
 type RobotConfig struct {
 	TagID                int     `yaml:"tag_id"`
 	Name                 string  `yaml:"name"`
@@ -217,6 +228,7 @@ type RobotConfig struct {
 	CenterOffsetY        float64 `yaml:"center_offset_y"`
 }
 
+// PathExecutionConfig tunes how a planned path is followed. A zero value keeps the built-in default; the thresholds were tuned against AprilTag heading noise (see the comments in config/tracking_config.yaml before changing them).
 type PathExecutionConfig struct {
 	WaypointThreshold    float64 `yaml:"waypoint_threshold"`
 	SpinThresholdDeg     float64 `yaml:"spin_threshold_deg"`
@@ -230,11 +242,13 @@ type PathExecutionConfig struct {
 	Follower string `yaml:"follower"`
 }
 
+// AprilTagConfig selects the tag family and the detector's input decimation. The detector fixes its other parameters in code.
 type AprilTagConfig struct {
 	Family       string  `yaml:"family"`
 	QuadDecimate float64 `yaml:"quad_decimate"`
 }
 
+// ObstaclesConfig names the file holding the static obstacles.
 type ObstaclesConfig struct {
 	File string `yaml:"file"`
 	Path string `yaml:"path"` // Deprecated: use File instead
@@ -251,11 +265,13 @@ func (c *ObstaclesConfig) GetPath() string {
 	return c.Path
 }
 
+// PositionConfig holds the heading filter settings. HeadingSmoothingAlpha of 1 (or unset) disables smoothing, which is the intended setting.
 type PositionConfig struct {
 	HeadingSmoothingAlpha float64 `yaml:"heading_smoothing_alpha"`
 	HeadingMaxRateDeg     float64 `yaml:"heading_max_rate_deg"`
 }
 
+// TrackingConfig holds the ByteTrack multi-object tracker parameters.
 type TrackingConfig struct {
 	TrackThresh float64 `yaml:"track_thresh"`
 	TrackBuffer int     `yaml:"track_buffer"`
@@ -263,6 +279,10 @@ type TrackingConfig struct {
 	MinBoxArea  int     `yaml:"min_box_area"`
 }
 
+// Load reads, parses and validates the configuration file. An invalid value is
+// an error naming every problem (see Validate). Keys the program does not know,
+// usually a typo or a setting that no longer exists, are not errors: they come
+// back in Config.Warnings so the caller can log them.
 func Load(path string) (*Config, error) {
 	// #nosec G304
 	data, err := os.ReadFile(path)
@@ -271,20 +291,33 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-
-	for _, robot := range cfg.Robots {
-		if position.IsTargetTagID(robot.TagID) {
-			return nil, fmt.Errorf("robot %q uses tag_id %d, which is reserved for the calibration target (%d-%d)",
-				robot.Name, robot.TagID, position.TargetIDMin, position.TargetIDMax)
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+		var typeErr *yaml.TypeError
+		if !errors.As(err, &typeErr) {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+		var other []string
+		for _, msg := range typeErr.Errors {
+			if w, ok := unknownKeyWarning(msg); ok {
+				cfg.Warnings = append(cfg.Warnings, w)
+			} else {
+				other = append(other, msg)
+			}
+		}
+		if len(other) > 0 {
+			return nil, fmt.Errorf("failed to parse config file: %s", strings.Join(other, "; "))
 		}
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
+// GetRobotByTagID returns the configured robot with the given AprilTag ID, or nil if there is none.
 func (c *Config) GetRobotByTagID(tagID int) *RobotConfig {
 	c.robotsMu.RLock()
 	defer c.robotsMu.RUnlock()
@@ -311,6 +344,7 @@ func (c *Config) AddRobotIfMissing(r RobotConfig) bool {
 	return true
 }
 
+// GetRobotByName returns the configured robot with the given name, or nil if there is none.
 func (c *Config) GetRobotByName(name string) *RobotConfig {
 	c.robotsMu.RLock()
 	defer c.robotsMu.RUnlock()
@@ -322,6 +356,7 @@ func (c *Config) GetRobotByName(name string) *RobotConfig {
 	return nil
 }
 
+// GetPrimaryCamera returns the first usable camera entry (an IP camera or a local device with a non-negative ID), else the first entry, else nil.
 func (c *Config) GetPrimaryCamera() *CameraConfig {
 	for i := range c.Cameras {
 		if c.Cameras[i].Type == "ip" || c.Cameras[i].CameraID >= 0 {
